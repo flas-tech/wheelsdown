@@ -40,6 +40,7 @@ export const spots = sqliteTable("spots", {
   crewTip: text("crew_tip").default(""),
   tags: text("tags").notNull().default("[]"), // JSON array
   submittedBy: text("submitted_by").default("Anonymous crew"),
+  userId: integer("user_id"),
   status: text("status").notNull().default("live"), // live | pending | hidden
   createdAt: integer("created_at").notNull().default(0),
 });
@@ -60,6 +61,7 @@ export const reviews = sqliteTable("reviews", {
   comment: text("comment").notNull().default(""),
   author: text("author").default("Anonymous crew"),
   crewRole: text("crew_role").default("Crew"),
+  userId: integer("user_id"),
   createdAt: integer("created_at").notNull().default(0),
 });
 export const insertReviewSchema = createInsertSchema(reviews, {
@@ -115,3 +117,39 @@ export type VetInfo = {
   lastUpAt: number | null; reasons: Record<string, number>; myVote: number;
 };
 export type ReviewWithVotes = Review & { up: number; down: number; myVote: number };
+
+// ---- Crew accounts ----
+export const users = sqliteTable("users", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  handle: text("handle").notNull().unique(),
+  displayName: text("display_name").notNull(),
+  crewRole: text("crew_role").notNull().default("Crew"),
+  homeBase: text("home_base").default(""),
+  passwordHash: text("password_hash").notNull(),
+  bonusPoints: integer("bonus_points").notNull().default(0),
+  anonymous: integer("anonymous").notNull().default(0),
+  createdAt: integer("created_at").notNull().default(0),
+});
+export type User = typeof users.$inferSelect;
+export const sessions = sqliteTable("sessions", {
+  token: text("token").primaryKey(),
+  userId: integer("user_id").notNull(),
+  createdAt: integer("created_at").notNull().default(0),
+});
+export const CREW_ROLES = ["Pilot", "Flight Attendant", "Mechanic", "Other"] as const;
+const roleSchema = z.enum(CREW_ROLES, { message: "Pick Pilot, Flight Attendant, Mechanic or Other" });
+export const signupSchema = z.object({
+  handle: z.string().trim().toLowerCase().regex(/^[a-z0-9_.-]{3,24}$/, "Handle: 3–24 letters, numbers, . _ -"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+  displayName: z.string().trim().min(2, "Add a display name").max(40),
+  crewRole: roleSchema.default("Pilot"),
+  homeBase: z.string().trim().toUpperCase().max(4).optional().default(""),
+  anonymous: z.boolean().optional().default(false),
+});
+export const updateMeSchema = z.object({
+  displayName: z.string().trim().min(2, "Add a display name").max(40).optional(),
+  crewRole: roleSchema.optional(),
+  homeBase: z.string().trim().toUpperCase().max(4).optional(),
+  anonymous: z.boolean().optional(),
+});
+export const loginSchema = z.object({ handle: z.string().trim().toLowerCase(), password: z.string() });

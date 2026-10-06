@@ -1,7 +1,8 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { ArrowRight, MapPin, Clock, Search, Plus, X, ChevronRight, Lightbulb, ShieldCheck } from "lucide-react";
+import { ArrowRight, MapPin, Clock, Search, Plus, X, ChevronRight, Lightbulb, ShieldCheck, List, Sparkles, Trophy } from "lucide-react";
+import type { Highlights } from "@shared/highlights";
 import { TIME_BUCKETS, type Category, type SpotWithStats, type Airport } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 import { CAT_META, COST_LABELS, fmtMinutes, totalMinutes, parseTags, Stars, AdBanner, Chip, VetBadge } from "@/lib/ui";
@@ -16,13 +17,15 @@ type SearchState = {
   cost: number | null;
   sort: "trusted" | "rating" | "close" | "new";
   vettedOnly: boolean;
+  /** true = user chose to scroll through everything instead of searching a route */
+  browse: boolean;
 };
 const SearchCtx = createContext<[SearchState, (p: Partial<SearchState>) => void]>([
-  { category: null, route: "", time: null, cost: null, sort: "trusted", vettedOnly: false },
+  { category: null, route: "", time: null, cost: null, sort: "trusted", vettedOnly: false, browse: false },
   () => {},
 ]);
 export function SearchProvider({ children }: { children: React.ReactNode }) {
-  const [s, set] = useState<SearchState>({ category: null, route: "", time: null, cost: null, sort: "trusted", vettedOnly: false });
+  const [s, set] = useState<SearchState>({ category: null, route: "", time: null, cost: null, sort: "trusted", vettedOnly: false, browse: false });
   return <SearchCtx.Provider value={[s, (p) => set((o) => ({ ...o, ...p }))]}>{children}</SearchCtx.Provider>;
 }
 export const useSearch = () => useContext(SearchCtx);
@@ -47,9 +50,10 @@ export default function Home() {
 }
 
 function Prompt({ onPick }: { onPick: (c: Category) => void }) {
-  const { data: recent } = useQuery<SearchResp>({ queryKey: ["/api/search", ""], queryFn: async () => (await apiRequest("GET", "/api/search?route=")).json() });
-  const count = recent?.spots.length ?? 0;
-  const fields = new Set(recent?.spots.map((x) => x.icao)).size;
+  const [, set] = useSearch();
+  const { data: hl } = useQuery<Highlights>({ queryKey: ["/api/highlights"] });
+  const count = hl?.totals.spots ?? 0;
+  const fields = hl?.totals.fields ?? 0;
   return (
     <div className="space-y-6">
       <section className="pt-2">
@@ -108,7 +112,54 @@ function Prompt({ onPick }: { onPick: (c: Category) => void }) {
         <Lightbulb className="h-4 w-4 mt-0.5 shrink-0 text-primary" />
         <p>Search a whole trip at once: type your route like <span className="font-code text-foreground">MIA TEB ASE</span> or <span className="font-code text-foreground">KOPF-KPBI</span>. IATA and ICAO both work.</p>
       </div>
+
+      <Rail title="Top rated by crews" icon={Trophy} spots={hl?.top.slice(0, 5)} testId="rail-top" />
+      <Rail title="Just added" icon={Sparkles} spots={hl?.newest.slice(0, 5)} testId="rail-new" />
+
+      <BrowseButton count={count} onClick={() => set({ category: "eat", browse: true, route: "" })} testId="button-browse-all-home" sub={`Scroll all ${count} picks by category, 10 at a time`} />
     </div>
+  );
+}
+
+function BrowseButton({ onClick, testId, sub, title = "Browse everything" }: { count?: number; onClick: () => void; testId: string; sub: string; title?: string }) {
+  return (
+    <button onClick={onClick} data-testid={testId}
+      className="w-full flex items-center justify-between rounded-2xl border border-card-border bg-card px-4 py-3.5 hover-elevate">
+      <span className="flex items-center gap-3"><List className="h-4 w-4 text-primary shrink-0" />
+        <span className="text-left"><span className="block text-sm font-semibold">{title}</span><span className="block text-xs text-muted-foreground">{sub}</span></span>
+      </span>
+      <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+    </button>
+  );
+}
+
+/** Horizontal strip of compact cards, used for highlights instead of dumping the whole catalog. */
+function Rail({ title, icon: Icon, spots, testId }: { title: string; icon: any; spots?: SpotWithStats[]; testId: string }) {
+  if (spots && spots.length === 0) return null;
+  return (
+    <section className="space-y-2" data-testid={testId}>
+      <h2 className="text-sm font-semibold flex items-center gap-1.5"><Icon className="h-4 w-4 text-primary" />{title}</h2>
+      <div className="flex gap-3 overflow-x-auto no-scrollbar -mx-4 px-4 snap-x pb-1">
+        {!spots && [0, 1, 2].map((i) => <Skeleton key={i} className="h-[132px] w-[220px] shrink-0 rounded-2xl" />)}
+        {spots?.map((sp) => {
+          const M = CAT_META[sp.category as Category];
+          return (
+            <Link key={sp.id} href={`/spot/${sp.id}`} data-testid={`${testId}-card-${sp.id}`}
+              className="snap-start shrink-0 w-[220px] rounded-2xl border border-card-border bg-card p-3.5 hover-elevate flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-code text-[11px] font-bold taxi-sign rounded px-1.5 py-0.5">{sp.icao}</span>
+                <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1"><M.icon className="h-3 w-3" />{M.label}</span>
+              </div>
+              <p className="text-sm font-semibold leading-snug line-clamp-2">{sp.name}</p>
+              <div className="mt-auto flex flex-col items-start gap-1.5">
+                {sp.reviewCount ? <span className="text-xs inline-flex items-center gap-1"><Stars value={sp.avgRating ?? 0} size={12} /><span className="text-muted-foreground tabular">{sp.avgRating?.toFixed(1)} · {sp.reviewCount} {sp.reviewCount === 1 ? "rating" : "ratings"}</span></span> : <span className="text-xs text-muted-foreground whitespace-nowrap">No ratings yet</span>}
+                <VetBadge vet={sp.vet} />
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -143,7 +194,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
   const icaos = legs.filter((l) => l.airport).map((l) => l.airport!.icao);
   // Group by airport in route order
   const groups = useMemo(() => {
-    if (!route) return [{ icao: "", label: "Latest from the network", spots: filtered }];
+    if (!route) return [{ icao: "", label: "All picks", spots: filtered }];
     return icaos
       .filter((v, i, a) => a.indexOf(v) === i)
       .map((icao) => {
@@ -154,6 +205,12 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
 
   const M = CAT_META[cat];
   let cardIndex = 0;
+  const PAGE = 10, PER_AIRPORT = 6;
+  const [shown, setShown] = useState(PAGE);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  useEffect(() => { setShown(PAGE); setExpanded(new Set()); }, [cat, route, s.time, s.cost, s.vettedOnly, s.sort, s.browse]);
+  const mode: "choose" | "browse" | "route" = route ? "route" : s.browse ? "browse" : "choose";
+  const { data: hl } = useQuery<Highlights>({ queryKey: [`/api/highlights?category=${cat}`], enabled: mode === "choose" });
 
   return (
     <div className="space-y-5">
@@ -213,6 +270,20 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
         )}
       </div>
 
+      {mode === "choose" ? (
+        <div className="space-y-5" data-testid="section-choose">
+          <Rail title={`Top rated ${M.label.toLowerCase()}`} icon={Trophy} spots={hl?.top.slice(0, 4)} testId="rail-cat-top" />
+          <Rail title="Just added" icon={Sparkles} spots={hl?.newest.slice(0, 4)} testId="rail-cat-new" />
+          <BrowseButton onClick={() => set({ browse: true })} testId="button-browse-all" title={`Browse all ${M.label.toLowerCase()} picks`} sub="No route in mind? Scroll everything, with filters" />
+          <AdBanner slot="footer" icaos={[]} />
+        </div>
+      ) : (<>
+      {mode === "browse" && (
+        <div className="flex items-center justify-between rounded-xl bg-muted/60 px-3.5 py-2.5 text-sm" data-testid="banner-browsing">
+          <span className="flex items-center gap-2"><List className="h-4 w-4 text-primary" />Browsing all {M.label.toLowerCase()} picks</span>
+          <button onClick={() => set({ browse: false })} className="text-xs font-medium text-primary" data-testid="button-exit-browse">Back to highlights</button>
+        </div>
+      )}
       {/* Filters */}
       {showTime && (
         <div>
@@ -301,21 +372,36 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
                 icao={g.icao}
               />
             ) : (
-              g.spots.map((spot) => {
-                const i = cardIndex++;
-                return (
-                  <div key={spot.id} className="space-y-3">
-                    <SpotCard spot={spot} />
-                    {i % 4 === 3 && <AdBanner slot="inline" icaos={icaos} index={Math.floor(i / 4)} />}
-                  </div>
-                );
-              })
+              <>
+                {g.spots.slice(0, mode === "browse" ? shown : expanded.has(g.icao) ? g.spots.length : PER_AIRPORT).map((spot) => {
+                  const i = cardIndex++;
+                  return (
+                    <div key={spot.id} className="space-y-3">
+                      <SpotCard spot={spot} />
+                      {i % 4 === 3 && <AdBanner slot="inline" icaos={icaos} index={Math.floor(i / 4)} />}
+                    </div>
+                  );
+                })}
+                {mode === "browse" && g.spots.length > shown && (
+                  <button onClick={() => setShown(shown + PAGE)} data-testid="button-show-more"
+                    className="w-full h-11 rounded-full border border-border bg-card text-sm font-semibold hover-elevate">
+                    Show {Math.min(PAGE, g.spots.length - shown)} more <span className="text-muted-foreground font-normal">· {g.spots.length - shown} left</span>
+                  </button>
+                )}
+                {mode === "route" && !expanded.has(g.icao) && g.spots.length > PER_AIRPORT && (
+                  <button onClick={() => setExpanded(new Set(Array.from(expanded).concat(g.icao)))} data-testid={`button-show-all-${g.icao}`}
+                    className="w-full h-11 rounded-full border border-border bg-card text-sm font-semibold hover-elevate">
+                    Show all {g.spots.length} at {g.icao}
+                  </button>
+                )}
+              </>
             )}
           </section>
         ))
       )}
 
       <AdBanner slot="footer" icaos={icaos} className="mt-6" />
+      </>)}
     </div>
   );
 }

@@ -4,6 +4,8 @@ import { Download, Upload, Trash2, Eye, EyeOff, Plus, Lock, Pencil, LogOut } fro
 import { CATEGORIES, DOWN_REASONS, type Ad, type SpotWithStats } from "@shared/schema";
 import { apiRequest, queryClient, API_BASE, IS_STATIC } from "@/lib/queryClient";
 import { CAT_META, COST_LABELS, VetBadge } from "@/lib/ui";
+import { TierChip } from "@/lib/auth";
+import type { PublicUser } from "@shared/tiers";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -63,7 +65,7 @@ function Console({ onLogout }: { onLogout: () => void }) {
       <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
         {[
           ["Live spots", stats?.spots], ["Pending", stats?.pending], ["Reviews", stats?.reviews],
-          ["Crew votes", stats?.votes], ["Ad views", stats?.impressions], ["Ad CTR", ctr],
+          ["Crew votes", stats?.votes], ["Ad views", stats?.impressions], ["Crew accounts", stats?.users],
         ].map(([l, v]) => (
           <div key={l as string} className="rounded-xl border border-card-border bg-card px-3 py-2.5">
             <p className="text-[11px] text-muted-foreground">{l}</p>
@@ -77,11 +79,13 @@ function Console({ onLogout }: { onLogout: () => void }) {
           <TabsTrigger value="check" data-testid="tab-check">Needs check</TabsTrigger>
           <TabsTrigger value="bulk" data-testid="tab-bulk">Import / Export</TabsTrigger>
           <TabsTrigger value="ads" data-testid="tab-ads">Ad banners</TabsTrigger>
+          <TabsTrigger value="users" data-testid="tab-users">Crew</TabsTrigger>
         </TabsList>
         <TabsContent value="spots"><SpotsTable /></TabsContent>
         <TabsContent value="check"><NeedsCheck /></TabsContent>
         <TabsContent value="bulk"><Bulk /></TabsContent>
         <TabsContent value="ads"><AdsManager /></TabsContent>
+        <TabsContent value="users"><UsersAdmin /></TabsContent>
       </Tabs>
     </div>
   );
@@ -447,3 +451,35 @@ function AdsManager() {
   );
 }
 
+
+function UsersAdmin() {
+  const { data } = useQuery<PublicUser[]>({ queryKey: ["/api/admin/users"], queryFn: admGet("/api/admin/users") });
+  const [amt, setAmt] = useState<Record<number, string>>({});
+  const grant = useMutation({
+    mutationFn: ({ id, delta }: { id: number; delta: number }) => adm("POST", `/api/admin/users/${id}/bonus`, { delta }),
+    onSuccess: () => { queryClient.invalidateQueries(); },
+  });
+  return (
+    <div className="mt-3 rounded-xl border border-card-border bg-card overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className="text-left text-xs text-muted-foreground"><tr><th className="p-2.5">Crew</th><th className="p-2.5">Status</th><th className="p-2.5 text-right">Points</th><th className="p-2.5">Bonus points</th></tr></thead>
+        <tbody className="divide-y divide-border">
+          {(data || []).map((u) => (
+            <tr key={u.id} data-testid={`row-admin-user-${u.handle}`}>
+              <td className="p-2.5"><p className="font-medium leading-tight">{u.displayName}{u.anonymous && <span className="ml-1 text-[10px] uppercase text-muted-foreground">posts anonymously</span>}</p><p className="text-xs text-muted-foreground">@{u.handle} · {u.crewRole}{u.homeBase ? " · " + u.homeBase : ""}</p></td>
+              <td className="p-2.5"><TierChip tierId={u.tierId} /></td>
+              <td className="p-2.5 text-right font-code font-bold tabular">{u.points.toLocaleString()}</td>
+              <td className="p-2.5">
+                <div className="flex gap-1.5">
+                  <input value={amt[u.id] ?? ""} onChange={(e) => setAmt({ ...amt, [u.id]: e.target.value.replace(/[^0-9-]/g, "") })} placeholder="±pts" className={inputCls + " h-8 w-20"} data-testid={`input-bonus-${u.handle}`} />
+                  <button className={btn} disabled={!amt[u.id]} onClick={() => { grant.mutate({ id: u.id, delta: Number(amt[u.id]) }); setAmt({ ...amt, [u.id]: "" }); }} data-testid={`button-bonus-${u.handle}`}>Apply</button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="p-2.5 text-xs text-muted-foreground">Bonus points cover activity outside the app (events, imports, corrections). Everything else is counted from the crew member's activity.</p>
+    </div>
+  );
+}

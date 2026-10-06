@@ -19,6 +19,18 @@ npm run build && ADMIN_KEY=change-me npm start
 ```
 Env vars: `ADMIN_KEY` (admin console password), `MODERATE=1` (new submissions wait as "pending" until approved), `DB_PATH` (SQLite file location).
 
+## Crew accounts, participation and status
+- Browsing is open to everyone. Adding listings, rating and voting require a free crew account, so every contribution is credited to a person.
+- **Profile (set once):** name, position (Pilot, Flight Attendant, Mechanic or Other), optional home base, and whether posts show your name or "Anonymous pilot" etc. Changing the preference re-labels your past posts. Anonymous members are hidden by name on the public leaderboard; admins can still see who they are.
+- **Participation counter:** your listings, ratings and votes are counted and shown in a recent-activity log in your Logbook.
+- **Points:** 10 per listing (+20 when it becomes Crew-vetted), 5 per rating (+3 for 40+ characters), 1 per vote, +1 for each upvote your listings get, +2 for each "helpful" vote your reviews get. Points are worked out from your activity rather than stored, so they always match what you did. Admins can add bonus points for activity outside the app.
+- **Status ladder:** Student (0), Private (50), Instrument (150), Commercial (400), ATP (1,000), Check Airman (2,500), Ancient Albatross (6,000). Each status has its own badge, shown next to your name on everything you post. Perks marked "planned" are not built yet.
+- Accounts use scrypt-hashed passwords and session tokens on the server build. In the GitHub Pages demo, accounts live only in your own browser.
+
+## Home page and browsing
+- The home page never lists the whole catalog. It shows the top-rated and newest picks, plus a **Browse everything** button.
+- After you pick a category you choose one of two paths: enter a route, or browse everything in that category. Browsing loads 10 at a time; a route search shows up to 6 per airport, with a button to show the rest.
+
 ## Crew vetting (up/down votes)
 - Crew can vote each listing up or down, one vote per device, and can change or remove it later. A downvote asks for a reason: closed, info outdated, wrong location, not worth it, not crew-friendly, or other.
 - Only votes from the last 12 months count, so a listing has to keep getting upvotes to stay vetted.
@@ -35,6 +47,8 @@ Env vars: `ADMIN_KEY` (admin console password), `MODERATE=1` (new submissions wa
 | spots | icao, category (eat/do/stay/fbo), costLevel 0–4, minutesNeeded, milesFromField, crewTip, tags, status (live/pending/hidden) |
 | reviews | 1–5 rating, comment, author, crew role |
 | votes | targetType (spot/review), targetId, voter, value ±1, reason. One per voter per target |
+| users | handle, displayName, crewRole, homeBase, anonymous, passwordHash (scrypt), bonusPoints |
+| sessions | token, userId |
 | ads | slot (top/inline/footer), optional targetIcao, active, impressions, clicks |
 
 Time filter: activity minutes plus a round trip at about 2 minutes per mile.

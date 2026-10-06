@@ -16,6 +16,16 @@ export const VOTER_ID: string = (() => {
   }
 })();
 
+// Session token for signed-in crew (kept in memory; persisted when the browser allows it).
+const TOKEN_KEY = "wheelsdown-token";
+let AUTH_TOKEN = (() => { try { return window.localStorage.getItem(TOKEN_KEY) || ""; } catch { return ""; } })();
+export const getAuthToken = () => AUTH_TOKEN;
+export function setAuthToken(t: string) {
+  AUTH_TOKEN = t;
+  try { t ? window.localStorage.setItem(TOKEN_KEY, t) : window.localStorage.removeItem(TOKEN_KEY); } catch {}
+}
+const authHeaders = (): Record<string, string> => (AUTH_TOKEN ? { authorization: `Bearer ${AUTH_TOKEN}` } : {});
+
 export const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
 
 async function throwIfResNotOk(res: Response) {
@@ -32,13 +42,13 @@ export async function apiRequest(
   extraHeaders: Record<string, string> = {},
 ): Promise<Response> {
   if (IS_STATIC) {
-    const res = await (await mock()).mockFetch(method, url, data, { "x-voter-id": VOTER_ID, ...extraHeaders });
+    const res = await (await mock()).mockFetch(method, url, data, { "x-voter-id": VOTER_ID, ...authHeaders(), ...extraHeaders });
     await throwIfResNotOk(res);
     return res;
   }
   const res = await fetch(`${API_BASE}${url}`, {
     method,
-    headers: { ...(data ? { "Content-Type": "application/json" } : {}), "x-voter-id": VOTER_ID, ...extraHeaders },
+    headers: { ...(data ? { "Content-Type": "application/json" } : {}), "x-voter-id": VOTER_ID, ...authHeaders(), ...extraHeaders },
     body: data ? JSON.stringify(data) : undefined,
   });
 
@@ -53,7 +63,7 @@ export const getQueryFn: <T>(options: {
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
     const path = queryKey.join("/");
-    const res = IS_STATIC ? await (await mock()).mockFetch("GET", path, undefined, { "x-voter-id": VOTER_ID }) : await fetch(`${API_BASE}${path}`, { headers: { "x-voter-id": VOTER_ID } });
+    const res = IS_STATIC ? await (await mock()).mockFetch("GET", path, undefined, { "x-voter-id": VOTER_ID, ...authHeaders() }) : await fetch(`${API_BASE}${path}`, { headers: { "x-voter-id": VOTER_ID, ...authHeaders() } });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
       return null;

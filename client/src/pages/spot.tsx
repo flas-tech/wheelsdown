@@ -7,12 +7,14 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { CAT_META, COST_LABELS, fmtMinutes, totalMinutes, parseTags, Stars, AdBanner, Chip, VetBadge, VoteButtons, timeAgo } from "@/lib/ui";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth, useCrewIndex, TierChip } from "@/lib/auth";
+import { POINTS, publicName } from "@shared/tiers";
 
-const ROLES = ["Captain", "First Officer", "Flight Attendant", "Mechanic", "Dispatcher", "Other crew"];
 
 export default function SpotPage() {
   const [, params] = useRoute("/spot/:id");
   const id = params?.id;
+  const crew = useCrewIndex();
   const { data, isLoading, isError } = useQuery<{ spot: SpotWithStats; reviews: ReviewWithVotes[] }>({ queryKey: ["/api/spots", id] });
 
   if (isLoading) return <div className="space-y-4"><Skeleton className="h-8 w-40" /><Skeleton className="h-40 rounded-2xl" /><Skeleton className="h-24 rounded-2xl" /></div>;
@@ -70,7 +72,8 @@ export default function SpotPage() {
         {tags.length > 0 && (
           <div className="flex flex-wrap gap-1.5">{tags.map((t) => <span key={t} className="rounded-md bg-muted px-2 py-0.5 text-xs">{t}</span>)}</div>
         )}
-        <p className="text-xs text-muted-foreground">Added by {spot.submittedBy || "crew"}</p>
+        <p className="text-xs text-muted-foreground flex items-center gap-1.5 flex-wrap">Added by {spot.submittedBy || "crew"}
+          {spot.userId && crew.get(spot.userId) && <TierChip tierId={crew.get(spot.userId)!.tierId} />}</p>
       </section>
 
       <AdBanner slot="inline" icaos={[spot.icao]} />
@@ -98,7 +101,7 @@ export default function SpotPage() {
               <div className="flex items-center gap-2 text-sm">
                 <span className="grid h-7 w-7 place-items-center rounded-full bg-muted"><User className="h-3.5 w-3.5" /></span>
                 <span className="font-medium">{r.author}</span>
-                <span className="text-xs text-muted-foreground">{r.crewRole}</span>
+                {r.userId && crew.get(r.userId) ? <TierChip tierId={crew.get(r.userId)!.tierId} /> : <span className="text-xs text-muted-foreground">{r.crewRole}</span>}
               </div>
               <Stars value={r.rating} size={12} />
             </div>
@@ -128,14 +131,14 @@ function ReviewForm({ spotId }: { spotId: number }) {
   const [open, setOpen] = useState(false);
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
-  const [author, setAuthor] = useState("");
-  const [role, setRole] = useState("Captain");
+  const { me, requireAuth } = useAuth();
   const m = useMutation({
-    mutationFn: async () => (await apiRequest("POST", `/api/spots/${spotId}/reviews`, { rating, comment, author: author || "Anonymous crew", crewRole: role })).json(),
+    mutationFn: async () => (await apiRequest("POST", `/api/spots/${spotId}/reviews`, { rating, comment })).json(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/spots", String(spotId)] });
       queryClient.invalidateQueries({ queryKey: ["/api/search"] });
-      toast({ title: "Thanks — review posted" });
+      queryClient.invalidateQueries({ queryKey: ["/api/me"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/crew"] });
       setOpen(false); setRating(0); setComment("");
     },
     onError: (e: Error) => toast({ title: "Couldn't post review", description: e.message, variant: "destructive" }),
@@ -143,7 +146,7 @@ function ReviewForm({ spotId }: { spotId: number }) {
 
   if (!open)
     return (
-      <button onClick={() => setOpen(true)} data-testid="button-open-review" className="w-full rounded-2xl border border-dashed border-primary/50 px-4 py-3 text-left hover-elevate">
+      <button onClick={() => requireAuth(() => setOpen(true), `Sign in to rate this spot and earn ${POINTS.review}+ points.`)} data-testid="button-open-review" className="w-full rounded-2xl border border-dashed border-primary/50 px-4 py-3 text-left hover-elevate">
         <p className="text-sm font-semibold">Been here? Rate it for the next crew</p>
         <div className="mt-1"><Stars value={0} size={18} /></div>
       </button>
@@ -167,10 +170,7 @@ function ReviewForm({ spotId }: { spotId: number }) {
         data-testid="input-review-comment"
         className="w-full rounded-xl border border-input bg-background p-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
       />
-      <input value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="Name or handle (optional)" data-testid="input-review-author" className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
-      <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
-        {ROLES.map((r) => <Chip key={r} active={role === r} onClick={() => setRole(r)} testId={`chip-role-${r}`} className="text-xs">{r}</Chip>)}
-      </div>
+      <p className="text-xs text-muted-foreground">Posting as <b className="text-foreground" data-testid="text-posting-as">{me ? publicName(me) : ""}</b> (<Link href="/me" className="underline">change</Link>) · +{POINTS.review} pts, +{POINTS.reviewDetail} more for 40+ characters</p>
       <div className="flex gap-2">
         <button type="submit" disabled={!rating || m.isPending} data-testid="button-submit-review" className="flex-1 h-10 rounded-full taxi-sign text-sm font-semibold disabled:opacity-50 hover-elevate">
           {m.isPending ? "Posting…" : rating ? "Post review" : "Pick a rating"}
@@ -188,6 +188,8 @@ function useVote(path: string, spotId: number) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/spots", String(spotId)] });
       queryClient.invalidateQueries({ queryKey: ["/api/search"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/me"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/crew"] });
     },
     onError: (e: Error) => toast({ title: "Vote didn't go through", description: e.message, variant: "destructive" }),
   });
@@ -203,11 +205,12 @@ function CrewVote({ spot }: { spot: SpotWithStats }) {
   const topReasons = Object.entries(v.reasons).sort((a, b) => b[1] - a[1]).slice(0, 3);
   const label = (id: string) => DOWN_REASONS.find((r) => r.id === id)?.label || id;
 
-  const onVote = (value: number) => {
+  const { requireAuth } = useAuth();
+  const onVote = (value: number) => requireAuth(() => {
     if (value === -1) { setAskReason(true); return; }
     setAskReason(false);
-    m.mutate({ value }, { onSuccess: () => value === 1 && toast({ title: "Upvoted — thanks for vetting this for the next crew" }) });
-  };
+    m.mutate({ value });
+  }, `Sign in to vote and earn ${POINTS.vote} point per vote.`);
 
   return (
     <section className="rounded-2xl border border-card-border bg-card p-4 space-y-3" data-testid="panel-crew-vote">
@@ -232,7 +235,7 @@ function CrewVote({ spot }: { spot: SpotWithStats }) {
           <div className="flex flex-wrap gap-1.5">
             {DOWN_REASONS.map((r) => (
               <Chip key={r.id} className="text-xs" testId={`chip-reason-${r.id}`}
-                onClick={() => { setAskReason(false); m.mutate({ value: -1, reason: r.id }, { onSuccess: () => toast({ title: "Thanks — we'll flag it for a check" }) }); }}>
+                onClick={() => { setAskReason(false); m.mutate({ value: -1, reason: r.id }, {}); }}>
                 {r.label}
               </Chip>
             ))}
@@ -246,17 +249,18 @@ function CrewVote({ spot }: { spot: SpotWithStats }) {
           <p>Recent crew reports: {topReasons.map(([k, n]) => `${label(k)} (${n})`).join(", ")}. Confirm before you go.</p>
         </div>
       )}
-      <p className="text-[11px] text-muted-foreground">One vote per device. Votes older than 12 months stop counting, so listings stay current.</p>
+      <p className="text-[11px] text-muted-foreground">One vote per crew account. Votes older than 12 months stop counting, so listings stay current.</p>
     </section>
   );
 }
 
 function ReviewVote({ review, spotId }: { review: ReviewWithVotes; spotId: number }) {
   const m = useVote(`/api/reviews/${review.id}/vote`, spotId);
+  const { requireAuth } = useAuth();
   return (
     <div className="flex items-center gap-1.5">
       <span className="text-[11px] text-muted-foreground">Helpful?</span>
-      <VoteButtons size="sm" up={review.up} down={review.down} mine={review.myVote} onVote={(value) => m.mutate({ value })} testPrefix={`button-vote-review-${review.id}`} />
+      <VoteButtons size="sm" up={review.up} down={review.down} mine={review.myVote} onVote={(value) => requireAuth(() => m.mutate({ value }), "Sign in to vote on reviews.")} testPrefix={`button-vote-review-${review.id}`} />
     </div>
   );
 }

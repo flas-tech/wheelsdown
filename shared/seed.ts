@@ -126,15 +126,15 @@ export const seedSpots: SeedSpot[] = [
 ];
 
 export const seedReviews: { spot: string; rating: number; comment: string; author: string; crewRole: string }[] = [
-  { spot: "Versailles Restaurant", rating: 5, comment: "Ventanita had us in and out in 15 minutes. Croquetas were perfect.", author: "J. Ramirez", crewRole: "Captain" },
+  { spot: "Versailles Restaurant", rating: 5, comment: "Ventanita had us in and out in 15 minutes. Croquetas were perfect.", author: "J. Ramirez", crewRole: "Pilot" },
   { spot: "Versailles Restaurant", rating: 4, comment: "Busy on Sundays, but worth it for the full sit-down.", author: "Kelly M.", crewRole: "Flight Attendant" },
-  { spot: "Wynwood Walls", rating: 5, comment: "Perfect for a 24 hr layover. Grabbed a beer at a brewery after.", author: "Tom B.", crewRole: "First Officer" },
-  { spot: "Signature Aviation TEB (West)", rating: 4, comment: "Quiet room was a lifesaver on a 10-hour sit.", author: "D. Cole", crewRole: "Captain" },
-  { spot: "Maho Beach", rating: 5, comment: "Bucket-list for any pilot. Stand well clear when the big jets spool up.", author: "Ana P.", crewRole: "First Officer" },
+  { spot: "Wynwood Walls", rating: 5, comment: "Perfect for a 24 hr layover. Grabbed a beer at a brewery after.", author: "Tom B.", crewRole: "Pilot" },
+  { spot: "Signature Aviation TEB (West)", rating: 4, comment: "Quiet room was a lifesaver on a 10-hour sit.", author: "D. Cole", crewRole: "Pilot" },
+  { spot: "Maho Beach", rating: 5, comment: "Bucket-list for any pilot. Stand well clear when the big jets spool up.", author: "Ana P.", crewRole: "Pilot" },
   { spot: "Frontiers of Flight Museum", rating: 5, comment: "Walkable from the FBO side. Easy 2 hours.", author: "Mike R.", crewRole: "Mechanic" },
   { spot: "TWA Hotel", rating: 4, comment: "Day room for a long sit — pool is incredible, rooms are small.", author: "Sara L.", crewRole: "Flight Attendant" },
-  { spot: "Pecan Lodge", rating: 5, comment: "Brisket was elite. Line was 30 min at 11:30.", author: "Chris W.", crewRole: "Captain" },
-  { spot: "Atlantic Aviation ASE", rating: 3, comment: "Great staff, but ramp was packed during Christmas week. Plan ahead.", author: "R. Hughes", crewRole: "Captain" },
+  { spot: "Pecan Lodge", rating: 5, comment: "Brisket was elite. Line was 30 min at 11:30.", author: "Chris W.", crewRole: "Pilot" },
+  { spot: "Atlantic Aviation ASE", rating: 3, comment: "Great staff, but ramp was packed during Christmas week. Plan ahead.", author: "R. Hughes", crewRole: "Pilot" },
 ];
 
 export const seedAds = [

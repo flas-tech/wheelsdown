@@ -4,12 +4,16 @@ import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { Search, PlusCircle, Shield } from "lucide-react";
+import { Search, PlusCircle, Shield, Trophy, BookUser } from "lucide-react";
 import NotFound from "@/pages/not-found";
 import Home, { SearchProvider, useSearch } from "@/pages/home";
 import SpotPage from "@/pages/spot";
 import AddPage from "@/pages/add";
 import AdminPage from "@/pages/admin";
+import ProfilePage from "@/pages/profile";
+import CrewPage from "@/pages/crew";
+import { AuthProvider, useAuth, Insignia } from "@/lib/auth";
+import { tierFor } from "@shared/tiers";
 import { Logo, ThemeProvider, ThemeToggle } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { IS_STATIC } from "@/lib/queryClient";
@@ -17,10 +21,13 @@ import { IS_STATIC } from "@/lib/queryClient";
 function Shell() {
   const [loc] = useLocation();
   const [, setSearch] = useSearch();
+  const { me, openAuth } = useAuth();
   const isAdmin = loc.startsWith("/admin");
   const nav = [
     { href: "/", label: "Search", icon: Search, active: loc === "/" || loc.startsWith("/spot") },
     { href: "/add", label: "Add spot", icon: PlusCircle, active: loc.startsWith("/add") },
+    { href: "/crew", label: "Crew", icon: Trophy, active: loc.startsWith("/crew") },
+    { href: "/me", label: "Logbook", icon: BookUser, active: loc.startsWith("/me") },
   ];
   return (
     <div className="min-h-[100dvh] flex flex-col">
@@ -33,12 +40,21 @@ function Shell() {
           </Link>
           <nav className="flex items-center gap-1">
             {nav.map((n) => (
-              <Link key={n.href} href={n.href} data-testid={`link-nav-${n.label}`}
-                className={cn("hidden sm:inline-flex items-center gap-1.5 rounded-full px-3 h-9 text-sm font-medium hover-elevate", n.active ? "text-foreground" : "text-muted-foreground")}>
-                <n.icon className="h-4 w-4" />{n.label}
+              <Link key={n.href} href={n.href} aria-label={n.label} data-testid={`link-nav-${n.label}`}
+                className={cn("whitespace-nowrap hidden sm:inline-flex items-center gap-1.5 rounded-full px-2.5 lg:px-3 h-9 text-sm font-medium hover-elevate", n.active ? "text-foreground" : "text-muted-foreground")}>
+                <n.icon className="h-4 w-4" /><span className="hidden lg:inline">{n.label}</span>
               </Link>
             ))}
             <ThemeToggle />
+            {me ? (
+              <Link href="/me" data-testid="link-me" className="ml-1 inline-flex items-center gap-1.5 rounded-full border border-border bg-card pl-1.5 pr-2.5 h-9 hover-elevate">
+                <Insignia tierId={me.tierId} className="h-4" />
+                <span className="font-code text-xs font-bold tabular">{me.points.toLocaleString()}</span>
+                <span className="hidden sm:inline text-xs text-muted-foreground">{tierFor(me.points).tier.name}</span>
+              </Link>
+            ) : (
+              <button onClick={() => openAuth()} data-testid="button-signin" className="ml-1 h-9 whitespace-nowrap rounded-full taxi-sign px-3.5 text-sm font-semibold hover-elevate">Sign in</button>
+            )}
           </nav>
         </div>
       </header>
@@ -50,6 +66,8 @@ function Shell() {
           <Route path="/add" component={AddPage} />
           <Route path="/add/:icao" component={AddPage} />
           <Route path="/admin" component={AdminPage} />
+          <Route path="/me" component={ProfilePage} />
+          <Route path="/crew" component={CrewPage} />
           <Route component={NotFound} />
         </Switch>
         {!isAdmin && (
@@ -63,7 +81,7 @@ function Shell() {
       {/* iOS-style tab bar */}
       {!isAdmin && (
         <nav className="sm:hidden fixed bottom-0 inset-x-0 z-30 border-t border-border bg-background/90 backdrop-blur pb-safe">
-          <div className="mx-auto max-w-xl grid grid-cols-2">
+          <div className="mx-auto max-w-xl grid grid-cols-4">
             {nav.map((n) => (
               <Link key={n.href} href={n.href} data-testid={`tab-${n.label}`} className={cn("flex flex-col items-center gap-0.5 pt-2 pb-1 text-[11px] font-medium", n.active ? "text-primary" : "text-muted-foreground")}>
                 <n.icon className="h-5 w-5" />{n.label}
@@ -83,9 +101,11 @@ function App() {
         <TooltipProvider>
           <SearchProvider>
             <Toaster />
-            <Router hook={useHashLocation}>
-              <Shell />
-            </Router>
+            <AuthProvider>
+              <Router hook={useHashLocation}>
+                <Shell />
+              </Router>
+            </AuthProvider>
           </SearchProvider>
         </TooltipProvider>
       </ThemeProvider>

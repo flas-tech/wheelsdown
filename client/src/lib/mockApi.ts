@@ -3,29 +3,38 @@
 import { seedAirports, seedSpots, seedReviews, seedAds } from "@shared/seed";
 import type { Airport, Spot, Review, Ad, Vote } from "@shared/schema";
 import { computeVet, seedVotesFor, shouldAutoHold } from "@shared/vetting";
+import { computePoints, recentActivity, publicName, tierFor, SEED_USERS, SEED_PASSWORD } from "@shared/tiers";
+import { CREW_ROLES } from "@shared/schema";
+import { buildHighlights } from "@shared/highlights";
 
 export const DEMO_ADMIN_KEY = "wheelsdown-admin";
-const STORE_KEY = "wheelsdown-demo-v2";
+const STORE_KEY = "wheelsdown-demo-v3";
 
-type DB = { airports: Airport[]; spots: Spot[]; reviews: Review[]; ads: Ad[]; votes: Vote[]; seq: { spot: number; review: number; ad: number; vote: number } };
+type DemoUser = { id: number; handle: string; displayName: string; crewRole: string; homeBase: string; anonymous: boolean; pw: string; bonusPoints: number; createdAt: number };
+type DB = { airports: Airport[]; spots: Spot[]; reviews: Review[]; ads: Ad[]; votes: Vote[]; users: DemoUser[]; sessions: Record<string, number>;
+  seq: { spot: number; review: number; ad: number; vote: number; user: number } };
+// Demo only: not a secure hash. The server build uses scrypt.
+const demoHash = (pw: string) => { let h = 5381; for (let i = 0; i < pw.length; i++) h = ((h << 5) + h + pw.charCodeAt(i)) | 0; return "demo:" + (h >>> 0).toString(36); };
 
 function seed(): DB {
   const now = Date.now();
+  const users: DemoUser[] = SEED_USERS.map((u, i) => ({ id: i + 1, handle: u.handle, displayName: u.displayName, crewRole: u.crewRole, homeBase: u.homeBase, anonymous: false, pw: demoHash(SEED_PASSWORD), bonusPoints: u.bonus, createdAt: now - (400 - i * 50) * 86400_000 }));
   const airports = seedAirports.map(([icao, iata, name, city, region, country]) => ({ icao, iata, name, city, region, country }));
   const spots: Spot[] = seedSpots.map((s, i) => ({
     id: i + 1, icao: s.icao, category: s.category, name: s.name, description: s.description, address: s.address || "", website: "",
     costLevel: s.costLevel, minutesNeeded: s.minutesNeeded, milesFromField: s.milesFromField, crewTip: s.crewTip || "",
-    tags: JSON.stringify(s.tags), submittedBy: "Wheelsdown team", status: "live", createdAt: now - i * 3600_000,
+    tags: JSON.stringify(s.tags), submittedBy: users[i % users.length].displayName, userId: users[i % users.length].id, status: "live", createdAt: now - i * 3600_000,
   }));
   const reviews: Review[] = [];
   seedReviews.forEach((r, i) => {
     const sp = spots.find((s) => s.name === r.spot);
-    if (sp) reviews.push({ id: reviews.length + 1, spotId: sp.id, rating: r.rating, comment: r.comment, author: r.author, crewRole: r.crewRole, createdAt: now - i * 7200_000 });
+    const u = users.find((x) => x.displayName === r.author);
+    if (sp) reviews.push({ id: reviews.length + 1, spotId: sp.id, rating: r.rating, comment: r.comment, author: r.author, crewRole: r.crewRole, userId: u?.id ?? null, createdAt: now - i * 7200_000 });
   });
   const ads: Ad[] = seedAds.map((a, i) => ({ id: i + 1, ...a, impressions: 0, clicks: 0 }));
   const votes: Vote[] = [];
   spots.forEach((sp, i) => seedVotesFor(i, now).forEach((v) => votes.push({ id: votes.length + 1, targetType: "spot", targetId: sp.id, ...v })));
-  return { airports, spots, reviews, ads, votes, seq: { spot: spots.length, review: reviews.length, ad: ads.length, vote: votes.length } };
+  return { airports, spots, reviews, ads, votes, users, sessions: {}, seq: { spot: spots.length, review: reviews.length, ad: ads.length, vote: votes.length, user: users.length } };
 }
 
 function load(): DB {
@@ -108,14 +117,80 @@ export function exportCsv() {
   return lines.join("\n");
 }
 
+function meOf(u: DemoUser) {
+  const b = computePoints(db, u.id, u.bonusPoints);
+  return { id: u.id, handle: u.handle, displayName: u.displayName, crewRole: u.crewRole, homeBase: u.homeBase, anonymous: !!u.anonymous,
+    participation: b.participation, points: b.total, tierId: tierFor(b.total).tier.id, createdAt: u.createdAt, breakdown: b };
+}
+function publicUsers(admin = false) {
+  return db.users.map((u) => {
+    const { breakdown, ...rest } = meOf(u);
+    return admin || !u.anonymous ? rest : { ...rest, handle: "", displayName: publicName(u) };
+  }).sort((a, b) => b.points - a.points);
+}
+function relabel(u: DemoUser) {
+  const label = publicName(u);
+  db.spots.forEach((s) => { if (s.userId === u.id) s.submittedBy = label; });
+  db.reviews.forEach((r) => { if (r.userId === u.id) { r.author = label; r.crewRole = u.crewRole; } });
+}
+function newSession(userId: number) {
+  const t = "t-" + Math.random().toString(36).slice(2) + Date.now().toString(36);
+  db.sessions[t] = userId; return t;
+}
+
 class HttpError extends Error { constructor(public status: number, msg: string) { super(msg); } }
 
 function route(method: string, path: string, query: URLSearchParams, body: any, headers: Record<string, string>): any {
   const admin = () => { if ((headers["x-admin-key"] || query.get("key")) !== DEMO_ADMIN_KEY) throw new HttpError(401, "Admin key required"); };
   let m: RegExpMatchArray | null;
-  const voter = headers["x-voter-id"] || "";
+  const token = String(headers["authorization"] || "").replace(/^Bearer\s+/i, "");
+  const user = token && db.sessions[token] ? db.users.find((u) => u.id === db.sessions[token]) : undefined;
+  const voter = user ? `u:${user.id}` : "";
+  const needUser = () => { if (!user) throw new HttpError(401, "Sign in to contribute"); return user; };
+
+  // ---- accounts ----
+  if (method === "POST" && path === "/api/auth/signup") {
+    const handle = String(body.handle || "").trim().toLowerCase();
+    if (!/^[a-z0-9_.-]{3,24}$/.test(handle)) throw new HttpError(400, "Handle: 3–24 letters, numbers, . _ -");
+    if (String(body.password || "").length < 8) throw new HttpError(400, "Password must be at least 8 characters");
+    if (String(body.displayName || "").trim().length < 2) throw new HttpError(400, "Add a display name");
+    if (db.users.some((u) => u.handle === handle)) throw new HttpError(409, "That handle is taken");
+    const role = (CREW_ROLES as readonly string[]).includes(body.crewRole) ? body.crewRole : "Pilot";
+    const u: DemoUser = { id: ++db.seq.user, handle, displayName: String(body.displayName).trim().slice(0, 40), crewRole: role, anonymous: !!body.anonymous,
+      homeBase: String(body.homeBase || "").toUpperCase().slice(0, 4), pw: demoHash(String(body.password)), bonusPoints: 0, createdAt: Date.now() };
+    db.users.push(u); const t = newSession(u.id); save();
+    return { token: t, me: meOf(u) };
+  }
+  if (method === "POST" && path === "/api/auth/login") {
+    const u = db.users.find((x) => x.handle === String(body.handle || "").trim().toLowerCase());
+    if (!u || u.pw !== demoHash(String(body.password || ""))) throw new HttpError(401, "Handle or password is wrong");
+    const t = newSession(u.id); save(); return { token: t, me: meOf(u) };
+  }
+  if (method === "POST" && path === "/api/auth/logout") { delete db.sessions[token]; save(); return { ok: true }; }
+  if (method === "GET" && path === "/api/me") return user ? meOf(user) : null;
+  if (method === "PATCH" && path === "/api/me") {
+    const u = needUser();
+    if (body.displayName !== undefined) { const n = String(body.displayName).trim(); if (n.length < 2) throw new HttpError(400, "Add a display name"); u.displayName = n.slice(0, 40); }
+    if (body.crewRole !== undefined) { if (!(CREW_ROLES as readonly string[]).includes(body.crewRole)) throw new HttpError(400, "Pick a position"); u.crewRole = body.crewRole; }
+    if (body.homeBase !== undefined) u.homeBase = String(body.homeBase).toUpperCase().slice(0, 4);
+    if (body.anonymous !== undefined) u.anonymous = !!body.anonymous;
+    relabel(u); save();
+    return meOf(u);
+  }
+  if (method === "GET" && path === "/api/me/contributions") {
+    const u = needUser();
+    return {
+      activity: recentActivity(db, u.id),
+      spots: withStats(db.spots.filter((s) => s.userId === u.id)),
+      reviews: db.reviews.filter((r) => r.userId === u.id).sort((a, b) => b.createdAt - a.createdAt).map((r) => ({ ...r, spotName: db.spots.find((s) => s.id === r.spotId)?.name || "" })),
+    };
+  }
+  if (method === "GET" && path === "/api/crew") return publicUsers();
 
   if (method === "GET" && path === "/api/airports") return [...db.airports].sort((a, b) => a.icao.localeCompare(b.icao));
+  if (method === "GET" && path === "/api/highlights") {
+    return buildHighlights(withStats(db.spots.filter((s) => s.status === "live"), voter), { category: query.get("category") });
+  }
   if (method === "GET" && path === "/api/search") {
     const codes = parseRoute(query.get("route") || "");
     const legs = codes.map((code) => ({ code, airport: resolve(code) || null }));
@@ -134,27 +209,29 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
     return { spot: withStats([s], voter)[0], reviews };
   }
   if (method === "POST" && (m = path.match(/^\/api\/(spots|reviews)\/(\d+)\/vote$/))) {
-    if (!voter) throw new HttpError(400, "Missing voter id");
+    needUser();
     const value = Number(body.value);
     if (![1, -1, 0].includes(value)) throw new HttpError(400, "value must be 1, -1 or 0");
     castVote(m[1] === "spots" ? "spot" : "review", Number(m[2]), voter, value, String(body.reason || "").slice(0, 40));
     save(); return { ok: true };
   }
   if (method === "POST" && path === "/api/spots") {
+    const u = needUser();
     const code = String(body.icao || "").trim().toUpperCase();
     if (code.length < 3) throw new HttpError(400, "Airport code required");
     if (!resolve(code) && !body.airportCity) throw new HttpError(400, `We don't know ${code} yet — add the city so we can create it.`);
     const icao = ensureAirport(code, body.airportCity);
     const tags = Array.isArray(body.tags) ? body.tags : String(body.tags || "").split(",").map((t: string) => t.trim()).filter(Boolean);
     const data = cleanSpot({ ...body, icao, tags: JSON.stringify(tags.slice(0, 8)) });
-    const spot: Spot = { id: ++db.seq.spot, description: "", address: "", website: "", costLevel: 1, minutesNeeded: 60, milesFromField: 0, crewTip: "", submittedBy: "Anonymous crew", ...data, status: "live", createdAt: Date.now() };
+    const spot: Spot = { id: ++db.seq.spot, description: "", address: "", website: "", costLevel: 1, minutesNeeded: 60, milesFromField: 0, crewTip: "", ...data, submittedBy: publicName(u), userId: u.id, status: "live", createdAt: Date.now() };
     db.spots.push(spot); save(); return spot;
   }
   if (method === "POST" && (m = path.match(/^\/api\/spots\/(\d+)\/reviews$/))) {
+    const u = needUser();
     const spotId = Number(m[1]); const rating = Number(body.rating);
     if (!db.spots.find((s) => s.id === spotId)) throw new HttpError(404, "Not found");
     if (!(rating >= 1 && rating <= 5)) throw new HttpError(400, "Rating 1–5 required");
-    const r: Review = { id: ++db.seq.review, spotId, rating, comment: String(body.comment || "").slice(0, 1500), author: body.author || "Anonymous crew", crewRole: body.crewRole || "Crew", createdAt: Date.now() };
+    const r: Review = { id: ++db.seq.review, spotId, rating, comment: String(body.comment || "").slice(0, 1500), author: publicName(u), crewRole: u.crewRole, userId: u.id, createdAt: Date.now() };
     db.reviews.push(r); save(); return r;
   }
   if (method === "GET" && path === "/api/ads") {
@@ -173,7 +250,7 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
   if (method === "GET" && path === "/api/admin/stats") {
     return {
       spots: db.spots.filter((s) => s.status === "live").length, pending: db.spots.filter((s) => s.status === "pending").length,
-      reviews: db.reviews.length, votes: db.votes.filter((v) => v.targetType === "spot").length, airports: new Set(db.spots.map((s) => s.icao)).size,
+      reviews: db.reviews.length, users: db.users.length, votes: db.votes.filter((v) => v.targetType === "spot").length, airports: new Set(db.spots.map((s) => s.icao)).size,
       impressions: db.ads.reduce((a, x) => a + x.impressions, 0), clicks: db.ads.reduce((a, x) => a + x.clicks, 0),
     };
   }
@@ -224,10 +301,16 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
         });
         const ex = o.id ? db.spots.find((s) => s.id === Number(o.id)) : undefined;
         if (ex) { Object.assign(ex, data); updated++; }
-        else { db.spots.push({ id: ++db.seq.spot, ...data, createdAt: Date.now() }); created++; }
+        else { db.spots.push({ id: ++db.seq.spot, userId: null, ...data, createdAt: Date.now() }); created++; }
       } catch (e: any) { errors.push(`Row ${idx + 2}: ${e.message}`); }
     });
     save(); return { created, updated, errors: errors.slice(0, 50) };
+  }
+  if (method === "GET" && path === "/api/admin/users") return publicUsers(true);
+  if (method === "POST" && (m = path.match(/^\/api\/admin\/users\/(\d+)\/bonus$/))) {
+    const u = db.users.find((x) => x.id === Number(m![1])); const delta = Math.trunc(Number(body.delta));
+    if (!u || !Number.isFinite(delta)) throw new HttpError(400, "Bad request");
+    u.bonusPoints = Math.max(0, u.bonusPoints + delta); save(); return { ok: true };
   }
   if (method === "GET" && path === "/api/admin/ads") return db.ads;
   if (method === "POST" && path === "/api/admin/ads") {

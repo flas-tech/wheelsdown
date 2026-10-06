@@ -8,6 +8,8 @@ import { CAT_META, COST_LABELS, Chip } from "@/lib/ui";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useSearch } from "./home";
+import { useAuth } from "@/lib/auth";
+import { POINTS } from "@shared/tiers";
 
 const TIME_PRESETS: Record<string, number> = { quick: 30, short: 120, half: 300, day: 600, multi: 1440 };
 const inputCls = "w-full h-11 rounded-xl border border-input bg-card px-3 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-ring";
@@ -33,7 +35,7 @@ export default function AddPage() {
   const [address, setAddress] = useState("");
   const [website, setWebsite] = useState("");
   const [tags, setTags] = useState("");
-  const [submittedBy, setBy] = useState("");
+  const { me, requireAuth } = useAuth();
 
   const resolved = useMemo(() => {
     const c = code.trim().toUpperCase();
@@ -58,12 +60,13 @@ export default function AddPage() {
           address,
           website,
           tags,
-          submittedBy: submittedBy || "Anonymous crew",
         })
       ).json(),
     onSuccess: (spot: { id: number; status: string }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/search"] });
       queryClient.invalidateQueries({ queryKey: ["/api/airports"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/me"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/crew"] });
       toast({ title: spot.status === "pending" ? "Submitted for review" : "Spot added — thanks for helping the next crew" });
       navigate(spot.status === "pending" ? "/" : `/spot/${spot.id}`);
     },
@@ -73,10 +76,13 @@ export default function AddPage() {
   const canSubmit = name.trim().length >= 2 && code.trim().length >= 3 && (!unknown || city.trim());
 
   return (
-    <form onSubmit={(e) => { e.preventDefault(); if (canSubmit) m.mutate(); }} className="space-y-6" data-testid="form-add">
+    <form onSubmit={(e) => { e.preventDefault(); if (canSubmit) requireAuth(() => m.mutate(), `Sign in to add this spot and earn ${POINTS.listing} points.`); }} className="space-y-6" data-testid="form-add">
       <header>
         <h1 className="text-xl font-semibold">Add a spot</h1>
         <p className="text-sm text-muted-foreground mt-1">Three fields and you're done. Everything else is optional.</p>
+        <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium" data-testid="text-add-points">
+          +{POINTS.listing} pts · +{POINTS.listingVetted} more when crews vet it{me ? "" : " · sign-in required"}
+        </p>
       </header>
 
       <Field n={1} label="What kind of spot?">
@@ -133,15 +139,9 @@ export default function AddPage() {
             </div>
           </div>
         )}
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <p className="text-xs font-medium text-muted-foreground mb-1.5">Miles from field</p>
-            <input inputMode="decimal" value={miles} onChange={(e) => setMiles(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="0 = on field" data-testid="input-add-miles" className={inputCls} />
-          </div>
-          <div>
-            <p className="text-xs font-medium text-muted-foreground mb-1.5">Your name (optional)</p>
-            <input value={submittedBy} onChange={(e) => setBy(e.target.value)} placeholder="FO Jane D." data-testid="input-add-by" className={inputCls} />
-          </div>
+        <div>
+          <p className="text-xs font-medium text-muted-foreground mb-1.5">Miles from field</p>
+          <input inputMode="decimal" value={miles} onChange={(e) => setMiles(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="0 = on field" data-testid="input-add-miles" className={inputCls} />
         </div>
         <div>
           <p className="text-xs font-medium text-muted-foreground mb-1.5">Crew tip</p>
@@ -163,7 +163,7 @@ export default function AddPage() {
       <div className="sticky bottom-20 sm:bottom-4 z-10">
         <button type="submit" disabled={!canSubmit || m.isPending} data-testid="button-submit-spot"
           className="w-full h-12 rounded-full taxi-sign text-base font-semibold shadow-lg disabled:opacity-50 hover-elevate">
-          {m.isPending ? "Adding…" : "Add spot"}
+          {m.isPending ? "Adding…" : me ? `Add spot · +${POINTS.listing} pts` : "Sign in & add spot"}
         </button>
       </div>
     </form>
