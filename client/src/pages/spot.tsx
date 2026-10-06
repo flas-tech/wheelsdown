@@ -7,6 +7,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { CAT_META, COST_LABELS, fmtMinutes, totalMinutes, parseTags, Stars, AdBanner, Chip, VetBadge, VoteButtons, timeAgo } from "@/lib/ui";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 import { useAuth, useCrewIndex, TierChip } from "@/lib/auth";
 import { POINTS, publicName } from "@shared/tiers";
 
@@ -46,6 +47,8 @@ export default function SpotPage() {
           </span>
         </div>
       </header>
+
+      <ReviewForm spotId={spot.id} />
 
       <CrewVote spot={spot} />
 
@@ -93,8 +96,7 @@ export default function SpotPage() {
             ))}
           </div>
         </div>
-        <ReviewForm spotId={spot.id} />
-        {reviews.length === 0 && <p className="text-sm text-muted-foreground">No reviews yet — be the first.</p>}
+        {reviews.length === 0 && <p className="text-sm text-muted-foreground">No reviews yet. Be the first: tap the stars at the top of the page.</p>}
         {[...reviews].sort((a, b) => (b.up - b.down) - (a.up - a.down) || b.createdAt - a.createdAt).map((r) => (
           <article key={r.id} className="rounded-2xl border border-card-border bg-card p-4" data-testid={`review-${r.id}`}>
             <div className="flex items-center justify-between">
@@ -144,39 +146,44 @@ function ReviewForm({ spotId }: { spotId: number }) {
     onError: (e: Error) => toast({ title: "Couldn't post review", description: e.message, variant: "destructive" }),
   });
 
-  if (!open)
-    return (
-      <button onClick={() => requireAuth(() => setOpen(true), `Sign in to rate this spot and earn ${POINTS.review}+ points.`)} data-testid="button-open-review" className="w-full rounded-2xl border border-dashed border-primary/50 px-4 py-3 text-left hover-elevate">
-        <p className="text-sm font-semibold">Been here? Rate it for the next crew</p>
-        <div className="mt-1"><Stars value={0} size={18} /></div>
-      </button>
-    );
+  const LABELS = ["", "Skip it", "Meh", "Decent", "Good", "Great"];
+  const pick = (n: number) => requireAuth(() => { setRating(n); setOpen(true); }, `Sign in to rate this spot and earn ${POINTS.review}+ points.`);
+  const cancel = () => { setOpen(false); setRating(0); setComment(""); };
 
   return (
     <form
+      id="rate"
       onSubmit={(e) => { e.preventDefault(); if (rating) m.mutate(); }}
-      className="rounded-2xl border border-primary/50 bg-card p-4 space-y-3"
+      className={cn("rounded-2xl border bg-card p-4", open ? "border-primary/60" : "border-card-border")}
       data-testid="form-review"
     >
-      <div>
-        <p className="text-xs text-muted-foreground mb-1">Your rating</p>
-        <Stars value={rating} size={26} onChange={setRating} />
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold">{open ? "Your rating" : "Been here? Rate it"}</p>
+          <p className="text-xs text-muted-foreground" data-testid="text-rating-label">{rating ? LABELS[rating] : `Tap a star · +${POINTS.review} pts`}</p>
+        </div>
+        <Stars value={rating} size={30} onChange={pick} />
       </div>
-      <textarea
-        value={comment}
-        onChange={(e) => setComment(e.target.value)}
-        placeholder="How was it? Wait times, crew discounts, anything the next crew should know…"
-        rows={3}
-        data-testid="input-review-comment"
-        className="w-full rounded-xl border border-input bg-background p-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-      />
-      <p className="text-xs text-muted-foreground">Posting as <b className="text-foreground" data-testid="text-posting-as">{me ? publicName(me) : ""}</b> (<Link href="/me" className="underline">change</Link>) · +{POINTS.review} pts, +{POINTS.reviewDetail} more for 40+ characters</p>
-      <div className="flex gap-2">
-        <button type="submit" disabled={!rating || m.isPending} data-testid="button-submit-review" className="flex-1 h-10 rounded-full taxi-sign text-sm font-semibold disabled:opacity-50 hover-elevate">
-          {m.isPending ? "Posting…" : rating ? "Post review" : "Pick a rating"}
-        </button>
-        <button type="button" onClick={() => setOpen(false)} data-testid="button-cancel-review" className="h-10 px-4 rounded-full border border-border text-sm hover-elevate">Cancel</button>
-      </div>
+      {open && (
+        <div className="mt-3 space-y-3">
+          <textarea
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder="Add a comment (optional): wait times, crew discounts, anything the next crew should know"
+            rows={3}
+            autoFocus
+            data-testid="input-review-comment"
+            className="w-full rounded-xl border border-input bg-background p-3 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+          <p className="text-xs text-muted-foreground">Posting as <b className="text-foreground" data-testid="text-posting-as">{me ? publicName(me) : ""}</b> (<Link href="/me" className="underline">change</Link>) · +{POINTS.reviewDetail} more pts for a comment of 40+ characters</p>
+          <div className="flex gap-2">
+            <button type="submit" disabled={!rating || m.isPending} data-testid="button-submit-review" className="flex-1 h-10 rounded-full taxi-sign text-sm font-semibold disabled:opacity-50 hover-elevate">
+              {m.isPending ? "Posting…" : comment.trim() ? "Post rating & comment" : "Post rating"}
+            </button>
+            <button type="button" onClick={cancel} data-testid="button-cancel-review" className="h-10 px-4 rounded-full border border-border text-sm hover-elevate">Cancel</button>
+          </div>
+        </div>
+      )}
     </form>
   );
 }
