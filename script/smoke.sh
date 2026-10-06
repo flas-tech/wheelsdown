@@ -41,7 +41,7 @@ P=$(curl -s $BASE/api/me -H "$A" | jget "d['points']")
 [[ "$P" -ge 19 ]] && ok "points counted ($P)" || bad "points counted" "$P"
 check "activity log"      '"activity"'     "$(curl -s $BASE/api/me/contributions -H "$A")"
 check "leaderboard"       '"tierId"'       "$(curl -s $BASE/api/crew)"
-check "forgot password"   'on its way'     "$(curl -s -XPOST $BASE/api/auth/forgot -H "$J" -d "{\"email\":\"$H@example.com\"}")"
+check "forgot password"   'on its way'     "$(curl -s -XPOST $BASE/api/auth/forgot -H "$J" -d "{\"email\":\"nobody-$H@example.invalid\"}")"
 check "admin rejects bad key" 'Admin key'  "$(curl -s $BASE/api/admin/stats -H 'x-admin-key: wrong')"
 check "admin stats"       '"users"'        "$(curl -s $BASE/api/admin/stats -H "x-admin-key: $ADMIN_KEY")"
 check "admin export"      'icao,category'  "$(curl -s "$BASE/api/admin/export.csv" -H "x-admin-key: $ADMIN_KEY" | head -1)"
