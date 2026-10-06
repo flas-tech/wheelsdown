@@ -68,13 +68,15 @@ Steps marked **You** need your accounts, payment or legal decisions. Steps marke
 3. **You:** Create a Cloudflare account and register **getwheelsdown.com** before Nov 1. Turn on auto-renew.
 4. **You:** Create accounts at Render, Supabase and Resend. Signing in with GitHub works for all three. Add a payment card to Render.
 
-### Phase 2: Database (15 minutes)
+### Phase 2: Database (done Oct 6, 2026)
 
-5. **Me or you:** In Supabase, create the project:
-    - Name `wheelsdown`, region **East US (N. Virginia)**.
-    - Generate a strong database password and store it in a password manager.
-6. Open Connect, choose **Session pooler**, and copy the URI. It looks like `postgresql://postgres.<ref>:<password>@aws-0-us-east-1.pooler.supabase.com:5432/postgres`. This is `DATABASE_URL`.
-7. Leave the tables alone. The app creates them on first boot.
+5. **Done:** Supabase project `wheelsdown` (ref `lwhobdawreebbbnyrfew`) created in us-east-1 under flas-tech's Org (Pro plan).
+6. **Done:**
+    - The app connects as a dedicated role, `wheelsdown_app`, that owns a private `wheelsdown` schema.
+    - The tables aren't exposed through Supabase's public API, and the security advisor reports no issues.
+    - Connection: session pooler `aws-0-us-east-1.pooler.supabase.com:5432`, user `wheelsdown_app.lwhobdawreebbbnyrfew`.
+    - The password is kept outside the repository.
+7. **Done:** Tables created, and the starter content is loaded: 61 airports, 39 listings and the house ad, with no users or votes. The 27-step smoke test passed against it.
 
 ### Phase 3: App on Render (20 minutes)
 
