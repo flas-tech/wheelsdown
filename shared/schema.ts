@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
+import { pgTable, text, integer, serial, bigint, doublePrecision, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -14,7 +14,7 @@ export const TIME_BUCKETS = [
   { id: "multi", label: "Multi-day", sub: "24 hrs +", max: 99999 },
 ] as const;
 
-export const airports = sqliteTable("airports", {
+export const airports = pgTable("airports", {
   icao: text("icao").primaryKey(),
   iata: text("iata"),
   name: text("name").notNull(),
@@ -26,8 +26,8 @@ export const insertAirportSchema = createInsertSchema(airports);
 export type InsertAirport = z.infer<typeof insertAirportSchema>;
 export type Airport = typeof airports.$inferSelect;
 
-export const spots = sqliteTable("spots", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const spots = pgTable("spots", {
+  id: serial("id").primaryKey(),
   icao: text("icao").notNull(),
   category: text("category").notNull(), // eat | do | stay | fbo
   name: text("name").notNull(),
@@ -36,14 +36,14 @@ export const spots = sqliteTable("spots", {
   website: text("website").default(""),
   costLevel: integer("cost_level").notNull().default(1), // 0 free, 1 $, 2 $$, 3 $$$, 4 $$$$
   minutesNeeded: integer("minutes_needed").notNull().default(60),
-  milesFromField: real("miles_from_field").default(0),
+  milesFromField: doublePrecision("miles_from_field").default(0),
   crewTip: text("crew_tip").default(""),
   tags: text("tags").notNull().default("[]"), // JSON array
   submittedBy: text("submitted_by").default("Anonymous crew"),
   userId: integer("user_id"),
   status: text("status").notNull().default("live"), // live | pending | hidden
-  createdAt: integer("created_at").notNull().default(0),
-});
+  createdAt: bigint("created_at", { mode: "number" }).notNull().default(0),
+}, (t) => [index("spots_icao_idx").on(t.icao), index("spots_user_idx").on(t.userId)]);
 export const insertSpotSchema = createInsertSchema(spots, {
   icao: z.string().min(3).max(4),
   category: z.enum(CATEGORIES),
@@ -54,16 +54,16 @@ export const insertSpotSchema = createInsertSchema(spots, {
 export type InsertSpot = z.infer<typeof insertSpotSchema>;
 export type Spot = typeof spots.$inferSelect;
 
-export const reviews = sqliteTable("reviews", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const reviews = pgTable("reviews", {
+  id: serial("id").primaryKey(),
   spotId: integer("spot_id").notNull(),
   rating: integer("rating").notNull(),
   comment: text("comment").notNull().default(""),
   author: text("author").default("Anonymous crew"),
   crewRole: text("crew_role").default("Crew"),
   userId: integer("user_id"),
-  createdAt: integer("created_at").notNull().default(0),
-});
+  createdAt: bigint("created_at", { mode: "number" }).notNull().default(0),
+}, (t) => [index("reviews_spot_idx").on(t.spotId), index("reviews_user_idx").on(t.userId)]);
 export const insertReviewSchema = createInsertSchema(reviews, {
   rating: z.coerce.number().int().min(1).max(5),
   comment: z.string().max(1500),
@@ -71,8 +71,8 @@ export const insertReviewSchema = createInsertSchema(reviews, {
 export type InsertReview = z.infer<typeof insertReviewSchema>;
 export type Review = typeof reviews.$inferSelect;
 
-export const ads = sqliteTable("ads", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const ads = pgTable("ads", {
+  id: serial("id").primaryKey(),
   slot: text("slot").notNull().default("inline"), // top | inline | footer
   advertiser: text("advertiser").notNull(),
   headline: text("headline").notNull(),
@@ -91,15 +91,15 @@ export type Ad = typeof ads.$inferSelect;
 export type SpotWithStats = Spot & { avgRating: number | null; reviewCount: number; airport?: Airport; vet: VetInfo };
 
 // ---- Crew votes (up/down) on listings and reviews ----
-export const votes = sqliteTable("votes", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const votes = pgTable("votes", {
+  id: serial("id").primaryKey(),
   targetType: text("target_type").notNull(), // spot | review
   targetId: integer("target_id").notNull(),
   voter: text("voter").notNull(),
   value: integer("value").notNull(), // 1 or -1
   reason: text("reason").default(""),
-  createdAt: integer("created_at").notNull().default(0),
-});
+  createdAt: bigint("created_at", { mode: "number" }).notNull().default(0),
+}, (t) => [uniqueIndex("votes_unique").on(t.targetType, t.targetId, t.voter), index("votes_voter_idx").on(t.voter)]);
 export type Vote = typeof votes.$inferSelect;
 
 export const DOWN_REASONS = [
@@ -119,22 +119,30 @@ export type VetInfo = {
 export type ReviewWithVotes = Review & { up: number; down: number; myVote: number };
 
 // ---- Crew accounts ----
-export const users = sqliteTable("users", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
   handle: text("handle").notNull().unique(),
+  email: text("email").unique(), // optional; used only for password reset
   displayName: text("display_name").notNull(),
   crewRole: text("crew_role").notNull().default("Crew"),
   homeBase: text("home_base").default(""),
   passwordHash: text("password_hash").notNull(),
   bonusPoints: integer("bonus_points").notNull().default(0),
   anonymous: integer("anonymous").notNull().default(0),
-  createdAt: integer("created_at").notNull().default(0),
+  createdAt: bigint("created_at", { mode: "number" }).notNull().default(0),
 });
 export type User = typeof users.$inferSelect;
-export const sessions = sqliteTable("sessions", {
-  token: text("token").primaryKey(),
+export const sessions = pgTable("sessions", {
+  token: text("token").primaryKey(), // stored as SHA-256 hash of the bearer token
   userId: integer("user_id").notNull(),
-  createdAt: integer("created_at").notNull().default(0),
+  createdAt: bigint("created_at", { mode: "number" }).notNull().default(0),
+  expiresAt: bigint("expires_at", { mode: "number" }).notNull().default(0),
+}, (t) => [index("sessions_user_idx").on(t.userId)]);
+export const passwordResets = pgTable("password_resets", {
+  tokenHash: text("token_hash").primaryKey(),
+  userId: integer("user_id").notNull(),
+  expiresAt: bigint("expires_at", { mode: "number" }).notNull(),
+  usedAt: bigint("used_at", { mode: "number" }),
 });
 export const CREW_ROLES = ["Pilot", "Flight Attendant", "Mechanic", "Other"] as const;
 const roleSchema = z.enum(CREW_ROLES, { message: "Pick Pilot, Flight Attendant, Mechanic or Other" });
@@ -145,11 +153,16 @@ export const signupSchema = z.object({
   crewRole: roleSchema.default("Pilot"),
   homeBase: z.string().trim().toUpperCase().max(4).optional().default(""),
   anonymous: z.boolean().optional().default(false),
+  email: z.union([z.literal(""), z.string().trim().toLowerCase().email("That email doesn't look right")]).optional().default(""),
+  acceptTerms: z.literal(true, { message: "Please accept the Terms and Community Guidelines" }).optional(),
 });
 export const updateMeSchema = z.object({
   displayName: z.string().trim().min(2, "Add a display name").max(40).optional(),
   crewRole: roleSchema.optional(),
   homeBase: z.string().trim().toUpperCase().max(4).optional(),
   anonymous: z.boolean().optional(),
+  email: z.union([z.literal(""), z.string().trim().toLowerCase().email("That email doesn't look right")]).optional(),
 });
 export const loginSchema = z.object({ handle: z.string().trim().toLowerCase(), password: z.string() });
+export const forgotSchema = z.object({ email: z.string().trim().toLowerCase().email("Enter the email on your account") });
+export const resetSchema = z.object({ token: z.string().min(20, "That reset link is incomplete. Copy the full link from the email, or request a new one."), password: z.string().min(8, "Password must be at least 8 characters") });

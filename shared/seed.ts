@@ -138,7 +138,7 @@ export const seedReviews: { spot: string; rating: number; comment: string; autho
 ];
 
 export const seedAds = [
-  { slot: "top", advertiser: "Wheelsdown", headline: "Reach thousands of flight crews", body: "Hotels, restaurants, FBOs and crew-friendly brands: advertise by airport or network-wide.", cta: "Advertise with us", url: "mailto:ads@wheelsdown.app", targetIcao: "", active: 1 },
+  { slot: "top", advertiser: "Wheelsdown", headline: "Reach thousands of flight crews", body: "Hotels, restaurants, FBOs and crew-friendly brands: advertise by airport or network-wide.", cta: "Advertise with us", url: "#/about", targetIcao: "", active: 1 },
   { slot: "inline", advertiser: "Sample: Crew Rest Hotels", headline: "Crew rates near the field", body: "Late check-out and quiet floors for crews on rest. (Sample ad placement)", cta: "See rates", url: "", targetIcao: "", active: 1 },
   { slot: "inline", advertiser: "Sample: Miami FBO", headline: "Fast turns at OPF", body: "Crew snooze rooms, showers and a crew car on request. (Sample airport-targeted ad)", cta: "Plan your stop", url: "", targetIcao: "KOPF", active: 1 },
   { slot: "footer", advertiser: "Sample: Headset Shop", headline: "Headsets & flight bags, crew discount", body: "Sample footer banner — swap in any partner from the admin panel.", cta: "Shop", url: "", targetIcao: "", active: 1 },

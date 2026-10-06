@@ -8,16 +8,26 @@ The GitHub Pages build (`npm run build:pages`, `VITE_STATIC=1`) runs a stand-in 
 
 ## Stack
 - React + Tailwind front end; installs on iPhone as a home-screen app (PWA manifest and Apple touch icon)
-- Express API with SQLite through Drizzle ORM (`server/storage.ts`)
+- Express API on Postgres through Drizzle ORM (`server/storage.ts`, `server/db.ts`). Production uses any hosted Postgres (Supabase recommended); local dev uses an embedded Postgres (PGlite) automatically
+- Accounts with hashed sessions, password reset by email (Resend), account deletion, rate limiting and security headers
 - Admin console at `/#/admin`: bulk edit, publish/hide, CSV import and export, ad inventory with impression and click tracking
 
-## Run
+## Run locally
 ```bash
 npm ci
-ADMIN_KEY=change-me npm run dev        # http://localhost:5000
-npm run build && ADMIN_KEY=change-me npm start
+npm run dev                 # http://localhost:5000, embedded database in ./.pglite with demo crew (password "crewrest")
+npm run build && ADMIN_KEY=$(openssl rand -hex 24) DATABASE_URL=postgres://... npm start
+BASE=http://localhost:5000 ADMIN_KEY=... npm run test:api   # 27-step API smoke test
 ```
-Env vars: `ADMIN_KEY` (admin console password), `MODERATE=1` (new submissions wait as "pending" until approved), `DB_PATH` (SQLite file location).
+All settings are listed in `.env.example`. The schema creates itself on first boot; an empty database is seeded according to `SEED_MODE` (`demo`, `starter`, or `none`).
+
+## Deploy (Render + Supabase)
+1. Create a Supabase project (region us-east-1) and copy the Session pooler connection string.
+2. In Render: New, then Blueprint, then select this repo. `render.yaml` creates the web service; paste `DATABASE_URL`, `APP_URL`, `CONTACT_EMAIL`, `RESEND_API_KEY`, `EMAIL_FROM`.
+3. Add the custom domain in Render and point DNS at it (Cloudflare: CNAME, DNS only).
+4. Check `https://your-domain/api/health`, then run `BASE=https://your-domain ADMIN_KEY=... npm run test:api`.
+
+The GitHub Pages build (`npm run build:pages`) remains a browser-only demo with no server.
 
 ## Crew accounts, participation and status
 - Browsing is open to everyone. Adding listings, rating and voting require a free crew account, so every contribution is credited to a person.
@@ -56,8 +66,7 @@ Time filter: activity minutes plus a round trip at about 2 minutes per mile.
 ## CSV bulk editing
 Export from Admin, then Import / Export. Edit the file in Excel or Sheets and import it again. Rows that have an `id` are updated; rows with no `id` are created. Tags are separated with `;`. An unknown airport is created automatically when `airportCity` is filled in.
 
-## Production path
-1. Hosted database: point storage at Postgres (Supabase, Neon or RDS) by switching Drizzle to `pg-core`. The schema maps 1:1. Supabase's table editor also gives administrators spreadsheet-style editing.
-2. Auth: add Sign in with Apple and email magic links, plus optional crew verification (airline or company email domain), before the app opens to the public.
-3. iOS App Store: wrap the built `dist/public` with Capacitor (`npx cap add ios`). Swap the ad banner component for Google AdMob or a direct-sold banner.
-4. Moderation: set `MODERATE=1` and add a report button on reviews.
+## Roadmap after launch
+- Sign in with Apple and optional crew verification by company email domain
+- iOS App Store build with Capacitor, with native features (push for new spots on saved routes, offline saved routes) so it's more than a wrapped website
+- Report button on reviews; AdSense or direct-sold banners via the existing ad slots (`ADS_TXT` env serves `/ads.txt`)

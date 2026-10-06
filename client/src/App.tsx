@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Switch, Route, Router, Link, useLocation } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
 import { queryClient } from "./lib/queryClient";
@@ -12,6 +13,8 @@ import AddPage from "@/pages/add";
 import AdminPage from "@/pages/admin";
 import ProfilePage from "@/pages/profile";
 import CrewPage from "@/pages/crew";
+import ResetPage from "@/pages/reset";
+import LegalPage from "@/pages/legal";
 import { AuthProvider, useAuth, Insignia } from "@/lib/auth";
 import { tierFor } from "@shared/tiers";
 import { Logo, ThemeProvider, ThemeToggle } from "@/lib/ui";
@@ -23,6 +26,8 @@ function Shell() {
   const [, setSearch] = useSearch();
   const { me, openAuth } = useAuth();
   const isAdmin = loc.startsWith("/admin");
+  // New page starts at the top (home keeps its own scroll for browse mode)
+  useEffect(() => { if (loc !== "/") window.scrollTo(0, 0); }, [loc]);
   const nav = [
     { href: "/", label: "Search", icon: Search, active: loc === "/" || loc.startsWith("/spot") },
     { href: "/add", label: "Add spot", icon: PlusCircle, active: loc.startsWith("/add") },
@@ -68,12 +73,25 @@ function Shell() {
           <Route path="/admin" component={AdminPage} />
           <Route path="/me" component={ProfilePage} />
           <Route path="/crew" component={CrewPage} />
+          <Route path="/reset/:token" component={ResetPage} />
+          <Route path="/terms" component={LegalPage} />
+          <Route path="/privacy" component={LegalPage} />
+          <Route path="/guidelines" component={LegalPage} />
+          <Route path="/about" component={LegalPage} />
           <Route component={NotFound} />
         </Switch>
         {!isAdmin && (
-          <footer className="mt-12 flex items-center justify-between text-xs text-muted-foreground">
-            <p>{IS_STATIC ? "Demo build: sample data, and your additions are saved only in this browser." : "Crew-sourced. Verify hours and prices before you go."}</p>
-            <Link href="/admin" data-testid="link-admin" className="inline-flex items-center gap-1 hover:text-foreground"><Shield className="h-3.5 w-3.5" />Admin</Link>
+          <footer className="mt-12 space-y-3 text-xs text-muted-foreground">
+            <div className="flex items-center justify-between gap-3">
+              <p>{IS_STATIC ? "Demo build: sample data, and your additions are saved only in this browser." : "Crew-sourced. Verify hours and prices before you go."}</p>
+              <Link href="/admin" data-testid="link-admin" className="inline-flex shrink-0 items-center gap-1 hover:text-foreground"><Shield className="h-3.5 w-3.5" />Admin</Link>
+            </div>
+            <nav className="flex flex-wrap gap-x-4 gap-y-1" data-testid="nav-legal">
+              <Link href="/about" className="hover:text-foreground">About & Advertise</Link>
+              <Link href="/guidelines" className="hover:text-foreground">Guidelines</Link>
+              <Link href="/terms" className="hover:text-foreground">Terms</Link>
+              <Link href="/privacy" className="hover:text-foreground">Privacy</Link>
+            </nav>
           </footer>
         )}
       </main>

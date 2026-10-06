@@ -143,6 +143,7 @@ export default function ProfilePage() {
         </section>
       )}
 
+      <DeleteAccount />
       <button onClick={logout} data-testid="button-logout" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"><LogOut className="h-4 w-4" />Sign out</button>
     </div>
   );
@@ -175,9 +176,9 @@ function Participation({ b }: { b: { participation: number; listings: number; re
 function ProfileSettings() {
   const { me } = useAuth();
   const { toast } = useToast();
-  const [f, setF] = useState({ displayName: "", crewRole: "Pilot", homeBase: "", anonymous: false });
-  useEffect(() => { if (me) setF({ displayName: me.displayName, crewRole: me.crewRole, homeBase: me.homeBase, anonymous: me.anonymous }); }, [me?.id, me?.displayName, me?.crewRole, me?.homeBase, me?.anonymous]);
-  const dirty = !!me && (f.displayName !== me.displayName || f.crewRole !== me.crewRole || f.homeBase !== me.homeBase || f.anonymous !== me.anonymous);
+  const [f, setF] = useState({ displayName: "", crewRole: "Pilot", homeBase: "", anonymous: false, email: "" });
+  useEffect(() => { if (me) setF({ displayName: me.displayName, crewRole: me.crewRole, homeBase: me.homeBase, anonymous: me.anonymous, email: me.email || "" }); }, [me?.id, me?.displayName, me?.crewRole, me?.homeBase, me?.anonymous, me?.email]);
+  const dirty = !!me && (f.displayName !== me.displayName || f.crewRole !== me.crewRole || f.homeBase !== me.homeBase || f.anonymous !== me.anonymous || f.email !== (me.email || ""));
   const m = useMutation({
     mutationFn: async () => (await apiRequest("PATCH", "/api/me", f)).json(),
     onSuccess: (next) => {
@@ -211,6 +212,10 @@ function ProfileSettings() {
       <label className="block">
         <span className="text-xs font-medium text-muted-foreground">Home base (optional)</span>
         <input value={f.homeBase} onChange={(e) => setF({ ...f, homeBase: e.target.value.toUpperCase().slice(0, 4) })} placeholder="KMIA" data-testid="input-profile-base" className={inputCls + " mt-1 font-code uppercase w-32"} />
+      </label>
+      <label className="block">
+        <span className="text-xs font-medium text-muted-foreground">Email (private, for password reset)</span>
+        <input type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value.trim() })} placeholder="you@example.com" autoComplete="email" data-testid="input-profile-email" className={inputCls + " mt-1"} />
       </label>
       <PostAsToggle anonymous={f.anonymous} onChange={(a) => setF({ ...f, anonymous: a })} name={f.displayName || "Your name"} role={f.crewRole} />
       <button disabled={!dirty || m.isPending} onClick={() => m.mutate()} data-testid="button-profile-save" className="h-10 px-5 rounded-full taxi-sign text-sm font-semibold hover-elevate disabled:opacity-40">
@@ -267,6 +272,39 @@ export function TierLadder({ points, signedIn = true }: { points: number; signed
           </li>
         ))}
       </ol>
+    </section>
+  );
+}
+
+function DeleteAccount() {
+  const { me, logout } = useAuth();
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [confirm, setConfirm] = useState("");
+  const m = useMutation({
+    mutationFn: async () => (await apiRequest("DELETE", "/api/me", { confirm })).json(),
+    onSuccess: async () => { await logout(); toast({ title: "Account deleted", description: "Your account, ratings, comments and votes have been removed." }); },
+    onError: (e: Error) => { const t = e.message.replace(/^\d+:\s*/, ""); let d = t; try { d = JSON.parse(t).message; } catch {} toast({ title: "Couldn't delete", description: d, variant: "destructive" }); },
+  });
+  if (!me) return null;
+  return (
+    <section className="rounded-2xl border border-destructive/30 p-4 space-y-2" data-testid="section-delete-account">
+      <h2 className="text-sm font-semibold">Delete account</h2>
+      <p className="text-xs text-muted-foreground">Permanently deletes your account, ratings, comments, votes and points. Listings you added stay up as community content, credited to "Former crew member." This can't be undone.</p>
+      {!open ? (
+        <button onClick={() => setOpen(true)} data-testid="button-delete-account" className="h-9 px-4 rounded-full border border-destructive/50 text-destructive text-sm font-medium hover-elevate">Delete my account</button>
+      ) : (
+        <div className="space-y-2">
+          <label className="block text-xs text-muted-foreground">Type your handle <span className="font-code text-foreground">{me.handle}</span> to confirm
+            <input value={confirm} onChange={(e) => setConfirm(e.target.value.toLowerCase().trim())} autoCapitalize="none" data-testid="input-delete-confirm"
+              className="mt-1 w-full h-10 rounded-xl border border-input bg-background px-3 text-base sm:text-sm font-code focus:outline-none focus:ring-2 focus:ring-ring" />
+          </label>
+          <div className="flex gap-2">
+            <button disabled={confirm !== me.handle || m.isPending} onClick={() => m.mutate()} data-testid="button-delete-confirm" className="h-9 px-4 rounded-full bg-destructive text-destructive-foreground text-sm font-semibold disabled:opacity-40">{m.isPending ? "Deleting…" : "Permanently delete"}</button>
+            <button onClick={() => { setOpen(false); setConfirm(""); }} className="h-9 px-4 rounded-full text-sm text-muted-foreground">Cancel</button>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

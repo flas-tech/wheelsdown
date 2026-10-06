@@ -131,7 +131,10 @@ const ROLES = CREW_ROLES;
 const inputCls = "w-full h-11 rounded-xl border border-input bg-background px-3 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-ring";
 
 function AuthDialog({ open, onOpenChange, reason, onAuthed }: { open: boolean; onOpenChange: (o: boolean) => void; reason?: string; onAuthed: () => void }) {
-  const [mode, setMode] = useState<"signup" | "login">("signup");
+  const [mode, setMode] = useState<"signup" | "login" | "forgot">("signup");
+  const [email, setEmail] = useState("");
+  const [accept, setAccept] = useState(false);
+  const [notice, setNotice] = useState("");
   const [handle, setHandle] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -142,9 +145,15 @@ function AuthDialog({ open, onOpenChange, reason, onAuthed }: { open: boolean; o
   const [busy, setBusy] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
-    e.preventDefault(); setErr(""); setBusy(true);
+    e.preventDefault(); setErr(""); setNotice("");
+    if (mode === "signup" && !accept) { setErr("Please accept the Terms and Community Guidelines"); return; }
+    setBusy(true);
     try {
-      const body = mode === "signup" ? { handle, password, displayName, crewRole, homeBase, anonymous } : { handle, password };
+      if (mode === "forgot") {
+        const r = await (await apiRequest("POST", "/api/auth/forgot", { email })).json();
+        setNotice(r.message); setBusy(false); return;
+      }
+      const body = mode === "signup" ? { handle, password, displayName, crewRole, homeBase, anonymous, email, acceptTerms: true } : { handle, password };
       const res = await apiRequest("POST", mode === "signup" ? "/api/auth/signup" : "/api/auth/login", body);
       const { token, me } = await res.json();
       setAuthToken(token);
@@ -162,20 +171,28 @@ function AuthDialog({ open, onOpenChange, reason, onAuthed }: { open: boolean; o
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md max-h-[92vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{mode === "signup" ? "Open your crew logbook" : "Welcome back"}</DialogTitle>
+          <DialogTitle>{mode === "signup" ? "Open your crew logbook" : mode === "login" ? "Welcome back" : "Reset your password"}</DialogTitle>
           <DialogDescription>
-            {reason || "Sign in to add spots, rate and vote."} Every contribution earns points toward your next rating — from Student up to Ancient Albatross.
+            {mode === "forgot" ? "Enter the email on your account and we'll send a reset link." :
+              <>{reason || "Sign in to add spots, rate and vote."} Every contribution earns points toward your next rating, from Student up to Ancient Albatross.</>}
           </DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted p-1 text-sm font-medium">
           {(["signup", "login"] as const).map((m) => (
             <button key={m} type="button" onClick={() => { setMode(m); setErr(""); }} data-testid={`tab-auth-${m}`}
-              className={cn("h-9 rounded-lg", mode === m ? "bg-background shadow-sm" : "text-muted-foreground")}>{m === "signup" ? "Create account" : "Sign in"}</button>
+              className={cn("h-9 rounded-lg", mode === m || (m === "login" && mode === "forgot") ? "bg-background shadow-sm" : "text-muted-foreground")}>{m === "signup" ? "Create account" : "Sign in"}</button>
           ))}
         </div>
         <form onSubmit={submit} className="space-y-3" data-testid="form-auth">
-          <input value={handle} onChange={(e) => setHandle(e.target.value.toLowerCase().replace(/\s/g, ""))} placeholder="Handle (e.g. fo_jane)" autoCapitalize="none" autoComplete="username" data-testid="input-auth-handle" className={inputCls} />
+          {mode === "forgot" ? (
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" data-testid="input-forgot-email" className={inputCls} />
+          ) : (<>
+          <input value={handle} onChange={(e) => setHandle(e.target.value.toLowerCase().replace(/\s/g, ""))} placeholder={mode === "login" ? "Handle or email" : "Handle (e.g. fo_jane)"} autoCapitalize="none" autoComplete="username" data-testid="input-auth-handle" className={inputCls} />
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={mode === "signup" ? "Password (8+ characters)" : "Password"} autoComplete={mode === "signup" ? "new-password" : "current-password"} data-testid="input-auth-password" className={inputCls} />
+          </>)}
+          {mode === "login" && (
+            <button type="button" onClick={() => { setMode("forgot"); setErr(""); setEmail(handle.includes("@") ? handle : ""); }} data-testid="button-forgot" className="text-xs text-primary font-medium">Forgot password?</button>
+          )}
           {mode === "signup" && (
             <>
               <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Display name (shown on your posts)" data-testid="input-auth-name" className={inputCls} />
@@ -185,12 +202,18 @@ function AuthDialog({ open, onOpenChange, reason, onAuthed }: { open: boolean; o
                 </select>
                 <input value={homeBase} onChange={(e) => setBase(e.target.value.toUpperCase().slice(0, 4))} placeholder="Base" data-testid="input-auth-base" className={cn(inputCls, "font-code uppercase")} />
               </div>
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email (optional, for password reset)" autoComplete="email" data-testid="input-auth-email" className={inputCls} />
               <PostAsToggle anonymous={anonymous} onChange={setAnon} name={displayName || "Your name"} role={crewRole} />
+              <label className="flex items-start gap-2.5 text-xs text-muted-foreground">
+                <input type="checkbox" checked={accept} onChange={(e) => setAccept(e.target.checked)} data-testid="checkbox-terms" className="mt-0.5 h-4 w-4 accent-[hsl(var(--primary))]" />
+                <span>I agree to the <a href="#/terms" target="_blank" className="underline text-foreground">Terms</a>, <a href="#/guidelines" target="_blank" className="underline text-foreground">Community Guidelines</a> and <a href="#/privacy" target="_blank" className="underline text-foreground">Privacy Policy</a>.</span>
+              </label>
             </>
           )}
+          {notice && <p className="text-sm text-emerald-600 dark:text-emerald-400" data-testid="text-auth-notice">{notice}</p>}
           {err && <p className="text-sm text-destructive" data-testid="text-auth-error">{err}</p>}
           <button disabled={busy} data-testid="button-auth-submit" className="w-full h-11 rounded-full taxi-sign font-semibold hover-elevate disabled:opacity-50">
-            {busy ? "One moment…" : mode === "signup" ? "Create account" : "Sign in"}
+            {busy ? "One moment…" : mode === "signup" ? "Create account" : mode === "login" ? "Sign in" : "Send reset link"}
           </button>
           {IS_STATIC && (
             <p className="text-xs text-muted-foreground">

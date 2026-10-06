@@ -1,0 +1,35 @@
+# Render Blueprint: New > Blueprint > pick this repo. Creates the web service; the database lives in Supabase.
+services:
+  - type: web
+    name: wheelsdown
+    runtime: node
+    plan: starter            # $7/mo, always on. Do not use "free" (it sleeps after 15 min idle).
+    region: virginia
+    branch: main
+    autoDeploy: true
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL       # Supabase > Connect > Session pooler URI (port 5432)
+        sync: false
+      - key: ADMIN_KEY          # Render generates a long random value; read it in the dashboard
+        generateValue: true
+      - key: APP_URL            # e.g. https://getwheelsdown.com (used in reset emails)
+        sync: false
+      - key: CONTACT_EMAIL      # e.g. hello@getwheelsdown.com (About page + house ad)
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM         # e.g. Wheelsdown <no-reply@mail.getwheelsdown.com>
+        sync: false
+      - key: VITE_OPERATOR_NAME # legal entity shown in Terms/Privacy (build-time)
+        sync: false
+      - key: MODERATE           # 1 = new listings from members below Commercial wait for admin review
+        value: "0"
+      - key: SEED_MODE          # starter = airports + starter listings, no fake users
+        value: starter

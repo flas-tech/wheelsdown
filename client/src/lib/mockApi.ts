@@ -8,9 +8,9 @@ import { CREW_ROLES } from "@shared/schema";
 import { buildHighlights } from "@shared/highlights";
 
 export const DEMO_ADMIN_KEY = "wheelsdown-admin";
-const STORE_KEY = "wheelsdown-demo-v3";
+const STORE_KEY = "wheelsdown-demo-v4";
 
-type DemoUser = { id: number; handle: string; displayName: string; crewRole: string; homeBase: string; anonymous: boolean; pw: string; bonusPoints: number; createdAt: number };
+type DemoUser = { id: number; handle: string; displayName: string; crewRole: string; homeBase: string; anonymous: boolean; email?: string; pw: string; bonusPoints: number; createdAt: number };
 type DB = { airports: Airport[]; spots: Spot[]; reviews: Review[]; ads: Ad[]; votes: Vote[]; users: DemoUser[]; sessions: Record<string, number>;
   seq: { spot: number; review: number; ad: number; vote: number; user: number } };
 // Demo only: not a secure hash. The server build uses scrypt.
@@ -119,7 +119,7 @@ export function exportCsv() {
 
 function meOf(u: DemoUser) {
   const b = computePoints(db, u.id, u.bonusPoints);
-  return { id: u.id, handle: u.handle, displayName: u.displayName, crewRole: u.crewRole, homeBase: u.homeBase, anonymous: !!u.anonymous,
+  return { id: u.id, handle: u.handle, displayName: u.displayName, crewRole: u.crewRole, homeBase: u.homeBase, anonymous: !!u.anonymous, email: u.email || "",
     participation: b.participation, points: b.total, tierId: tierFor(b.total).tier.id, createdAt: u.createdAt, breakdown: b };
 }
 function publicUsers(admin = false) {
@@ -155,14 +155,16 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
     if (String(body.password || "").length < 8) throw new HttpError(400, "Password must be at least 8 characters");
     if (String(body.displayName || "").trim().length < 2) throw new HttpError(400, "Add a display name");
     if (db.users.some((u) => u.handle === handle)) throw new HttpError(409, "That handle is taken");
+    if (body.acceptTerms !== true) throw new HttpError(400, "Please accept the Terms and Community Guidelines");
     const role = (CREW_ROLES as readonly string[]).includes(body.crewRole) ? body.crewRole : "Pilot";
     const u: DemoUser = { id: ++db.seq.user, handle, displayName: String(body.displayName).trim().slice(0, 40), crewRole: role, anonymous: !!body.anonymous,
-      homeBase: String(body.homeBase || "").toUpperCase().slice(0, 4), pw: demoHash(String(body.password)), bonusPoints: 0, createdAt: Date.now() };
+      homeBase: String(body.homeBase || "").toUpperCase().slice(0, 4), email: String(body.email || "").trim().toLowerCase(), pw: demoHash(String(body.password)), bonusPoints: 0, createdAt: Date.now() };
     db.users.push(u); const t = newSession(u.id); save();
     return { token: t, me: meOf(u) };
   }
   if (method === "POST" && path === "/api/auth/login") {
-    const u = db.users.find((x) => x.handle === String(body.handle || "").trim().toLowerCase());
+    const h = String(body.handle || "").trim().toLowerCase();
+    const u = db.users.find((x) => x.handle === h || (!!x.email && x.email === h));
     if (!u || u.pw !== demoHash(String(body.password || ""))) throw new HttpError(401, "Handle or password is wrong");
     const t = newSession(u.id); save(); return { token: t, me: meOf(u) };
   }
@@ -174,8 +176,23 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
     if (body.crewRole !== undefined) { if (!(CREW_ROLES as readonly string[]).includes(body.crewRole)) throw new HttpError(400, "Pick a position"); u.crewRole = body.crewRole; }
     if (body.homeBase !== undefined) u.homeBase = String(body.homeBase).toUpperCase().slice(0, 4);
     if (body.anonymous !== undefined) u.anonymous = !!body.anonymous;
+    if (body.email !== undefined) u.email = String(body.email).trim().toLowerCase();
     relabel(u); save();
     return meOf(u);
+  }
+  if (method === "POST" && path === "/api/auth/forgot") return { ok: true, message: "Demo build: no emails are sent. On the live site, a reset link goes to the email on your account." };
+  if (method === "POST" && path === "/api/auth/reset") throw new HttpError(400, "Password reset works on the live site only.");
+  if (method === "GET" && path === "/api/config") return { contactEmail: "", emailEnabled: false, moderated: false };
+  if (method === "DELETE" && path === "/api/me") {
+    const u = needUser();
+    if (String(body?.confirm || "").toLowerCase() !== u.handle) throw new HttpError(400, "Type your handle to confirm");
+    const revIds = new Set(db.reviews.filter((r) => r.userId === u.id).map((r) => r.id));
+    db.votes = db.votes.filter((v) => v.voter !== `u:${u.id}` && !(v.targetType === "review" && revIds.has(v.targetId)));
+    db.reviews = db.reviews.filter((r) => r.userId !== u.id);
+    db.spots.forEach((sp) => { if (sp.userId === u.id) { sp.userId = null as any; sp.submittedBy = "Former crew member"; } });
+    for (const t of Object.keys(db.sessions)) if (db.sessions[t] === u.id) delete db.sessions[t];
+    db.users = db.users.filter((x) => x.id !== u.id);
+    save(); return { ok: true };
   }
   if (method === "GET" && path === "/api/me/contributions") {
     const u = needUser();

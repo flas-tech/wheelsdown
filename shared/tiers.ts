@@ -101,7 +101,7 @@ export type PublicUser = {
   id: number; handle: string; displayName: string; crewRole: string; homeBase: string; anonymous: boolean; participation: number;
   points: number; tierId: TierId; createdAt: number;
 };
-export type Me = PublicUser & { breakdown: PointsBreakdown };
+export type Me = PublicUser & { breakdown: PointsBreakdown; email?: string };
 
 // Demo crew members so the leaderboard has range (bonus = legacy points for the demo only)
 export const SEED_USERS = [
