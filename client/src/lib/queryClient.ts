@@ -1,5 +1,8 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
+export const IS_STATIC = import.meta.env.VITE_STATIC === "1";
+const mock = () => import("./mockApi");
+
 export const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
 
 async function throwIfResNotOk(res: Response) {
@@ -15,6 +18,11 @@ export async function apiRequest(
   data?: unknown | undefined,
   extraHeaders: Record<string, string> = {},
 ): Promise<Response> {
+  if (IS_STATIC) {
+    const res = await (await mock()).mockFetch(method, url, data, extraHeaders);
+    await throwIfResNotOk(res);
+    return res;
+  }
   const res = await fetch(`${API_BASE}${url}`, {
     method,
     headers: { ...(data ? { "Content-Type": "application/json" } : {}), ...extraHeaders },
@@ -31,7 +39,8 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    const res = await fetch(`${API_BASE}${queryKey.join("/")}`);
+    const path = queryKey.join("/");
+    const res = IS_STATIC ? await (await mock()).mockFetch("GET", path) : await fetch(`${API_BASE}${path}`);
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
       return null;

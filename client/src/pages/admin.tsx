@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Download, Upload, Trash2, Eye, EyeOff, Plus, Lock, Pencil, LogOut } from "lucide-react";
 import { CATEGORIES, type Ad, type SpotWithStats } from "@shared/schema";
-import { apiRequest, queryClient, API_BASE } from "@/lib/queryClient";
+import { apiRequest, queryClient, API_BASE, IS_STATIC } from "@/lib/queryClient";
 import { CAT_META, COST_LABELS } from "@/lib/ui";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -43,6 +43,7 @@ function Login({ onOk }: { onOk: () => void }) {
     >
       <div className="flex items-center gap-2"><Lock className="h-4 w-4 text-primary" /><h1 className="text-base font-semibold">Admin console</h1></div>
       <p className="text-sm text-muted-foreground">Bulk edit spots, import/export CSV, and manage ad inventory.</p>
+      {IS_STATIC && <p className="rounded-lg bg-primary/10 p-2.5 text-xs" data-testid="text-demo-key">Demo build — use key <span className="font-code font-bold">wheelsdown-admin</span>. Changes are saved only in this browser.</p>}
       <input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="Admin key" data-testid="input-admin-key" className={inputCls + " h-11"} autoFocus />
       {err && <p className="text-sm text-destructive" data-testid="text-admin-error">{err}</p>}
       <button disabled={!key || busy} data-testid="button-admin-login" className={btnPrimary + " w-full justify-center h-11"}>{busy ? "Checking…" : "Unlock"}</button>
@@ -287,7 +288,22 @@ function Bulk() {
       <div className="space-y-3 rounded-2xl border border-card-border bg-card p-4">
         <h2 className="text-sm font-semibold">Export</h2>
         <p className="text-sm text-muted-foreground">Download every spot (all statuses) as CSV. Edit in Excel or Google Sheets, then re-import to bulk update.</p>
-        <a href={exportUrl} target="_blank" rel="noopener noreferrer" className={btnPrimary} data-testid="link-export"><Download className="h-4 w-4" />Download CSV</a>
+        {IS_STATIC ? (
+          <button className={btnPrimary} data-testid="link-export" onClick={async () => {
+            const { exportCsv } = await import("@/lib/mockApi");
+            const blob = new Blob([exportCsv()], { type: "text/csv" });
+            const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+            a.download = `wheelsdown-spots-${new Date().toISOString().slice(0, 10)}.csv`; a.click();
+            setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+          }}><Download className="h-4 w-4" />Download CSV</button>
+        ) : (
+          <a href={exportUrl} target="_blank" rel="noopener noreferrer" className={btnPrimary} data-testid="link-export"><Download className="h-4 w-4" />Download CSV</a>
+        )}
+        {IS_STATIC && (
+          <button className={btn} data-testid="button-reset-demo" onClick={async () => {
+            (await import("@/lib/mockApi")).resetDemo(); queryClient.invalidateQueries(); toast({ title: "Demo data reset" });
+          }}>Reset demo data</button>
+        )}
         <div className="pt-2 text-xs text-muted-foreground space-y-1">
           <p className="font-semibold text-foreground">Columns</p>
           <p><span className="font-code">category</span>: eat, do, stay, fbo</p>

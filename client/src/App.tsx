@@ -12,6 +12,7 @@ import AddPage from "@/pages/add";
 import AdminPage from "@/pages/admin";
 import { Logo, ThemeProvider, ThemeToggle } from "@/lib/ui";
 import { cn } from "@/lib/utils";
+import { IS_STATIC } from "@/lib/queryClient";
 
 function Shell() {
   const [loc] = useLocation();
@@ -28,6 +29,7 @@ function Shell() {
           <Link href="/" onClick={() => setSearch({ category: null })} data-testid="link-home" className="flex items-center gap-2">
             <Logo className="h-7 w-7" />
             <span className="text-base font-semibold tracking-tight">Wheels<span className="text-primary">down</span></span>
+            {IS_STATIC && <span className="rounded border border-primary/50 px-1 font-code text-[10px] font-bold text-primary" data-testid="badge-demo">DEMO</span>}
           </Link>
           <nav className="flex items-center gap-1">
             {nav.map((n) => (
@@ -52,7 +54,7 @@ function Shell() {
         </Switch>
         {!isAdmin && (
           <footer className="mt-12 flex items-center justify-between text-xs text-muted-foreground">
-            <p>Crew-sourced. Verify hours and prices before you go.</p>
+            <p>{IS_STATIC ? "Demo build: sample data, and your additions are saved only in this browser." : "Crew-sourced. Verify hours and prices before you go."}</p>
             <Link href="/admin" data-testid="link-admin" className="inline-flex items-center gap-1 hover:text-foreground"><Shield className="h-3.5 w-3.5" />Admin</Link>
           </footer>
         )}

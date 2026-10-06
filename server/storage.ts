@@ -3,7 +3,7 @@ import type { Airport, InsertAirport, Spot, InsertSpot, Review, InsertReview, Ad
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
 import { eq, inArray, desc, sql } from "drizzle-orm";
-import { seedAirports, seedSpots, seedReviews, seedAds } from "./seed";
+import { seedAirports, seedSpots, seedReviews, seedAds } from "@shared/seed";
 
 const sqlite = new Database(process.env.DB_PATH || "data.db");
 sqlite.pragma("journal_mode = WAL");
