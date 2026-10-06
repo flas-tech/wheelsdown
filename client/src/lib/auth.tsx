@@ -32,7 +32,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (p && p.id === me.id && me.points > p.points) {
       const before = tierFor(p.points).tier, after = tierFor(me.points).tier;
       if (after.id !== before.id) toast({ title: `Promoted to ${after.name}`, description: `${after.tagline}. ${me.points.toLocaleString()} points in your logbook.` });
-      else toast({ title: `+${me.points - p.points} pts`, description: `${me.points.toLocaleString()} total · ${tierFor(me.points).toNext} to ${tierFor(me.points).next?.name ?? "the top"}` });
+      else toast({ title: `+${me.points - p.points} pts`, description: (() => { const t = tierFor(me.points); return `${me.points.toLocaleString()} total · ${t.next ? `${t.toNext.toLocaleString()} to ${t.next.name}` : "top of the ladder"}`; })() });
     }
     prev.current = { id: me.id, points: me.points };
   }, [me?.id, me?.points]);
