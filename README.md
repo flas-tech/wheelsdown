@@ -2,6 +2,10 @@
 
 Flight crews search a route (`MIA TEB ASE`, `KOPF-KPBI`; IATA and ICAO both work), choose what they need (Eat, Do, Stay, FBO intel), filter by how much time they have and by cost, then rate and review spots. Adding a new spot takes three fields.
 
+**Live demo:** https://flas-tech.github.io/wheelsdown/
+
+The GitHub Pages build (`npm run build:pages`, `VITE_STATIC=1`) runs a stand-in for the server inside the browser (`client/src/lib/mockApi.ts`). It loads the sample data, and anything a visitor adds is saved only in that visitor's browser. The demo admin key is `wheelsdown-admin`. To share data between users, use the full server build or connect a hosted database.
+
 ## Stack
 - React + Tailwind front end; installs on iPhone as a home-screen app (PWA manifest and Apple touch icon)
 - Express API with SQLite through Drizzle ORM (`server/storage.ts`)
