@@ -91,21 +91,19 @@ Steps marked **You** need your accounts, payment or legal decisions. Steps marke
 11. **Done:** The 27-step smoke test passed against the live site, and a browser check passed at mobile and desktop widths with no console errors.
     - Your admin key is in the Render dashboard, under Environment, as `ADMIN_KEY`.
 
-### Phase 4: Domain (30 minutes plus DNS time)
+### Phase 4: Domain (done Oct 6, 2026)
 
-12. In Render, open Settings, then Custom Domains, and add `getwheelsdown.com` and `www.getwheelsdown.com`.
-13. In Cloudflare DNS, add the records Render shows:
-    - A CNAME for `www` pointing to `wheelsdown.onrender.com`.
-    - For the apex, a CNAME to the same target (Cloudflare flattens it automatically).
-    - Set both to **DNS only** (grey cloud) until Render shows the certificate as issued.
-14. Confirm that `https://getwheelsdown.com` loads with a valid certificate and that `www` redirects to it.
+12. **Done:** getwheelsdown.com was registered at Cloudflare and attached to Render.
+13. **Done:** DNS points the main address and www at Render, with the proxy off (DNS only). www redirects to getwheelsdown.com.
+14. **Done:** The security certificate is issued, `APP_URL` is set to `https://getwheelsdown.com`, and the 27-step smoke test passes on the domain.
 
-### Phase 5: Email (30 minutes)
+### Phase 5: Email (mostly done Oct 6, 2026)
 
-15. In Resend, add the domain `mail.getwheelsdown.com`, then add its SPF, DKIM and MX records in Cloudflare DNS and verify.
-16. Create an API key with sending permission only, and set `RESEND_API_KEY` in Render.
-17. Turn on Cloudflare Email Routing for `getwheelsdown.com`. Forward `hello@` and `ads@` to your personal inbox.
-18. Test: sign up with your email, use "Forgot password?", and confirm the email arrives and the link works.
+15. **Done:** The Resend sending domain `mail.getwheelsdown.com` is created, and its DKIM, SPF, MX and CNAME records are in Cloudflare and resolving publicly.
+    - **Pending:** Resend's own verification. It often takes about 15 minutes, but can take up to 72 hours.
+16. **Done:** A sending-only Resend key, limited to this domain, is set in Render, along with `EMAIL_FROM` and `CONTACT_EMAIL`.
+17. **Done:** Cloudflare Email Routing forwards `hello@` and `ads@` to the owner's Gmail.
+18. **To do:** Once Resend shows the domain as verified, run a real "Forgot password?" test.
 
 ### Phase 6: Admin and content (ongoing, start before beta)
 
