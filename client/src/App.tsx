@@ -1,0 +1,94 @@
+import { Switch, Route, Router, Link, useLocation } from "wouter";
+import { useHashLocation } from "wouter/use-hash-location";
+import { queryClient } from "./lib/queryClient";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { Toaster } from "@/components/ui/toaster";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { Search, PlusCircle, Shield } from "lucide-react";
+import NotFound from "@/pages/not-found";
+import Home, { SearchProvider, useSearch } from "@/pages/home";
+import SpotPage from "@/pages/spot";
+import AddPage from "@/pages/add";
+import AdminPage from "@/pages/admin";
+import { Logo, ThemeProvider, ThemeToggle } from "@/lib/ui";
+import { cn } from "@/lib/utils";
+
+function Shell() {
+  const [loc] = useLocation();
+  const [, setSearch] = useSearch();
+  const isAdmin = loc.startsWith("/admin");
+  const nav = [
+    { href: "/", label: "Search", icon: Search, active: loc === "/" || loc.startsWith("/spot") },
+    { href: "/add", label: "Add spot", icon: PlusCircle, active: loc.startsWith("/add") },
+  ];
+  return (
+    <div className="min-h-[100dvh] flex flex-col">
+      <header className="sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur">
+        <div className={cn("mx-auto flex h-14 items-center justify-between px-4", isAdmin ? "max-w-6xl" : "max-w-xl")}>
+          <Link href="/" onClick={() => setSearch({ category: null })} data-testid="link-home" className="flex items-center gap-2">
+            <Logo className="h-7 w-7" />
+            <span className="text-base font-semibold tracking-tight">Wheels<span className="text-primary">down</span></span>
+          </Link>
+          <nav className="flex items-center gap-1">
+            {nav.map((n) => (
+              <Link key={n.href} href={n.href} data-testid={`link-nav-${n.label}`}
+                className={cn("hidden sm:inline-flex items-center gap-1.5 rounded-full px-3 h-9 text-sm font-medium hover-elevate", n.active ? "text-foreground" : "text-muted-foreground")}>
+                <n.icon className="h-4 w-4" />{n.label}
+              </Link>
+            ))}
+            <ThemeToggle />
+          </nav>
+        </div>
+      </header>
+
+      <main className={cn("mx-auto w-full flex-1 px-4 pt-5 pb-28 sm:pb-12", isAdmin ? "max-w-6xl" : "max-w-xl")}>
+        <Switch>
+          <Route path="/" component={Home} />
+          <Route path="/spot/:id" component={SpotPage} />
+          <Route path="/add" component={AddPage} />
+          <Route path="/add/:icao" component={AddPage} />
+          <Route path="/admin" component={AdminPage} />
+          <Route component={NotFound} />
+        </Switch>
+        {!isAdmin && (
+          <footer className="mt-12 flex items-center justify-between text-xs text-muted-foreground">
+            <p>Crew-sourced. Verify hours and prices before you go.</p>
+            <Link href="/admin" data-testid="link-admin" className="inline-flex items-center gap-1 hover:text-foreground"><Shield className="h-3.5 w-3.5" />Admin</Link>
+          </footer>
+        )}
+      </main>
+
+      {/* iOS-style tab bar */}
+      {!isAdmin && (
+        <nav className="sm:hidden fixed bottom-0 inset-x-0 z-30 border-t border-border bg-background/90 backdrop-blur pb-safe">
+          <div className="mx-auto max-w-xl grid grid-cols-2">
+            {nav.map((n) => (
+              <Link key={n.href} href={n.href} data-testid={`tab-${n.label}`} className={cn("flex flex-col items-center gap-0.5 pt-2 pb-1 text-[11px] font-medium", n.active ? "text-primary" : "text-muted-foreground")}>
+                <n.icon className="h-5 w-5" />{n.label}
+              </Link>
+            ))}
+          </div>
+        </nav>
+      )}
+    </div>
+  );
+}
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
+        <TooltipProvider>
+          <SearchProvider>
+            <Toaster />
+            <Router hook={useHashLocation}>
+              <Shell />
+            </Router>
+          </SearchProvider>
+        </TooltipProvider>
+      </ThemeProvider>
+    </QueryClientProvider>
+  );
+}
+
+export default App;
