@@ -94,8 +94,8 @@ export async function drawStaticMap(canvas: HTMLCanvasElement, pins: MapPin[], w
     }
   }
 
-  // pins: airports last so they sit on top
-  const order = [...pts].sort((a, b) => (a.kind === "airport" ? 1 : 0) - (b.kind === "airport" ? 1 : 0));
+  // airport labels first, numbered picks on top so on-field spots stay visible
+  const order = [...pts].sort((a, b) => (a.kind === "airport" ? 0 : 1) - (b.kind === "airport" ? 0 : 1));
   for (const p of order) {
     if (p.kind === "airport") {
       ctx.font = "700 11px ui-monospace, Menlo, monospace";

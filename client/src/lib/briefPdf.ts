@@ -90,10 +90,11 @@ export async function buildBriefPdf(b: BriefFull, opts: { appUrl: string; prepar
     doc.setFont("courier", "bold"); doc.setFontSize(11); doc.setTextColor(...navy); doc.text(`${i + 1}. ${s.icao}`, M, y);
     doc.setFont("helvetica", "normal"); doc.setFontSize(9.5);
     const ap = s.airport ? clean(`${s.airport.name}${s.airport.city ? `, ${s.airport.city}` : ""}`) : "";
-    doc.text(doc.splitTextToSize(ap, 260)[0] || "", M + 60, y);
+    const lines = (doc.splitTextToSize(ap, 255) as string[]).slice(0, 2);
+    doc.text(lines, M + 60, y);
     doc.text(clean(layoverText(s)), M + 330, y);
     doc.text(String(s.picks.length), W - M, y, { align: "right" });
-    y += 18;
+    y += 18 + (lines.length - 1) * 11;
   });
   y += 8;
   doc.setFontSize(8.5); doc.setTextColor(...slate);
