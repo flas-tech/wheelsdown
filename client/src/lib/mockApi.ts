@@ -6,12 +6,17 @@ import { computeVet, seedVotesFor, shouldAutoHold } from "@shared/vetting";
 import { computePoints, recentActivity, publicName, tierFor, SEED_USERS, SEED_PASSWORD } from "@shared/tiers";
 import { CREW_ROLES } from "@shared/schema";
 import { buildHighlights } from "@shared/highlights";
+import { crewCost, costOptions, isValidCost, milesBetween } from "@shared/cost";
+import { suggestPicks } from "@shared/briefing";
+import { SEED_AIRPORT_COORDS } from "@shared/seedAirportCoords";
+import type { BriefingStop } from "@shared/schema";
 
 export const DEMO_ADMIN_KEY = "wheelsdown-admin";
 const STORE_KEY = "wheelsdown-demo-v4";
 
 type DemoUser = { id: number; handle: string; displayName: string; crewRole: string; homeBase: string; anonymous: boolean; email?: string; pw: string; bonusPoints: number; createdAt: number };
-type DB = { airports: Airport[]; spots: Spot[]; reviews: Review[]; ads: Ad[]; votes: Vote[]; users: DemoUser[]; sessions: Record<string, number>;
+type DemoBriefing = { id: number; userId: number; title: string; stops: BriefingStop[]; shareToken: string; createdAt: number; updatedAt: number };
+type DB = { airports: Airport[]; spots: Spot[]; reviews: Review[]; ads: Ad[]; votes: Vote[]; users: DemoUser[]; sessions: Record<string, number>; briefings?: DemoBriefing[];
   seq: { spot: number; review: number; ad: number; vote: number; user: number } };
 // Demo only: not a secure hash. The server build uses scrypt.
 const demoHash = (pw: string) => { let h = 5381; for (let i = 0; i < pw.length; i++) h = ((h << 5) + h + pw.charCodeAt(i)) | 0; return "demo:" + (h >>> 0).toString(36); };
@@ -19,17 +24,18 @@ const demoHash = (pw: string) => { let h = 5381; for (let i = 0; i < pw.length; 
 function seed(): DB {
   const now = Date.now();
   const users: DemoUser[] = SEED_USERS.map((u, i) => ({ id: i + 1, handle: u.handle, displayName: u.displayName, crewRole: u.crewRole, homeBase: u.homeBase, anonymous: false, pw: demoHash(SEED_PASSWORD), bonusPoints: u.bonus, createdAt: now - (400 - i * 50) * 86400_000 }));
-  const airports = seedAirports.map(([icao, iata, name, city, region, country]) => ({ icao, iata, name, city, region, country }));
+  const airports = seedAirports.map(([icao, iata, name, city, region, country]) => ({ icao, iata, name, city, region, country, lat: SEED_AIRPORT_COORDS[icao]?.[0] ?? null, lon: SEED_AIRPORT_COORDS[icao]?.[1] ?? null }));
   const spots: Spot[] = seedSpots.map((s, i) => ({
     id: i + 1, icao: s.icao, category: s.category, name: s.name, description: s.description, address: s.address || "", website: "",
     costLevel: s.costLevel, minutesNeeded: s.minutesNeeded, milesFromField: s.milesFromField, crewTip: s.crewTip || "",
     tags: JSON.stringify(s.tags), submittedBy: users[i % users.length].displayName, userId: users[i % users.length].id, status: "live", createdAt: now - i * 3600_000,
+    pace: null, lat: null, lng: null, placeRef: null,
   }));
   const reviews: Review[] = [];
   seedReviews.forEach((r, i) => {
     const sp = spots.find((s) => s.name === r.spot);
     const u = users.find((x) => x.displayName === r.author);
-    if (sp) reviews.push({ id: reviews.length + 1, spotId: sp.id, rating: r.rating, comment: r.comment, author: r.author, crewRole: r.crewRole, userId: u?.id ?? null, createdAt: now - i * 7200_000 });
+    if (sp) reviews.push({ id: reviews.length + 1, spotId: sp.id, rating: r.rating, comment: r.comment, author: r.author, crewRole: r.crewRole, userId: u?.id ?? null, createdAt: now - i * 7200_000, costLevel: null });
   });
   const ads: Ad[] = seedAds.map((a, i) => ({ id: i + 1, ...a, impressions: 0, clicks: 0 }));
   const votes: Vote[] = [];
@@ -40,7 +46,11 @@ function seed(): DB {
 function load(): DB {
   try {
     const raw = window.localStorage.getItem(STORE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const d = JSON.parse(raw) as DB;
+      d.airports.forEach((a) => { if (a.lat == null && SEED_AIRPORT_COORDS[a.icao]) { a.lat = SEED_AIRPORT_COORDS[a.icao][0]; a.lon = SEED_AIRPORT_COORDS[a.icao][1]; } });
+      return d;
+    }
   } catch {}
   return seed();
 }
@@ -64,14 +74,16 @@ function ensureAirport(code: string, city?: string, name?: string) {
   const f = resolve(code);
   if (f) return f.icao;
   const icao = code.length === 3 ? "K" + code : code;
-  db.airports.push({ icao, iata: code.length === 3 ? code : null, name: name || icao, city: city || "Unknown", region: "", country: "" });
+  db.airports.push({ icao, iata: code.length === 3 ? code : null, name: name || icao, city: city || "Unknown", region: "", country: "", lat: null, lon: null });
   return icao;
 }
 function withStats(rows: Spot[], voter = "") {
   return rows.map((s) => {
     const rs = db.reviews.filter((r) => r.spotId === s.id);
     const vs = db.votes.filter((v) => v.targetType === "spot" && v.targetId === s.id);
-    return { ...s, avgRating: rs.length ? rs.reduce((a, r) => a + r.rating, 0) / rs.length : null, reviewCount: rs.length, airport: db.airports.find((a) => a.icao === s.icao), vet: computeVet(vs, voter) };
+    const base = { ...({ pace: null, lat: null, lng: null, placeRef: null } as Pick<Spot, "pace" | "lat" | "lng" | "placeRef">), ...s };
+    return { ...base, avgRating: rs.length ? rs.reduce((a, r) => a + r.rating, 0) / rs.length : null, reviewCount: rs.length, airport: db.airports.find((a) => a.icao === s.icao), vet: computeVet(vs, voter),
+      ...crewCost(s.category, s.costLevel, rs.map((r) => r.costLevel)) };
   });
 }
 function castVote(targetType: string, targetId: number, voter: string, value: number, reason = "") {
@@ -84,8 +96,9 @@ function castVote(targetType: string, targetId: number, voter: string, value: nu
 }
 function cleanSpot(o: any) {
   const out: any = {};
-  for (const k of ["icao", "category", "name", "description", "address", "website", "crewTip", "tags", "submittedBy", "status"]) if (o[k] !== undefined) out[k] = String(o[k]);
-  for (const k of ["costLevel", "minutesNeeded", "milesFromField"]) if (o[k] !== undefined && o[k] !== "") out[k] = Number(o[k]);
+  for (const k of ["icao", "category", "name", "description", "address", "website", "crewTip", "tags", "submittedBy", "status", "placeRef"]) if (o[k] !== undefined && o[k] !== null) out[k] = String(o[k]);
+  for (const k of ["costLevel", "minutesNeeded", "milesFromField", "lat", "lng"]) if (o[k] !== undefined && o[k] !== "" && o[k] !== null) out[k] = Number(o[k]);
+  if (o.pace !== undefined) out.pace = o.pace === "grab" || o.pace === "sit" ? o.pace : null;
   if (out.category && !CATS.includes(out.category)) throw new Error("Invalid category");
   if (out.name !== undefined && out.name.trim().length < 2) throw new Error("Give it a name");
   if (out.costLevel !== undefined && (out.costLevel < 0 || out.costLevel > 4)) throw new Error("costLevel must be 0–4");
@@ -93,7 +106,7 @@ function cleanSpot(o: any) {
 }
 
 // ---- CSV ----
-const CSV_COLS = ["id", "icao", "category", "name", "description", "address", "website", "costLevel", "minutesNeeded", "milesFromField", "crewTip", "tags", "submittedBy", "status", "airportCity", "airportName"];
+const CSV_COLS = ["id", "icao", "category", "name", "description", "address", "website", "costLevel", "minutesNeeded", "pace", "milesFromField", "lat", "lng", "crewTip", "tags", "submittedBy", "status", "airportCity", "airportName"];
 const esc = (v: unknown) => { const s = v == null ? "" : String(v); return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
 function parseCsv(text: string): string[][] {
   const rows: string[][] = []; let row: string[] = [], cur = "", q = false;
@@ -192,6 +205,7 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
     db.spots.forEach((sp) => { if (sp.userId === u.id) { sp.userId = null as any; sp.submittedBy = "Former crew member"; } });
     for (const t of Object.keys(db.sessions)) if (db.sessions[t] === u.id) delete db.sessions[t];
     db.users = db.users.filter((x) => x.id !== u.id);
+    db.briefings = (db.briefings || []).filter((b) => b.userId !== u.id);
     save(); return { ok: true };
   }
   if (method === "GET" && path === "/api/me/contributions") {
@@ -221,7 +235,8 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
     if (!s || s.status === "hidden") throw new HttpError(404, "Not found");
     const reviews = db.reviews.filter((r) => r.spotId === s.id).sort((a, b) => b.createdAt - a.createdAt).map((r) => {
       const vs = db.votes.filter((v) => v.targetType === "review" && v.targetId === r.id);
-      return { ...r, up: vs.filter((v) => v.value > 0).length, down: vs.filter((v) => v.value < 0).length, myVote: vs.find((v) => v.voter === voter)?.value ?? 0 };
+      const au = r.userId != null ? db.users.find((x) => x.id === r.userId) : undefined;
+      return { ...r, authorId: au && !au.anonymous ? au.id : null, up: vs.filter((v) => v.value > 0).length, down: vs.filter((v) => v.value < 0).length, myVote: vs.find((v) => v.voter === voter)?.value ?? 0 };
     });
     return { spot: withStats([s], voter)[0], reviews };
   }
@@ -240,17 +255,122 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
     const icao = ensureAirport(code, body.airportCity);
     const tags = Array.isArray(body.tags) ? body.tags : String(body.tags || "").split(",").map((t: string) => t.trim()).filter(Boolean);
     const data = cleanSpot({ ...body, icao, tags: JSON.stringify(tags.slice(0, 8)) });
-    const spot: Spot = { id: ++db.seq.spot, description: "", address: "", website: "", costLevel: 1, minutesNeeded: 60, milesFromField: 0, crewTip: "", ...data, submittedBy: publicName(u), userId: u.id, status: "live", createdAt: Date.now() };
+    if (data.category === "fbo") data.costLevel = 0;
+    else if (!isValidCost(data.category, data.costLevel)) throw new HttpError(400, data.category === "do" ? "Pick a price" : "Pick a price from $ to $$$$");
+    if (data.category === "eat") {
+      if (data.pace !== "grab" && data.pace !== "sit") throw new HttpError(400, "Pick Grab & go or Sit-down");
+      data.minutesNeeded = data.pace === "grab" ? 30 : 90;
+    } else data.pace = null;
+    if (data.category === "stay") data.minutesNeeded = 720;
+    if (data.category === "fbo") data.minutesNeeded = 30;
+    const ap = resolve(icao);
+    if (data.lat != null && data.lng != null && ap?.lat != null && ap?.lon != null && !data.milesFromField)
+      data.milesFromField = Math.round(milesBetween({ lat: ap.lat, lon: ap.lon }, { lat: data.lat, lon: data.lng }) * 10) / 10;
+    const spot: Spot = { id: ++db.seq.spot, description: "", address: "", website: "", costLevel: 1, minutesNeeded: 60, milesFromField: 0, crewTip: "", pace: null, lat: null, lng: null, placeRef: null, ...data, submittedBy: publicName(u), userId: u.id, status: "live", createdAt: Date.now() };
     db.spots.push(spot); save(); return spot;
   }
   if (method === "POST" && (m = path.match(/^\/api\/spots\/(\d+)\/reviews$/))) {
     const u = needUser();
     const spotId = Number(m[1]); const rating = Number(body.rating);
-    if (!db.spots.find((s) => s.id === spotId)) throw new HttpError(404, "Not found");
+    const sp = db.spots.find((s) => s.id === spotId);
+    if (!sp) throw new HttpError(404, "Not found");
     if (!(rating >= 1 && rating <= 5)) throw new HttpError(400, "Rating 1–5 required");
-    const r: Review = { id: ++db.seq.review, spotId, rating, comment: String(body.comment || "").slice(0, 1500), author: publicName(u), crewRole: u.crewRole, userId: u.id, createdAt: Date.now() };
+    const cv = body.costLevel == null || body.costLevel === "" ? null : Number(body.costLevel);
+    const costLevel = cv != null && costOptions(sp.category).includes(cv) ? cv : null;
+    const r: Review = { id: ++db.seq.review, spotId, rating, comment: String(body.comment || "").slice(0, 1500), author: publicName(u), crewRole: u.crewRole, userId: u.id, createdAt: Date.now(), costLevel };
     db.reviews.push(r); save(); return r;
   }
+  // ---- location & autofill (demo: airports only; business autofill needs the live server) ----
+  if (method === "GET" && path === "/api/airports/nearest") {
+    const lat = Number(query.get("lat")), lon = Number(query.get("lon"));
+    return db.airports.filter((a) => a.lat != null && a.lon != null)
+      .map((a) => ({ ...a, iata: a.iata || "", region: a.region || "", size: 2, miles: Math.round(milesBetween({ lat, lon }, { lat: a.lat!, lon: a.lon! }) * 10) / 10 }))
+      .sort((a, b) => a.miles - b.miles).slice(0, 3);
+  }
+  if (method === "GET" && (m = path.match(/^\/api\/airports\/lookup\/([A-Za-z0-9]+)$/))) {
+    const a = resolve(m[1]); if (!a) throw new HttpError(404, "Unknown airport"); return a;
+  }
+  if (method === "GET" && (path === "/api/places/search" || path === "/api/places/nearby"))
+    throw new HttpError(503, "Business autofill works on the live site (getwheelsdown.com). In this demo, type the details in.");
+
+  // ---- crew profiles ----
+  if (method === "GET" && (m = path.match(/^\/api\/crew\/(\d+)$/))) {
+    const uid = Number(m[1]);
+    const list = publicUsers();
+    const idx = list.findIndex((x) => x.id === uid);
+    const du = db.users.find((x) => x.id === uid);
+    if (idx < 0 || !du) throw new HttpError(404, "Not found");
+    const liveIds = new Set(db.spots.filter((s) => s.status === "live").map((s) => s.id));
+    const mySpots = withStats(db.spots.filter((s) => s.userId === uid && s.status === "live")).sort((a, b) => b.createdAt - a.createdAt);
+    const myRevs = db.reviews.filter((r) => r.userId === uid && liveIds.has(r.spotId)).sort((a, b) => b.createdAt - a.createdAt);
+    const counts = { listings: mySpots.length, reviews: myRevs.length };
+    if (du.anonymous) return { user: list[idx], rank: idx + 1, counts, spots: [], reviews: [], hidden: true };
+    return { user: list[idx], rank: idx + 1, counts, hidden: false, spots: mySpots,
+      reviews: myRevs.map(({ userId: _u, ...r }) => ({ ...r, spotName: db.spots.find((s) => s.id === r.spotId)?.name || "" })) };
+  }
+
+  // ---- trip briefings ----
+  const bList = () => (db.briefings ||= []);
+  const sponsorFor = (icao: string) => {
+    const act = db.ads.filter((a) => a.active);
+    const ad = act.find((a) => a.targetIcao === icao) || act.find((a) => !a.targetIcao);
+    return ad ? { id: ad.id, advertiser: ad.advertiser, headline: ad.headline, url: ad.url } : null;
+  };
+  const expand = (b: DemoBriefing, withCandidates: boolean) => ({
+    id: b.id, title: b.title, shareToken: b.shareToken, createdAt: b.createdAt, updatedAt: b.updatedAt,
+    stops: b.stops.map((st) => {
+      const airport = resolve(st.icao) || null;
+      const all = withStats(db.spots.filter((s) => s.status === "live" && s.icao === airport?.icao));
+      return { icao: airport?.icao || st.icao, layover: st.layover, nights: st.nights, airport, picks: st.picks.map((i) => all.find((s) => s.id === i)).filter(Boolean),
+        candidates: withCandidates ? all : undefined, sponsor: sponsorFor(airport?.icao || st.icao) };
+    }),
+  });
+  const cleanStops = (raw: any): BriefingStop[] => {
+    const stops = Array.isArray(raw) ? raw : [];
+    if (!stops.length) throw new HttpError(400, "Add at least one stop");
+    if (stops.length > 12) throw new HttpError(400, "Up to 12 stops");
+    return stops.map((st: any) => {
+      const a = resolve(String(st.icao || ""));
+      if (!a) throw new HttpError(400, `Unknown airport ${String(st.icao || "").toUpperCase()}`);
+      const layover = ["quick", "hours", "overnight", "multi"].includes(st.layover) ? st.layover : "hours";
+      return { icao: a.icao, layover, nights: st.nights ? Number(st.nights) : undefined, picks: (Array.isArray(st.picks) ? st.picks : []).map(Number).slice(0, 20) };
+    });
+  };
+  if (method === "POST" && path === "/api/briefings/suggest") {
+    needUser();
+    const stops = cleanStops(body.stops).map((st) => ({ ...st, picks: suggestPicks(withStats(db.spots.filter((s) => s.status === "live" && s.icao === st.icao)), st.layover) }));
+    return { title: String(body.title || ""), stops };
+  }
+  if (method === "GET" && path === "/api/briefings") {
+    const u = needUser();
+    return bList().filter((b) => b.userId === u.id).sort((a, b) => b.updatedAt - a.updatedAt).map((b) => ({ id: b.id, title: b.title, stops: b.stops.map((s) => ({ icao: s.icao, layover: s.layover })), updatedAt: b.updatedAt }));
+  }
+  if ((m = path.match(/^\/api\/briefings\/(\d+)$/))) {
+    const u = needUser();
+    const b = bList().find((x) => x.id === Number(m![1]) && x.userId === u.id);
+    if (method === "DELETE") { db.briefings = bList().filter((x) => x !== b); save(); return { ok: true }; }
+    if (!b) throw new HttpError(404, "Not found");
+    return expand(b, true);
+  }
+  if (method === "POST" && path === "/api/briefings") {
+    const u = needUser();
+    const stops = cleanStops(body.stops);
+    const title = String(body.title || "").trim().slice(0, 80);
+    let b = body.id ? bList().find((x) => x.id === Number(body.id) && x.userId === u.id) : undefined;
+    if (body.id && !b) throw new HttpError(404, "Not found");
+    if (b) { b.title = title; b.stops = stops; b.updatedAt = Date.now(); }
+    else {
+      b = { id: bList().reduce((mx, x) => Math.max(mx, x.id), 0) + 1, userId: u.id, title, stops, shareToken: Math.random().toString(36).slice(2) + Date.now().toString(36) + "demo", createdAt: Date.now(), updatedAt: Date.now() };
+      bList().push(b);
+    }
+    save(); return expand(b, true);
+  }
+  if (method === "GET" && (m = path.match(/^\/api\/shared\/briefings\/([A-Za-z0-9_-]+)$/))) {
+    const b = bList().find((x) => x.shareToken === m![1]);
+    if (!b) throw new HttpError(404, "This briefing link is no longer available.");
+    return expand(b, false);
+  }
+
   if (method === "GET" && path === "/api/ads") {
     const icaos = parseRoute(query.get("icaos") || "");
     return db.ads.filter((a) => a.active && (!a.targetIcao || icaos.includes(a.targetIcao)));
@@ -313,12 +433,13 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
         const data = cleanSpot({
           icao, category: o.category.toLowerCase(), name: o.name, description: o.description || "", address: o.address || "", website: o.website || "",
           costLevel: o.costLevel || 1, minutesNeeded: o.minutesNeeded || 60, milesFromField: o.milesFromField || 0, crewTip: o.crewTip || "",
+          pace: o.pace || null, lat: o.lat || null, lng: o.lng || null,
           tags: JSON.stringify((o.tags || "").split(/[;|]/).map((t) => t.trim()).filter(Boolean)), submittedBy: o.submittedBy || "Admin import",
           status: ["live", "pending", "hidden"].includes(o.status) ? o.status : "live",
         });
         const ex = o.id ? db.spots.find((s) => s.id === Number(o.id)) : undefined;
         if (ex) { Object.assign(ex, data); updated++; }
-        else { db.spots.push({ id: ++db.seq.spot, userId: null, ...data, createdAt: Date.now() }); created++; }
+        else { db.spots.push({ id: ++db.seq.spot, userId: null, pace: null, lat: null, lng: null, placeRef: null, ...data, createdAt: Date.now() }); created++; }
       } catch (e: any) { errors.push(`Row ${idx + 2}: ${e.message}`); }
     });
     save(); return { created, updated, errors: errors.slice(0, 50) };
