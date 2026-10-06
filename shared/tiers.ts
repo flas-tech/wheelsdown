@@ -32,6 +32,10 @@ export const POINTS = {
   helpfulReceived: 2, // someone marks your review helpful
 } as const;
 
+/** Milestone inside Student. Does not change tier thresholds or rankings. */
+export const SOLO_POINTS = 25;
+export const hasSoloed = (points: number) => points >= SOLO_POINTS;
+
 export function tierFor(points: number) {
   let i = 0;
   for (let k = 0; k < TIERS.length; k++) if (points >= TIERS[k].min) i = k;

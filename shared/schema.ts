@@ -21,6 +21,8 @@ export const airports = pgTable("airports", {
   city: text("city").notNull(),
   region: text("region"),
   country: text("country").notNull().default("US"),
+  lat: doublePrecision("lat"),
+  lon: doublePrecision("lon"),
 });
 export const insertAirportSchema = createInsertSchema(airports);
 export type InsertAirport = z.infer<typeof insertAirportSchema>;
@@ -43,6 +45,10 @@ export const spots = pgTable("spots", {
   userId: integer("user_id"),
   status: text("status").notNull().default("live"), // live | pending | hidden
   createdAt: bigint("created_at", { mode: "number" }).notNull().default(0),
+  pace: text("pace"), // eat only: grab | sit (null = derived from minutesNeeded)
+  lat: doublePrecision("lat"),
+  lng: doublePrecision("lng"),
+  placeRef: text("place_ref"), // e.g. osm:N1576341770
 }, (t) => [index("spots_icao_idx").on(t.icao), index("spots_user_idx").on(t.userId)]);
 export const insertSpotSchema = createInsertSchema(spots, {
   icao: z.string().min(3).max(4),
@@ -50,6 +56,10 @@ export const insertSpotSchema = createInsertSchema(spots, {
   name: z.string().min(2, "Give it a name").max(120),
   costLevel: z.coerce.number().int().min(0).max(4),
   minutesNeeded: z.coerce.number().int().min(5).max(10080),
+  pace: z.enum(["grab", "sit"]).nullable().optional(),
+  lat: z.coerce.number().min(-90).max(90).nullable().optional(),
+  lng: z.coerce.number().min(-180).max(180).nullable().optional(),
+  placeRef: z.string().max(40).nullable().optional(),
 }).omit({ id: true, createdAt: true });
 export type InsertSpot = z.infer<typeof insertSpotSchema>;
 export type Spot = typeof spots.$inferSelect;
@@ -63,10 +73,12 @@ export const reviews = pgTable("reviews", {
   crewRole: text("crew_role").default("Crew"),
   userId: integer("user_id"),
   createdAt: bigint("created_at", { mode: "number" }).notNull().default(0),
+  costLevel: integer("cost_level"), // optional price vote: 0 free … 4 $$$$
 }, (t) => [index("reviews_spot_idx").on(t.spotId), index("reviews_user_idx").on(t.userId)]);
 export const insertReviewSchema = createInsertSchema(reviews, {
   rating: z.coerce.number().int().min(1).max(5),
   comment: z.string().max(1500),
+  costLevel: z.coerce.number().int().min(0).max(4).nullable().optional(),
 }).omit({ id: true, createdAt: true });
 export type InsertReview = z.infer<typeof insertReviewSchema>;
 export type Review = typeof reviews.$inferSelect;
@@ -88,7 +100,40 @@ export const insertAdSchema = createInsertSchema(ads).omit({ id: true, impressio
 export type InsertAd = z.infer<typeof insertAdSchema>;
 export type Ad = typeof ads.$inferSelect;
 
-export type SpotWithStats = Spot & { avgRating: number | null; reviewCount: number; airport?: Airport; vet: VetInfo };
+export type SpotWithStats = Spot & {
+  avgRating: number | null; reviewCount: number; airport?: Airport; vet: VetInfo;
+  /** crew price: median of the submitter's price and every rating's price vote (null = not priced yet) */
+  cost: number | null; costVotes: number;
+};
+
+// ---- Trip briefings (saved layover plans) ----
+export const briefings = pgTable("briefings", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  title: text("title").notNull().default(""),
+  stops: text("stops").notNull().default("[]"), // JSON BriefingStop[]
+  shareToken: text("share_token").notNull(),
+  createdAt: bigint("created_at", { mode: "number" }).notNull().default(0),
+  updatedAt: bigint("updated_at", { mode: "number" }).notNull().default(0),
+}, (t) => [index("briefings_user_idx").on(t.userId), uniqueIndex("briefings_share_idx").on(t.shareToken)]);
+export type Briefing = typeof briefings.$inferSelect;
+export const LAYOVERS = [
+  { id: "quick", label: "Quick turn", sub: "under 1 hr" },
+  { id: "hours", label: "A few hours", sub: "1–6 hrs" },
+  { id: "overnight", label: "Overnight", sub: "1 night" },
+  { id: "multi", label: "Several days", sub: "2+ nights" },
+] as const;
+export type LayoverId = (typeof LAYOVERS)[number]["id"];
+export type BriefingStop = { icao: string; layover: LayoverId; nights?: number; picks: number[] };
+export const briefingSchema = z.object({
+  title: z.string().trim().max(80).default(""),
+  stops: z.array(z.object({
+    icao: z.string().trim().min(3).max(4),
+    layover: z.enum(["quick", "hours", "overnight", "multi"]),
+    nights: z.coerce.number().int().min(1).max(14).optional(),
+    picks: z.array(z.coerce.number().int()).max(20).default([]),
+  })).min(1, "Add at least one stop").max(12),
+});
 
 // ---- Crew votes (up/down) on listings and reviews ----
 export const votes = pgTable("votes", {
@@ -116,7 +161,7 @@ export type VetInfo = {
   up: number; down: number; score: number; level: VetLevel;
   lastUpAt: number | null; reasons: Record<string, number>; myVote: number;
 };
-export type ReviewWithVotes = Review & { up: number; down: number; myVote: number };
+export type ReviewWithVotes = Review & { up: number; down: number; myVote: number; authorId?: number | null };
 
 // ---- Crew accounts ----
 export const users = pgTable("users", {

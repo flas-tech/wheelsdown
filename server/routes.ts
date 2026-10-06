@@ -9,6 +9,11 @@ import {
 } from "@shared/schema";
 import { tierFor, TIERS, publicName } from "@shared/tiers";
 import { buildHighlights } from "@shared/highlights";
+import { briefingSchema, type BriefingStop, type Briefing, type SpotWithStats } from "@shared/schema";
+import { isValidCost, costOptions, milesBetween } from "@shared/cost";
+import { suggestPicks } from "@shared/briefing";
+import { refAirport, nearestAirports } from "./airportsData";
+import { searchPlaces, nearbyPlaces } from "./places";
 import { z } from "zod";
 
 const PROD = process.env.NODE_ENV === "production";
@@ -46,7 +51,7 @@ function parseRoute(route: string) {
 }
 
 // ---- tiny CSV helpers ----
-const CSV_COLS = ["id", "icao", "category", "name", "description", "address", "website", "costLevel", "minutesNeeded", "milesFromField", "crewTip", "tags", "submittedBy", "status", "airportCity", "airportName"] as const;
+const CSV_COLS = ["id", "icao", "category", "name", "description", "address", "website", "costLevel", "minutesNeeded", "pace", "milesFromField", "lat", "lng", "crewTip", "tags", "submittedBy", "status", "airportCity", "airportName"] as const;
 function csvEscape(v: unknown) {
   let s = v == null ? "" : String(v);
   if (/^[=+\-@]/.test(s)) s = "'" + s; // neutralize spreadsheet formula injection
@@ -76,7 +81,7 @@ function parseCsv(text: string): string[][] {
 }
 
 async function ensureAirport(code: string, city?: string, name?: string) {
-  const found = await storage.resolveCode(code);
+  const found = await storage.resolveOrCreate(code);
   if (found) return found.icao;
   const icao = code.length === 3 ? "K" + code : code;
   await storage.upsertAirport({ icao, iata: code.length === 3 ? code : null, name: name || icao, city: city || "Unknown", region: "", country: "" });
@@ -157,7 +162,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.get("/api/search", async (req, res) => {
     const codes = parseRoute(String(req.query.route || ""));
-    const legs = await Promise.all(codes.map(async (code) => ({ code, airport: (await storage.resolveCode(code)) || null })));
+    const legs = await Promise.all(codes.map(async (code) => {
+      const a = await storage.resolveCode(code);
+      if (a) return { code, airport: a };
+      const ref = refAirport(code); // known airport with no listings yet
+      return { code, airport: ref ? { icao: ref.icao, iata: ref.iata, name: ref.name, city: ref.city, region: ref.region, country: ref.country, lat: ref.lat, lon: ref.lon } : null };
+    }));
     const icaos = legs.filter((l) => l.airport).map((l) => l.airport!.icao);
     const v = await voterOf(req);
     const results = codes.length ? (icaos.length ? await storage.searchSpots(icaos, false, v) : []) : await storage.searchSpots([], false, v);
@@ -199,8 +209,21 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (!p.success) return res.status(400).json({ message: msg(p.error) });
     const { airportCity, tags, ...rest } = p.data;
     const code = rest.icao.toUpperCase();
-    if (!(await storage.resolveCode(code)) && !airportCity) return res.status(400).json({ message: `We don't know ${code} yet — add the city so we can create it.` });
+    if (!(await storage.resolveCode(code)) && !refAirport(code) && !airportCity) return res.status(400).json({ message: `We don't know ${code} yet — add the city so we can create it.` });
+    // price, pace and time rules per category
+    if (rest.category === "fbo") rest.costLevel = 0;
+    else if (!isValidCost(rest.category, rest.costLevel)) return res.status(400).json({ message: rest.category === "do" ? "Pick a price" : "Pick a price from $ to $$$$" });
+    if (rest.category === "eat") {
+      if (rest.pace !== "grab" && rest.pace !== "sit") return res.status(400).json({ message: "Pick Grab & go or Sit-down" });
+      rest.minutesNeeded = rest.pace === "grab" ? 30 : 90;
+    } else rest.pace = null;
+    if (rest.category === "stay") rest.minutesNeeded = 720;
+    if (rest.category === "fbo") rest.minutesNeeded = 30;
     const icao = await ensureAirport(code, airportCity);
+    const ap = await storage.resolveCode(icao);
+    if (rest.lat != null && rest.lng != null && ap?.lat != null && ap?.lon != null && !rest.milesFromField) {
+      rest.milesFromField = Math.round(milesBetween({ lat: ap.lat, lon: ap.lon }, { lat: rest.lat, lon: rest.lng }) * 10) / 10;
+    }
     const tagArr = Array.isArray(tags) ? tags : String(tags || "").split(",").map((t) => t.trim()).filter(Boolean);
     const trusted = tierFor((await storage.me(user)).points).index >= TIERS.findIndex((t) => t.id === "commercial");
     const spot = await storage.createSpot({ ...rest, icao, tags: JSON.stringify(tagArr.slice(0, 8).map((t) => t.slice(0, 30))), submittedBy: publicName(user), userId: user.id, status: MODERATE && !trusted ? "pending" : "live" });
@@ -211,8 +234,110 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const user = (req as any).user as User;
     const p = insertReviewSchema.safeParse({ ...req.body, spotId: id(req), author: publicName(user), crewRole: user.crewRole, userId: user.id });
     if (!p.success) return res.status(400).json({ message: msg(p.error) });
-    if (!(await storage.getSpot(p.data.spotId))) return res.status(404).json({ message: "Not found" });
-    res.status(201).json(await storage.createReview(p.data));
+    const spot = await storage.getSpot(p.data.spotId);
+    if (!spot) return res.status(404).json({ message: "Not found" });
+    // a price vote is optional; drop values that don't apply to this category (e.g. "Free" for a restaurant, anything for an FBO)
+    const costLevel = p.data.costLevel != null && costOptions(spot.category).includes(p.data.costLevel) ? p.data.costLevel : null;
+    res.status(201).json(await storage.createReview({ ...p.data, costLevel }));
+  });
+
+  // ---------- location & autofill ----------
+  const placesLimit = rateLimit({ windowMs: 60_000, limit: 40, standardHeaders: "draft-8", legacyHeaders: false, message: { message: "Autofill is busy. Type the details in, or try again in a minute." } });
+  const num = (v: unknown) => (v === undefined || v === "" ? NaN : Number(v));
+  app.get("/api/airports/nearest", (req, res) => {
+    const lat = num(req.query.lat), lon = num(req.query.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return res.status(400).json({ message: "lat and lon required" });
+    res.json(nearestAirports(lat, lon, 3));
+  });
+  app.get("/api/airports/lookup/:code", async (req, res) => {
+    const a = (await storage.resolveCode(req.params.code)) || refAirport(req.params.code);
+    a ? res.json(a) : res.status(404).json({ message: "Unknown airport" });
+  });
+  app.get("/api/places/search", placesLimit, async (req, res) => {
+    try { res.json(await searchPlaces(String(req.query.q || ""), num(req.query.lat), num(req.query.lng), String(req.query.cat || ""))); }
+    catch { res.status(502).json({ message: "Autofill is unavailable right now. Type the details in." }); }
+  });
+  app.get("/api/places/nearby", placesLimit, async (req, res) => {
+    try { res.json(await nearbyPlaces(num(req.query.lat), num(req.query.lng), String(req.query.cat || ""))); }
+    catch { res.status(502).json({ message: "Nearby places are unavailable right now." }); }
+  });
+
+  // ---------- crew profiles ----------
+  app.get("/api/crew/:id", async (req, res) => {
+    const p = await storage.crewProfile(id(req));
+    p ? res.json(p) : res.status(404).json({ message: "Not found" });
+  });
+
+  // ---------- trip briefings (signed-in crew; no points) ----------
+  async function sponsorFor(icao: string) {
+    const all = (await storage.listAds()).filter((a) => a.active);
+    const ad = all.find((a) => a.targetIcao === icao) || all.find((a) => !a.targetIcao);
+    return ad ? { id: ad.id, advertiser: ad.advertiser, headline: ad.headline, url: ad.url } : null;
+  }
+  async function expandBriefing(b: Briefing, withCandidates: boolean) {
+    const stops = JSON.parse(b.stops || "[]") as BriefingStop[];
+    const out = [];
+    for (const st of stops) {
+      const airport = (await storage.resolveCode(st.icao)) || (refAirport(st.icao) as any) || null;
+      const all = airport?.icao ? await storage.searchSpots([airport.icao]) : [];
+      const byId = new Map(all.map((s) => [s.id, s]));
+      out.push({
+        icao: airport?.icao || st.icao.toUpperCase(), layover: st.layover, nights: st.nights, airport,
+        picks: st.picks.map((i) => byId.get(i)).filter(Boolean) as SpotWithStats[],
+        candidates: withCandidates ? all : undefined,
+        sponsor: await sponsorFor(airport?.icao || st.icao.toUpperCase()),
+      });
+    }
+    return { id: b.id, title: b.title, shareToken: b.shareToken, createdAt: b.createdAt, updatedAt: b.updatedAt, stops: out };
+  }
+  const parseBriefing = (body: unknown) => briefingSchema.safeParse(body);
+  /** Suggest picks without saving (used as the planner fills in each stop). */
+  app.post("/api/briefings/suggest", requireUser, writeLimit, async (req, res) => {
+    const p = parseBriefing(req.body);
+    if (!p.success) return res.status(400).json({ message: msg(p.error) });
+    const stops = [];
+    for (const st of p.data.stops) {
+      const airport = (await storage.resolveCode(st.icao)) || (refAirport(st.icao) as any) || null;
+      if (!airport) return res.status(400).json({ message: `Unknown airport ${st.icao.toUpperCase()}` });
+      const all = await storage.searchSpots([airport.icao]);
+      stops.push({ ...st, icao: airport.icao, picks: suggestPicks(all, st.layover) });
+    }
+    res.json({ title: p.data.title, stops });
+  });
+  app.get("/api/briefings", requireUser, async (req, res) => {
+    const list = await storage.listBriefings((req as any).user.id);
+    res.json(list.map((b) => ({ id: b.id, title: b.title, stops: (JSON.parse(b.stops) as BriefingStop[]).map((s) => ({ icao: s.icao, layover: s.layover })), updatedAt: b.updatedAt })));
+  });
+  app.get("/api/briefings/:id", requireUser, async (req, res) => {
+    const b = await storage.getBriefing(id(req));
+    if (!b || b.userId !== (req as any).user.id) return res.status(404).json({ message: "Not found" });
+    res.json(await expandBriefing(b, true));
+  });
+  app.post("/api/briefings", requireUser, writeLimit, async (req, res) => {
+    const p = parseBriefing(req.body);
+    if (!p.success) return res.status(400).json({ message: msg(p.error) });
+    const stops = [];
+    for (const st of p.data.stops) {
+      const icao = (await storage.resolveCode(st.icao))?.icao || refAirport(st.icao)?.icao;
+      if (!icao) return res.status(400).json({ message: `Unknown airport ${st.icao.toUpperCase()}` });
+      stops.push({ ...st, icao });
+    }
+    const user = (req as any).user as User;
+    const existing = req.body?.id ? await storage.getBriefing(Number(req.body.id)) : undefined;
+    if (req.body?.id && (!existing || existing.userId !== user.id)) return res.status(404).json({ message: "Not found" });
+    if (!existing && (await storage.listBriefings(user.id)).length >= 100) return res.status(400).json({ message: "You have 100 saved briefings. Delete a few first." });
+    const b = await storage.saveBriefing(user.id, { title: p.data.title, stops }, existing?.id);
+    res.status(existing ? 200 : 201).json(await expandBriefing(b, true));
+  });
+  app.delete("/api/briefings/:id", requireUser, writeLimit, async (req, res) => {
+    await storage.deleteBriefing((req as any).user.id, id(req));
+    res.json({ ok: true });
+  });
+  /** Read-only shared briefing (link sent to the crew). */
+  app.get("/api/shared/briefings/:token", async (req, res) => {
+    const b = await storage.getBriefingByToken(String(req.params.token));
+    if (!b) return res.status(404).json({ message: "This briefing link is no longer available." });
+    res.json(await expandBriefing(b, false));
   });
 
   app.get("/api/ads", async (req, res) => {
@@ -292,6 +417,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         const data = insertSpotSchema.parse({
           icao, category: o.category.toLowerCase(), name: o.name, description: o.description || "", address: o.address || "", website: o.website || "",
           costLevel: o.costLevel || 1, minutesNeeded: o.minutesNeeded || 60, milesFromField: o.milesFromField ? Number(o.milesFromField) : 0,
+          pace: o.pace === "grab" || o.pace === "sit" ? o.pace : null, lat: o.lat ? Number(o.lat) : null, lng: o.lng ? Number(o.lng) : null,
           crewTip: o.crewTip || "", tags: JSON.stringify((o.tags || "").split(/[;|]/).map((t) => t.trim()).filter(Boolean)),
           submittedBy: o.submittedBy || "Admin import", status: ["live", "pending", "hidden"].includes(o.status) ? o.status : "live",
         });

@@ -21,13 +21,15 @@ if (PROD) {
         scriptSrc: ["'self'"],
         styleSrc: ["'self'", "'unsafe-inline'", "https://api.fontshare.com", "https://fonts.googleapis.com"],
         fontSrc: ["'self'", "data:", "https://api.fontshare.com", "https://cdn.fontshare.com", "https://fonts.gstatic.com"],
-        imgSrc: ["'self'", "data:", "https:"],
+        imgSrc: ["'self'", "data:", "blob:", "https:"],
         connectSrc: ["'self'"],
         frameAncestors: ["'none'"],
         upgradeInsecureRequests: [],
       },
     },
     crossOriginEmbedderPolicy: false,
+    // OpenStreetMap's tile policy asks for an accurate Referer on tile requests
+    referrerPolicy: { policy: "strict-origin-when-cross-origin" },
   }));
 }
 const httpServer = createServer(app);

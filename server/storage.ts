@@ -1,4 +1,7 @@
-import { airports, spots, reviews, ads, votes, users, sessions, passwordResets } from "@shared/schema";
+import { airports, spots, reviews, ads, votes, users, sessions, passwordResets, briefings } from "@shared/schema";
+import type { Briefing, BriefingStop } from "@shared/schema";
+import { crewCost } from "@shared/cost";
+import { refAirport } from "./airportsData";
 import type { User, Vote, ReviewWithVotes, Airport, InsertAirport, Spot, InsertSpot, Review, InsertReview, Ad, InsertAd, SpotWithStats } from "@shared/schema";
 import { computePoints, recentActivity, publicName, tierFor, SEED_USERS, SEED_PASSWORD, type PublicUser, type Me } from "@shared/tiers";
 import { computeVet, seedVotesFor, shouldAutoHold } from "@shared/vetting";
@@ -26,14 +29,14 @@ async function checkPassword(pw: string, stored: string) {
 /**
  * Seed modes:
  *  - demo:    sample crew, votes, reviews and sample ads (local dev / demos only)
- *  - starter: airports + starter listings credited to "Wheelsdown team", plus the house ad. No fake people or votes. (production default)
- *  - none:    airports only
+ *  - starter: airports + starter listings credited to "Wheelsdown team", plus the house ad. No fake people or votes. (opt-in)
+ *  - none:    airports only (production default)
  */
 export async function seedIfEmpty() {
   const d = db();
   const [{ c }] = (await d.execute(sql`SELECT COUNT(*)::int AS c FROM airports`)).rows as any[];
   if (c > 0) return;
-  const mode = (process.env.SEED_MODE || (process.env.NODE_ENV === "production" ? "starter" : "demo")) as "demo" | "starter" | "none";
+  const mode = (process.env.SEED_MODE || (process.env.NODE_ENV === "production" ? "none" : "demo")) as "demo" | "starter" | "none";
   const now = Date.now();
   await d.insert(airports).values(seedAirports.map(([icao, iata, name, city, region, country]) => ({ icao, iata, name, city, region, country })));
   if (mode === "none") return console.log("[seed] airports only");
@@ -74,14 +77,18 @@ async function withStats(rows: Spot[], voter = ""): Promise<SpotWithStats[]> {
   if (!rows.length) return [];
   const d = db();
   const ids = rows.map((r) => r.id);
-  const agg = await d.select({ spotId: reviews.spotId, avg: sql<number>`AVG(${reviews.rating})::float`, n: sql<number>`COUNT(*)::int` })
+  const agg = await d.select({ spotId: reviews.spotId, avg: sql<number>`AVG(${reviews.rating})::float`, n: sql<number>`COUNT(*)::int`,
+    costs: sql<(number | null)[]>`array_agg(${reviews.costLevel})` })
     .from(reviews).where(inArray(reviews.spotId, ids)).groupBy(reviews.spotId);
   const m = new Map(agg.map((a) => [a.spotId, a]));
   const aps = new Map((await d.select().from(airports).where(inArray(airports.icao, Array.from(new Set(rows.map((r) => r.icao)))))).map((a) => [a.icao, a]));
   const vs = await d.select().from(votes).where(and(eq(votes.targetType, "spot"), inArray(votes.targetId, ids)));
   const byId = new Map<number, Vote[]>();
   vs.forEach((v) => byId.set(v.targetId, [...(byId.get(v.targetId) || []), v]));
-  return rows.map((r) => ({ ...r, avgRating: m.get(r.id)?.avg ?? null, reviewCount: m.get(r.id)?.n ?? 0, airport: aps.get(r.icao), vet: computeVet(byId.get(r.id) || [], voter) }));
+  return rows.map((r) => ({
+    ...r, avgRating: m.get(r.id)?.avg ?? null, reviewCount: m.get(r.id)?.n ?? 0, airport: aps.get(r.icao), vet: computeVet(byId.get(r.id) || [], voter),
+    ...crewCost(r.category, r.costLevel, m.get(r.id)?.costs || []),
+  }));
 }
 
 // Leaderboard/points are computed from activity. Cache briefly so /api/crew stays cheap.
@@ -89,7 +96,18 @@ let actCache: { at: number; data: Awaited<ReturnType<DatabaseStorage["loadActivi
 const invalidateActivity = () => { actCache = null; };
 
 export class DatabaseStorage {
-  async init() { await initDb(); await seedIfEmpty(); }
+  async init() { await initDb(); await seedIfEmpty(); await this.backfillAirportCoords(); }
+  /** Fill in airport coordinates from the reference dataset (only where missing). */
+  async backfillAirportCoords() {
+    const d = db();
+    const missing = await d.select().from(airports).where(isNull(airports.lat));
+    let n = 0;
+    for (const a of missing) {
+      const ref = refAirport(a.icao);
+      if (ref) { await d.update(airports).set({ lat: ref.lat, lon: ref.lon }).where(eq(airports.icao, a.icao)); n++; }
+    }
+    if (n) console.log(`[airports] coordinates filled for ${n}`);
+  }
   async health() { await db().execute(sql`SELECT 1`); return true; }
 
   // ---- airports ----
@@ -101,6 +119,14 @@ export class DatabaseStorage {
       return (await db().select().from(airports).where(eq(airports.iata, c)))[0] || (await db().select().from(airports).where(eq(airports.icao, "K" + c)))[0];
     }
     return undefined;
+  }
+  /** Known airport, or one created from the reference dataset (name, city, coordinates). */
+  async resolveOrCreate(code: string): Promise<Airport | undefined> {
+    const hit = await this.resolveCode(code);
+    if (hit) return hit;
+    const ref = refAirport(code);
+    if (!ref) return undefined;
+    return this.upsertAirport({ icao: ref.icao, iata: ref.iata || null, name: ref.name, city: ref.city || ref.name, region: ref.region, country: ref.country, lat: ref.lat, lon: ref.lon });
   }
   async upsertAirport(a: InsertAirport) {
     return (await db().insert(airports).values(a).onConflictDoUpdate({ target: airports.icao, set: a }).returning())[0];
@@ -156,9 +182,11 @@ export class DatabaseStorage {
     const rs = await this.listReviews(spotId);
     if (!rs.length) return [];
     const vs = await db().select().from(votes).where(and(eq(votes.targetType, "review"), inArray(votes.targetId, rs.map((r) => r.id))));
+    const uids = Array.from(new Set(rs.map((r) => r.userId).filter((x): x is number => x != null)));
+    const named = new Set((uids.length ? await db().select({ id: users.id, anonymous: users.anonymous }).from(users).where(inArray(users.id, uids)) : []).filter((u) => !u.anonymous).map((u) => u.id));
     return rs.map((r) => {
       const mine = vs.filter((v) => v.targetId === r.id);
-      return { ...r, up: mine.filter((v) => v.value > 0).length, down: mine.filter((v) => v.value < 0).length, myVote: mine.find((v) => v.voter === voter)?.value ?? 0 };
+      return { ...r, authorId: r.userId != null && named.has(r.userId) ? r.userId : null, up: mine.filter((v) => v.value > 0).length, down: mine.filter((v) => v.value < 0).length, myVote: mine.find((v) => v.voter === voter)?.value ?? 0 };
     });
   }
   async createReview(r: InsertReview) { invalidateActivity(); return (await db().insert(reviews).values({ ...r, createdAt: Date.now() }).returning())[0]; }
@@ -217,6 +245,7 @@ export class DatabaseStorage {
     await d.delete(reviews).where(eq(reviews.userId, id));
     await d.delete(votes).where(eq(votes.voter, `u:${id}`));
     await d.update(spots).set({ userId: null, submittedBy: "Former crew member" }).where(eq(spots.userId, id));
+    await d.delete(briefings).where(eq(briefings.userId, id));
     await d.delete(sessions).where(eq(sessions.userId, id));
     await d.delete(passwordResets).where(eq(passwordResets.userId, id));
     await d.delete(users).where(eq(users.id, id));
@@ -304,6 +333,41 @@ export class DatabaseStorage {
     const names = new Map((rs.length ? await d.select({ id: spots.id, name: spots.name }).from(spots).where(inArray(spots.id, rs.map((r) => r.spotId))) : []).map((s) => [s.id, s.name]));
     return { spots: mySpots, reviews: rs.map((r) => ({ ...r, spotName: names.get(r.spotId) || "" })), activity: recentActivity(await this.loadActivity(), userId) };
   }
+  /** Public crew profile. Anonymous members show stats only, so their posts cannot be traced back to them. */
+  async crewProfile(userId: number) {
+    const pub = (await this.publicUsers()).find((u) => u.id === userId);
+    if (!pub) return undefined;
+    const rank = (await this.publicUsers()).findIndex((u) => u.id === userId) + 1;
+    const u = (await db().select().from(users).where(eq(users.id, userId)))[0];
+    const c = await this.userContributions(userId);
+    const counts = { listings: c.spots.filter((s) => s.status === "live").length, reviews: c.reviews.length };
+    if (u?.anonymous) return { user: pub, rank, counts, spots: [], reviews: [], hidden: true };
+    const live = new Set(c.spots.filter((s) => s.status === "live").map((s) => s.id));
+    const liveIds = (await db().select({ id: spots.id }).from(spots).where(eq(spots.status, "live"))).map((x) => x.id);
+    const liveAll = new Set(liveIds);
+    return {
+      user: pub, rank, counts, hidden: false,
+      spots: c.spots.filter((s) => live.has(s.id)),
+      reviews: c.reviews.filter((r) => liveAll.has(r.spotId)).map(({ userId: _u, ...r }) => r),
+    };
+  }
+
+  // ---- trip briefings ----
+  listBriefings(userId: number) { return db().select().from(briefings).where(eq(briefings.userId, userId)).orderBy(desc(briefings.updatedAt)); }
+  async getBriefing(id: number) { return Number.isFinite(id) ? (await db().select().from(briefings).where(eq(briefings.id, id)))[0] : undefined; }
+  async getBriefingByToken(t: string) { return t && t.length >= 16 ? (await db().select().from(briefings).where(eq(briefings.shareToken, t)))[0] : undefined; }
+  async saveBriefing(userId: number, b: { title: string; stops: BriefingStop[] }, id?: number): Promise<Briefing> {
+    const now = Date.now();
+    const d = db();
+    if (id) return (await d.update(briefings).set({ title: b.title, stops: JSON.stringify(b.stops), updatedAt: now }).where(and(eq(briefings.id, id), eq(briefings.userId, userId))).returning())[0];
+    return (await d.insert(briefings).values({ userId, title: b.title, stops: JSON.stringify(b.stops), shareToken: randomBytes(12).toString("base64url"), createdAt: now, updatedAt: now }).returning())[0];
+  }
+  async deleteBriefing(userId: number, id: number) { await db().delete(briefings).where(and(eq(briefings.id, id), eq(briefings.userId, userId))); }
+  async spotsByIds(ids: number[]) {
+    if (!ids.length) return [];
+    return withStats(await db().select().from(spots).where(and(inArray(spots.id, ids), eq(spots.status, "live"))));
+  }
+
   async grantBonus(userId: number, delta: number) {
     invalidateActivity();
     await db().update(users).set({ bonusPoints: sql`GREATEST(0, ${users.bonusPoints} + ${delta})` }).where(eq(users.id, userId));

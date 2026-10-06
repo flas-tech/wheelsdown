@@ -78,6 +78,17 @@ CREATE TABLE IF NOT EXISTS users (id serial PRIMARY KEY, handle text NOT NULL UN
   anonymous integer NOT NULL DEFAULT 0, created_at bigint NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS sessions (token text PRIMARY KEY, user_id integer NOT NULL, created_at bigint NOT NULL DEFAULT 0, expires_at bigint NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS sessions_user_idx ON sessions(user_id);
+ALTER TABLE airports ADD COLUMN IF NOT EXISTS lat double precision;
+ALTER TABLE airports ADD COLUMN IF NOT EXISTS lon double precision;
+ALTER TABLE spots ADD COLUMN IF NOT EXISTS pace text;
+ALTER TABLE spots ADD COLUMN IF NOT EXISTS lat double precision;
+ALTER TABLE spots ADD COLUMN IF NOT EXISTS lng double precision;
+ALTER TABLE spots ADD COLUMN IF NOT EXISTS place_ref text;
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS cost_level integer;
+CREATE TABLE IF NOT EXISTS briefings (id serial PRIMARY KEY, user_id integer NOT NULL, title text NOT NULL DEFAULT '', stops text NOT NULL DEFAULT '[]',
+  share_token text NOT NULL, created_at bigint NOT NULL DEFAULT 0, updated_at bigint NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS briefings_user_idx ON briefings(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS briefings_share_idx ON briefings(share_token);
 CREATE TABLE IF NOT EXISTS password_resets (token_hash text PRIMARY KEY, user_id integer NOT NULL, expires_at bigint NOT NULL, used_at bigint);
 `;
 

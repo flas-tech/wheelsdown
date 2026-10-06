@@ -31,5 +31,5 @@ services:
         sync: false
       - key: MODERATE           # 1 = new listings from members below Commercial wait for admin review
         value: "0"
-      - key: SEED_MODE          # starter = airports + starter listings, no fake users
-        value: starter
+      - key: SEED_MODE          # none = airports only; crews add every listing
+        value: none
