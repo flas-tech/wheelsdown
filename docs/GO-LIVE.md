@@ -78,23 +78,18 @@ Steps marked **You** need your accounts, payment or legal decisions. Steps marke
     - The password is kept outside the repository.
 7. **Done:** Tables created, and the starter content is loaded: 61 airports, 39 listings and the house ad, with no users or votes. The 27-step smoke test passed against it.
 
-### Phase 3: App on Render (20 minutes)
+### Phase 3: App on Render (done Oct 6, 2026)
 
-8. **Me or you:** In Render, choose New, then Blueprint, and select `flas-tech/wheelsdown`. This creates the `wheelsdown` service on the Starter plan in Virginia, with automatic deploys from `main` and a health check on `/api/health`.
-9. Fill in the prompted settings:
-
-| Setting | Value |
-|---|---|
-| `DATABASE_URL` | Supabase session pooler URI from step 6 |
-| `APP_URL` | `https://getwheelsdown.com` |
-| `CONTACT_EMAIL` | `hello@getwheelsdown.com` |
-| `RESEND_API_KEY` | from Phase 5 (can be added later) |
-| `EMAIL_FROM` | `Wheelsdown <no-reply@mail.getwheelsdown.com>` |
-| `VITE_OPERATOR_NAME` | your legal entity name |
-| `ADMIN_KEY` | generated automatically; copy it from the Render dashboard |
-
-10. Deploy. When the logs show `[seed] starter` and `database ready (postgres)`, open `https://wheelsdown.onrender.com/api/health`. It should return `"db":"up"`.
-11. **Me:** Run the smoke test against it: `BASE=https://wheelsdown.onrender.com ADMIN_KEY=... npm run test:api`. Expect 27 passed. The test creates and then deletes a throwaway account.
+8. **Done:** Render web service `wheelsdown` (`srv-db2l6oh42hec738u4r3g`) created:
+    - Starter plan in Virginia, building from `main` of the public repo.
+    - Health check on `/api/health`.
+    - Live at https://wheelsdown-qmh5.onrender.com
+9. **Done:** Settings entered: `DATABASE_URL`, `ADMIN_KEY`, `APP_URL`, `NODE_ENV`, `NODE_VERSION`, `SEED_MODE`, `MODERATE`.
+    - Still to add once the domain and email exist: `CONTACT_EMAIL`, `RESEND_API_KEY`, `EMAIL_FROM`, `VITE_OPERATOR_NAME`.
+    - After the custom domain is added, change `APP_URL` to it.
+10. **Done:** Deployed. Health reports the database as up.
+11. **Done:** The 27-step smoke test passed against the live site, and a browser check passed at mobile and desktop widths with no console errors.
+    - Your admin key is in the Render dashboard, under Environment, as `ADMIN_KEY`.
 
 ### Phase 4: Domain (30 minutes plus DNS time)
 
