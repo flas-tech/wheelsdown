@@ -4,7 +4,8 @@ import { Link, useRoute } from "wouter";
 import { ArrowLeft, MapPin, Clock, Globe, Lightbulb, User, AlertTriangle } from "lucide-react";
 import { DOWN_REASONS, type Category, type ReviewWithVotes, type SpotWithStats } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { CAT_META, COST_LABELS, fmtMinutes, totalMinutes, parseTags, Stars, AdBanner, Chip, VetBadge, VoteButtons, timeAgo } from "@/lib/ui";
+import { CAT_META, fmtMinutes, totalMinutes, parseTags, Stars, AdBanner, Chip, VetBadge, VoteButtons, timeAgo } from "@/lib/ui";
+import { COST_LABELS, costOptions, hasCost, paceLabel, paceOf } from "@shared/cost";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -48,13 +49,16 @@ export default function SpotPage() {
         </div>
       </header>
 
-      <ReviewForm spotId={spot.id} />
+      <ReviewForm spotId={spot.id} category={spot.category} />
 
       <CrewVote spot={spot} />
 
-      <div className="grid grid-cols-3 gap-2">
-        <Fact label="Cost" value={COST_LABELS[spot.costLevel]} mono />
-        <Fact label={spot.category === "stay" ? "Typical stay" : "Time needed"} value={fmtMinutes(spot.category === "stay" || spot.category === "fbo" ? spot.minutesNeeded : totalMinutes(spot))} />
+      <div className={cn("grid gap-2", spot.category === "do" || spot.category === "eat" ? "grid-cols-3" : hasCost(spot.category) ? "grid-cols-2" : "grid-cols-1")}>
+        {hasCost(spot.category) && (
+          <Fact label={spot.costVotes > 1 ? `Crew price · ${spot.costVotes} crew` : "Price"} value={spot.cost == null ? "Not priced" : COST_LABELS[spot.cost]} mono={spot.cost != null} testId="text-spot-cost" />
+        )}
+        {spot.category === "eat" && <Fact label="Pace" value={paceLabel(paceOf(spot))} testId="text-spot-pace" />}
+        {spot.category === "do" && <Fact label="Time needed" value={fmtMinutes(totalMinutes(spot))} />}
         <Fact label="From field" value={spot.milesFromField ? `${spot.milesFromField} mi` : "On field"} />
       </div>
 
@@ -70,12 +74,13 @@ export default function SpotPage() {
           {spot.address && <p className="flex items-center gap-2"><MapPin className="h-4 w-4" />
             <a className="hover:text-foreground underline-offset-2 hover:underline" target="_blank" rel="noopener noreferrer" href={`https://maps.apple.com/?q=${encodeURIComponent(spot.name + " " + spot.address)}`} data-testid="link-map">{spot.address}</a></p>}
           {spot.website && <p className="flex items-center gap-2"><Globe className="h-4 w-4" /><a className="hover:text-foreground hover:underline" target="_blank" rel="noopener noreferrer" href={spot.website} data-testid="link-website">Website</a></p>}
-          <p className="flex items-center gap-2"><Clock className="h-4 w-4" />Time estimate includes ~2 min/mile each way from the field</p>
+          {spot.category === "do" && <p className="flex items-center gap-2"><Clock className="h-4 w-4" />Time estimate includes ~2 min/mile each way from the field</p>}
         </div>
         {tags.length > 0 && (
           <div className="flex flex-wrap gap-1.5">{tags.map((t) => <span key={t} className="rounded-md bg-muted px-2 py-0.5 text-xs">{t}</span>)}</div>
         )}
-        <p className="text-xs text-muted-foreground flex items-center gap-1.5 flex-wrap">Added by {spot.submittedBy || "crew"}
+        <p className="text-xs text-muted-foreground flex items-center gap-1.5 flex-wrap">Added by {spot.userId && crew.get(spot.userId) && !crew.get(spot.userId)!.anonymous
+            ? <Link href={`/crew/${spot.userId}`} className="underline-offset-2 hover:underline text-foreground" data-testid="link-spot-author">{spot.submittedBy}</Link> : (spot.submittedBy || "crew")}
           {spot.userId && crew.get(spot.userId) && <TierChip tierId={crew.get(spot.userId)!.tierId} />}</p>
       </section>
 
@@ -102,10 +107,13 @@ export default function SpotPage() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm">
                 <span className="grid h-7 w-7 place-items-center rounded-full bg-muted"><User className="h-3.5 w-3.5" /></span>
-                <span className="font-medium">{r.author}</span>
+                {r.authorId ? <Link href={`/crew/${r.authorId}`} className="font-medium hover:underline underline-offset-2" data-testid={`link-review-author-${r.id}`}>{r.author}</Link> : <span className="font-medium">{r.author}</span>}
                 {r.userId && crew.get(r.userId) ? <TierChip tierId={crew.get(r.userId)!.tierId} /> : <span className="text-xs text-muted-foreground">{r.crewRole}</span>}
               </div>
-              <Stars value={r.rating} size={12} />
+              <span className="flex items-center gap-2">
+                {r.costLevel != null && hasCost(spot.category) && <span className="font-code text-xs font-bold text-primary" title="Price this crew member paid">{COST_LABELS[r.costLevel]}</span>}
+                <Stars value={r.rating} size={12} />
+              </span>
             </div>
             {r.comment && <p className="mt-2 text-sm leading-relaxed">{r.comment}</p>}
             <div className="mt-2.5 flex items-center justify-between gap-2">
@@ -119,36 +127,37 @@ export default function SpotPage() {
   );
 }
 
-function Fact({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function Fact({ label, value, mono, testId }: { label: string; value: string; mono?: boolean; testId?: string }) {
   return (
-    <div className="rounded-xl border border-card-border bg-card px-3 py-2.5">
-      <p className="text-[11px] text-muted-foreground">{label}</p>
-      <p className={mono ? "font-code text-base font-bold text-primary" : "text-sm font-semibold"}>{value}</p>
+    <div className="rounded-xl border border-card-border bg-card px-3 py-2.5 min-w-0">
+      <p className="text-[11px] text-muted-foreground truncate">{label}</p>
+      <p className={mono ? "font-code text-base font-bold text-primary" : "text-sm font-semibold"} data-testid={testId}>{value}</p>
     </div>
   );
 }
 
-function ReviewForm({ spotId }: { spotId: number }) {
+function ReviewForm({ spotId, category }: { spotId: number; category: string }) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
+  const [paid, setPaid] = useState<number | null>(null);
   const { me, requireAuth } = useAuth();
   const m = useMutation({
-    mutationFn: async () => (await apiRequest("POST", `/api/spots/${spotId}/reviews`, { rating, comment })).json(),
+    mutationFn: async () => (await apiRequest("POST", `/api/spots/${spotId}/reviews`, { rating, comment, costLevel: paid })).json(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/spots", String(spotId)] });
       queryClient.invalidateQueries({ queryKey: ["/api/search"] });
       queryClient.invalidateQueries({ queryKey: ["/api/me"] });
       queryClient.invalidateQueries({ queryKey: ["/api/crew"] });
-      setOpen(false); setRating(0); setComment("");
+      setOpen(false); setRating(0); setComment(""); setPaid(null);
     },
     onError: (e: Error) => toast({ title: "Couldn't post review", description: e.message, variant: "destructive" }),
   });
 
   const LABELS = ["", "Skip it", "Meh", "Decent", "Good", "Great"];
   const pick = (n: number) => requireAuth(() => { setRating(n); setOpen(true); }, `Sign in to rate this spot and earn ${POINTS.review}+ points.`);
-  const cancel = () => { setOpen(false); setRating(0); setComment(""); };
+  const cancel = () => { setOpen(false); setRating(0); setComment(""); setPaid(null); };
 
   return (
     <form
@@ -166,6 +175,16 @@ function ReviewForm({ spotId }: { spotId: number }) {
       </div>
       {open && (
         <div className="mt-3 space-y-3">
+          {hasCost(category) && (
+            <div data-testid="panel-review-cost">
+              <p className="text-xs font-medium mb-1.5">What did it cost? <span className="text-muted-foreground font-normal">optional · {category === "stay" ? "per night" : "per person"}</span></p>
+              <div className="flex gap-1.5 flex-wrap">
+                {costOptions(category).map((i) => (
+                  <Chip key={i} active={paid === i} onClick={() => setPaid(paid === i ? null : i)} testId={`chip-review-cost-${i}`} className="font-code text-xs">{COST_LABELS[i]}</Chip>
+                ))}
+              </div>
+            </div>
+          )}
           <textarea
             value={comment}
             onChange={(e) => setComment(e.target.value)}

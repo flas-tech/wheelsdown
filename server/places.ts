@@ -5,7 +5,7 @@ const UA = "Wheelsdown/1.0 (+https://getwheelsdown.com; hello@getwheelsdown.com)
 
 const TAGS: Record<string, string[]> = {
   eat: ["amenity:restaurant", "amenity:fast_food", "amenity:cafe", "amenity:bar", "amenity:pub", "amenity:food_court", "amenity:ice_cream", "shop:bakery"],
-  stay: ["tourism:hotel", "tourism:motel", "tourism:guest_house", "tourism:hostel", "tourism:apartment"],
+  stay: ["tourism:hotel", "tourism:motel", "tourism:guest_house", "tourism:hostel"],
   do: ["tourism:attraction", "tourism:museum", "tourism:viewpoint", "tourism:zoo", "tourism:theme_park", "tourism:gallery", "leisure:park",
     "leisure:golf_course", "leisure:fitness_centre", "leisure:sports_centre", "leisure:beach_resort", "leisure:nature_reserve", "natural:beach",
     "historic:monument", "historic:memorial", "amenity:theatre", "amenity:cinema", "shop:mall", "amenity:spa"],

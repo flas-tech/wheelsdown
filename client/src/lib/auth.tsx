@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient, setAuthToken, getAuthToken, IS_STATIC } from "@/lib/queryClient";
-import { TIERS, tierFor, publicName, SEED_PASSWORD, type Me, type PublicUser, type TierId } from "@shared/tiers";
+import { TIERS, tierFor, publicName, SEED_PASSWORD, SOLO_POINTS, type Me, type PublicUser, type TierId } from "@shared/tiers";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -96,13 +96,15 @@ export function Insignia({ tierId, className }: { tierId: TierId; className?: st
   );
 }
 
-export function TierChip({ tierId, className }: { tierId: TierId; className?: string }) {
+const SOLO_POINTS_UI = SOLO_POINTS;
+export function TierChip({ tierId, className, points }: { tierId: TierId; className?: string; points?: number }) {
   const t = tierById(tierId);
+  const solo = tierId === "student" && points != null && points >= SOLO_POINTS_UI;
   return (
     <span className={cn("inline-flex items-center gap-1 rounded-md border px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wide whitespace-nowrap bg-[#0B1222]", className)}
       style={{ borderColor: t.color + "80", color: t.color }} data-testid={`chip-tier-${tierId}`}>
       <Insignia tierId={tierId} className="h-3" />
-      {t.name}
+      {t.name}{solo ? " · Solo" : ""}
     </span>
   );
 }

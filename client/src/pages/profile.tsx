@@ -5,7 +5,7 @@ import { CREW_ROLES } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
 import { LogOut, Star, ThumbsUp, ThumbsDown, PlusCircle, MessageSquare, ShieldCheck, Award, Gift, Activity } from "lucide-react";
-import { TIERS, POINTS, tierFor, publicName, type TierId, type ActivityItem } from "@shared/tiers";
+import { TIERS, POINTS, tierFor, publicName, SOLO_POINTS, hasSoloed, type TierId, type ActivityItem } from "@shared/tiers";
 import type { SpotWithStats, Review } from "@shared/schema";
 import { useAuth, Insignia, tierById, PostAsToggle } from "@/lib/auth";
 import { VetBadge, timeAgo } from "@/lib/ui";
@@ -14,6 +14,8 @@ import { cn } from "@/lib/utils";
 
 export function TierCard({ points, name, sub, tierId }: { points: number; name: string; sub?: string; tierId: TierId }) {
   const { tier, next, progress, toNext } = tierFor(points);
+  const student = tier.id === "student";
+  const soloed = student && hasSoloed(points);
   const dark = tierId === "ancient_albatross" || tierId === "check_airman";
   return (
     <div
@@ -26,7 +28,8 @@ export function TierCard({ points, name, sub, tierId }: { points: number; name: 
         <div>
           <p className="font-code text-[10px] tracking-[0.25em] text-white/60">WHEELSDOWN CREW STATUS</p>
           <p className="mt-1 text-xl font-semibold" style={{ color: tier.color }} data-testid="text-tier-name">{tier.name}</p>
-          <p className="text-xs text-white/70">{tier.tagline}</p>
+          <p className="text-xs text-white/70">{soloed ? "Solo endorsed. Cross-country next." : tier.tagline}</p>
+          {soloed && <span className="mt-1.5 inline-flex items-center gap-1 rounded-full border border-white/30 bg-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide" data-testid="badge-soloed">Soloed</span>}
         </div>
         <Insignia tierId={tier.id} className="h-10" />
       </div>
@@ -41,9 +44,15 @@ export function TierCard({ points, name, sub, tierId }: { points: number; name: 
         </div>
       </div>
       <div className="relative mt-4">
-        <div className="h-1.5 rounded-full bg-white/15 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${progress * 100}%`, background: tier.color }} /></div>
+        <div className="relative">
+          <div className="h-1.5 rounded-full bg-white/15 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${progress * 100}%`, background: tier.color }} /></div>
+          {student && next && (
+            <span className="absolute top-1/2 -translate-y-1/2 h-3 w-0.5 rounded bg-white/70" style={{ left: `${(SOLO_POINTS / next.min) * 100}%` }} title={`Solo at ${SOLO_POINTS} points`} aria-hidden />
+          )}
+        </div>
         <p className="mt-1.5 text-[11px] text-white/70" data-testid="text-next-tier">
-          {next ? <>{toNext.toLocaleString()} points to <b className="text-white">{next.name}</b></> : "Top of the ladder. Thank you for keeping the network honest."}
+          {student && !soloed ? <>{(SOLO_POINTS - points).toLocaleString()} points to your <b className="text-white">solo</b> · {toNext.toLocaleString()} to <b className="text-white">{next!.name}</b></>
+            : next ? <>{toNext.toLocaleString()} points to <b className="text-white">{next.name}</b></> : "Top of the ladder. Thank you for keeping the network honest."}
         </p>
       </div>
     </div>

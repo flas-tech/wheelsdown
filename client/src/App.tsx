@@ -5,7 +5,7 @@ import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { Search, PlusCircle, Shield, Trophy, BookUser } from "lucide-react";
+import { Search, PlusCircle, Shield, Trophy, BookUser, ClipboardList } from "lucide-react";
 import NotFound from "@/pages/not-found";
 import Home, { SearchProvider, useSearch } from "@/pages/home";
 import SpotPage from "@/pages/spot";
@@ -15,6 +15,8 @@ import ProfilePage from "@/pages/profile";
 import CrewPage from "@/pages/crew";
 import ResetPage from "@/pages/reset";
 import LegalPage from "@/pages/legal";
+import CrewProfilePage from "@/pages/crewProfile";
+import { BriefListPage, BriefEditorPage, SharedBriefPage } from "@/pages/brief";
 import { AuthProvider, useAuth, Insignia } from "@/lib/auth";
 import { tierFor } from "@shared/tiers";
 import { Logo, ThemeProvider, ThemeToggle } from "@/lib/ui";
@@ -31,12 +33,13 @@ function Shell() {
   const nav = [
     { href: "/", label: "Search", icon: Search, active: loc === "/" || loc.startsWith("/spot") },
     { href: "/add", label: "Add spot", icon: PlusCircle, active: loc.startsWith("/add") },
+    { href: "/brief", label: "Brief", icon: ClipboardList, active: loc.startsWith("/brief") || loc.startsWith("/b/") },
     { href: "/crew", label: "Crew", icon: Trophy, active: loc.startsWith("/crew") },
     { href: "/me", label: "Logbook", icon: BookUser, active: loc.startsWith("/me") },
   ];
   return (
     <div className="min-h-[100dvh] flex flex-col">
-      <header className="sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur">
+      <header className="sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur pt-safe-top px-safe">
         <div className={cn("mx-auto flex h-14 items-center justify-between px-4", isAdmin ? "max-w-6xl" : "max-w-xl")}>
           <Link href="/" onClick={() => setSearch({ category: null })} data-testid="link-home" className="flex items-center gap-2">
             <Logo className="h-7 w-7" />
@@ -73,6 +76,11 @@ function Shell() {
           <Route path="/admin" component={AdminPage} />
           <Route path="/me" component={ProfilePage} />
           <Route path="/crew" component={CrewPage} />
+          <Route path="/crew/:id" component={CrewProfilePage} />
+          <Route path="/brief" component={BriefListPage} />
+          <Route path="/brief/new" component={BriefEditorPage} />
+          <Route path="/brief/:id" component={BriefEditorPage} />
+          <Route path="/b/:token" component={SharedBriefPage} />
           <Route path="/reset/:token" component={ResetPage} />
           <Route path="/terms" component={LegalPage} />
           <Route path="/privacy" component={LegalPage} />
@@ -99,7 +107,7 @@ function Shell() {
       {/* iOS-style tab bar */}
       {!isAdmin && (
         <nav className="sm:hidden fixed bottom-0 inset-x-0 z-30 border-t border-border bg-background/90 backdrop-blur pb-safe">
-          <div className="mx-auto max-w-xl grid grid-cols-4">
+          <div className="mx-auto max-w-xl grid grid-cols-5 px-safe">
             {nav.map((n) => (
               <Link key={n.href} href={n.href} data-testid={`tab-${n.label}`} className={cn("flex flex-col items-center gap-0.5 pt-2 pb-1 text-[11px] font-medium", n.active ? "text-primary" : "text-muted-foreground")}>
                 <n.icon className="h-5 w-5" />{n.label}

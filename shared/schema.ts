@@ -54,11 +54,11 @@ export const insertSpotSchema = createInsertSchema(spots, {
   icao: z.string().min(3).max(4),
   category: z.enum(CATEGORIES),
   name: z.string().min(2, "Give it a name").max(120),
-  costLevel: z.coerce.number().int().min(0).max(4),
-  minutesNeeded: z.coerce.number().int().min(5).max(10080),
+  costLevel: z.coerce.number().int().min(0).max(4).optional(), // required per category in the submit route
+  minutesNeeded: z.coerce.number().int().min(5).max(10080).default(60),
   pace: z.enum(["grab", "sit"]).nullable().optional(),
-  lat: z.coerce.number().min(-90).max(90).nullable().optional(),
-  lng: z.coerce.number().min(-180).max(180).nullable().optional(),
+  lat: z.number().min(-90).max(90).nullable().optional(),
+  lng: z.number().min(-180).max(180).nullable().optional(),
   placeRef: z.string().max(40).nullable().optional(),
 }).omit({ id: true, createdAt: true });
 export type InsertSpot = z.infer<typeof insertSpotSchema>;
@@ -78,7 +78,7 @@ export const reviews = pgTable("reviews", {
 export const insertReviewSchema = createInsertSchema(reviews, {
   rating: z.coerce.number().int().min(1).max(5),
   comment: z.string().max(1500),
-  costLevel: z.coerce.number().int().min(0).max(4).nullable().optional(),
+  costLevel: z.number().int().min(0).max(4).nullable().optional(),
 }).omit({ id: true, createdAt: true });
 export type InsertReview = z.infer<typeof insertReviewSchema>;
 export type Review = typeof reviews.$inferSelect;

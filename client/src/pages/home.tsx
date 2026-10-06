@@ -1,11 +1,14 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { ArrowRight, MapPin, Clock, Search, Plus, X, ChevronRight, Lightbulb, ShieldCheck, List, Sparkles, Trophy } from "lucide-react";
+import { ArrowRight, MapPin, Clock, Search, Plus, X, ChevronRight, Lightbulb, ShieldCheck, List, Sparkles, Trophy, LocateFixed, Loader2, Utensils } from "lucide-react";
 import type { Highlights } from "@shared/highlights";
 import { TIME_BUCKETS, type Category, type SpotWithStats, type Airport } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
-import { CAT_META, COST_LABELS, fmtMinutes, totalMinutes, parseTags, Stars, AdBanner, Chip, VetBadge } from "@/lib/ui";
+import { CAT_META, fmtMinutes, totalMinutes, parseTags, Stars, AdBanner, Chip, VetBadge } from "@/lib/ui";
+import { COST_LABELS, PACES, costOptions, costText, paceLabel, paceOf, type PaceId } from "@shared/cost";
+import { getPosition, type NearAirport } from "@/lib/geo";
+import { useToast } from "@/hooks/use-toast";
 import { trustScore } from "@shared/vetting";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -14,6 +17,7 @@ type SearchState = {
   category: Category | null;
   route: string;
   time: string | null;
+  pace: PaceId | null;
   cost: number | null;
   sort: "trusted" | "rating" | "close" | "new";
   vettedOnly: boolean;
@@ -21,11 +25,11 @@ type SearchState = {
   browse: boolean;
 };
 const SearchCtx = createContext<[SearchState, (p: Partial<SearchState>) => void]>([
-  { category: null, route: "", time: null, cost: null, sort: "trusted", vettedOnly: false, browse: false },
+  { category: null, route: "", time: null, pace: null, cost: null, sort: "trusted", vettedOnly: false, browse: false },
   () => {},
 ]);
 export function SearchProvider({ children }: { children: React.ReactNode }) {
-  const [s, set] = useState<SearchState>({ category: null, route: "", time: null, cost: null, sort: "trusted", vettedOnly: false, browse: false });
+  const [s, set] = useState<SearchState>({ category: null, route: "", time: null, pace: null, cost: null, sort: "trusted", vettedOnly: false, browse: false });
   return <SearchCtx.Provider value={[s, (p) => set((o) => ({ ...o, ...p }))]}>{children}</SearchCtx.Provider>;
 }
 export const useSearch = () => useContext(SearchCtx);
@@ -172,14 +176,30 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
     queryFn: async () => (await apiRequest("GET", `/api/search?route=${encodeURIComponent(route)}`)).json(),
   });
 
-  const showTime = cat === "eat" || cat === "do";
+  const showTime = cat === "do";
+  const showPace = cat === "eat";
   const showCost = cat !== "fbo";
   const bucket = TIME_BUCKETS.find((b) => b.id === s.time);
+  const budget = s.cost != null && costOptions(cat).includes(s.cost) ? s.cost : null;
+  const { toast } = useToast();
+  const [locating, setLocating] = useState(false);
+  async function nearMe() {
+    setLocating(true);
+    try {
+      const pos = await getPosition();
+      const near = (await (await apiRequest("GET", `/api/airports/nearest?lat=${pos.lat}&lon=${pos.lng}`)).json()) as NearAirport[];
+      if (near[0]) { set({ route: near[0].icao }); toast({ title: `Nearest field: ${near[0].icao}`, description: `${near[0].name} · ${near[0].miles} mi away` }); }
+      else toast({ title: "No airport found nearby", description: "Type the code instead." });
+    } catch (e) {
+      toast({ title: "Location unavailable", description: String((e as Error).message || e).replace(/^\d+: /, ""), variant: "destructive" });
+    } finally { setLocating(false); }
+  }
 
   const filtered = useMemo(() => {
     let list = (data?.spots || []).filter((x) => x.category === cat);
     if (showTime && bucket) list = list.filter((x) => totalMinutes(x) <= bucket.max);
-    if (showCost && s.cost != null) list = list.filter((x) => x.costLevel <= s.cost!);
+    if (showPace && s.pace) list = list.filter((x) => paceOf(x) === s.pace);
+    if (showCost && budget != null) list = list.filter((x) => x.cost != null && x.cost <= budget);
     if (s.vettedOnly) list = list.filter((x) => x.vet.level === "vetted");
     const sorters = {
       trusted: (a: SpotWithStats, b: SpotWithStats) => trustScore(b.vet) - trustScore(a.vet) || (b.avgRating ?? 0) - (a.avgRating ?? 0),
@@ -188,7 +208,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
       new: (a: SpotWithStats, b: SpotWithStats) => b.createdAt - a.createdAt,
     };
     return [...list].sort(sorters[s.sort]);
-  }, [data, cat, s.time, s.cost, s.sort, s.vettedOnly, showTime, showCost]);
+  }, [data, cat, s.time, s.pace, budget, s.sort, s.vettedOnly, showTime, showPace, showCost]);
 
   const legs = data?.legs || [];
   const icaos = legs.filter((l) => l.airport).map((l) => l.airport!.icao);
@@ -208,7 +228,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
   const PAGE = 10, PER_AIRPORT = 6;
   const [shown, setShown] = useState(PAGE);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  useEffect(() => { setShown(PAGE); setExpanded(new Set()); }, [cat, route, s.time, s.cost, s.vettedOnly, s.sort, s.browse]);
+  useEffect(() => { setShown(PAGE); setExpanded(new Set()); }, [cat, route, s.time, s.pace, s.cost, s.vettedOnly, s.sort, s.browse]);
   const mode: "choose" | "browse" | "route" = route ? "route" : s.browse ? "browse" : "choose";
   const { data: hl } = useQuery<Highlights>({ queryKey: [`/api/highlights?category=${cat}`], enabled: mode === "choose" });
 
@@ -243,9 +263,14 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
             data-testid="input-route"
             className="min-w-0 flex-1 h-full bg-transparent px-3 font-code text-base tracking-wider placeholder:text-muted-foreground/60 placeholder:tracking-normal focus:outline-none"
           />
-          {s.route && (
+          {s.route ? (
             <button onClick={() => set({ route: "" })} aria-label="Clear route" data-testid="button-clear-route" className="mr-2 h-8 w-8 shrink-0 grid place-items-center rounded-full hover-elevate text-muted-foreground">
               <X className="h-4 w-4" />
+            </button>
+          ) : (
+            <button onClick={nearMe} disabled={locating} aria-label="Use my location" data-testid="button-near-me"
+              className="mr-1.5 h-9 shrink-0 inline-flex items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-primary hover-elevate disabled:opacity-60">
+              {locating ? <Loader2 className="h-4 w-4 animate-spin" /> : <LocateFixed className="h-4 w-4" />}<span className="hidden min-[380px]:inline">Near me</span>
             </button>
           )}
         </div>
@@ -298,13 +323,22 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
           </div>
         </div>
       )}
+      {showPace && (
+        <div>
+          <p className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1.5"><Utensils className="h-3.5 w-3.5" />Grab & go or sit down?</p>
+          <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4">
+            <Chip active={!s.pace} onClick={() => set({ pace: null })} testId="chip-pace-any">Either</Chip>
+            {PACES.map((p) => <Chip key={p.id} active={s.pace === p.id} onClick={() => set({ pace: p.id })} testId={`chip-pace-${p.id}`}>{p.label}</Chip>)}
+          </div>
+        </div>
+      )}
       {showCost && (
         <div>
-          <p className="text-xs font-medium text-muted-foreground mb-1.5">Budget (up to)</p>
+          <p className="text-xs font-medium text-muted-foreground mb-1.5">Budget (up to) · crew-reported prices</p>
           <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4">
-            <Chip active={s.cost == null} onClick={() => set({ cost: null })} testId="chip-cost-any">Any</Chip>
-            {COST_LABELS.map((l, i) => (
-              <Chip key={l} active={s.cost === i} onClick={() => set({ cost: i })} testId={`chip-cost-${i}`} className="font-code">{l}</Chip>
+            <Chip active={budget == null} onClick={() => set({ cost: null })} testId="chip-cost-any">Any</Chip>
+            {costOptions(cat).map((i) => (
+              <Chip key={i} active={budget === i} onClick={() => set({ cost: i })} testId={`chip-cost-${i}`} className="font-code">{COST_LABELS[i]}</Chip>
             ))}
           </div>
         </div>
@@ -367,7 +401,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
             )}
             {g.spots.length === 0 ? (
               <Empty
-                title={`No ${M.label.toLowerCase()} picks${s.time || s.cost != null || s.vettedOnly ? " match these filters" : " yet"}`}
+                title={`No ${M.label.toLowerCase()} picks${s.time || s.pace || budget != null || s.vettedOnly ? " match these filters" : " yet"}`}
                 body="Be the first crew to drop one here."
                 icao={g.icao}
               />
@@ -434,7 +468,12 @@ export function SpotCard({ spot }: { spot: SpotWithStats }) {
           </div>
           <h3 className="mt-1 text-base font-semibold leading-snug">{spot.name}</h3>
         </div>
-        <span className="font-code text-sm font-bold text-primary shrink-0" data-testid={`text-cost-${spot.id}`}>{COST_LABELS[spot.costLevel]}</span>
+        {spot.category !== "fbo" && (
+          <span className="shrink-0 text-right" data-testid={`text-cost-${spot.id}`}>
+            <span className={cn("font-code text-sm font-bold", spot.cost == null ? "text-muted-foreground" : "text-primary")}>{costText(spot)}</span>
+            {spot.costVotes > 1 && <span className="block text-[10px] text-muted-foreground leading-tight">{spot.costVotes} crew</span>}
+          </span>
+        )}
       </div>
       <p className="mt-1.5 text-sm text-muted-foreground line-clamp-2">{spot.description}</p>
       <div className="mt-2.5"><VetBadge vet={spot.vet} /></div>
@@ -450,9 +489,10 @@ export function SpotCard({ spot }: { spot: SpotWithStats }) {
           )}
         </div>
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          {spot.category !== "stay" && spot.category !== "fbo" && (
+          {spot.category === "do" && (
             <span className="inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5"><Clock className="h-3 w-3" />{fmtMinutes(totalMinutes(spot))}</span>
           )}
+          {spot.category === "eat" && <span className="rounded-md bg-muted px-1.5 py-0.5" data-testid={`text-pace-${spot.id}`}>{paceLabel(paceOf(spot))}</span>}
           {tags.slice(0, spot.category === "fbo" ? 2 : 1).map((t) => (
             <span key={t} className="rounded-md bg-muted px-1.5 py-0.5 hidden xs:inline sm:inline">{t}</span>
           ))}

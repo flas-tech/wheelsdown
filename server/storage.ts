@@ -107,6 +107,19 @@ export class DatabaseStorage {
       if (ref) { await d.update(airports).set({ lat: ref.lat, lon: ref.lon }).where(eq(airports.icao, a.icao)); n++; }
     }
     if (n) console.log(`[airports] coordinates filled for ${n}`);
+    // Airports added with only a code as their name get the published name (labels only; spots untouched).
+    const all = await d.select().from(airports);
+    let fixed = 0;
+    for (const a of all) {
+      const ref = refAirport(a.icao);
+      if (!ref || !ref.name) continue;
+      const set: Partial<typeof airports.$inferInsert> = {};
+      if (!a.name || a.name.trim().toUpperCase() === a.icao) set.name = ref.name;
+      if (!a.city && ref.city) set.city = ref.city;
+      if (!a.iata && ref.iata) set.iata = ref.iata;
+      if (Object.keys(set).length) { await d.update(airports).set(set).where(eq(airports.icao, a.icao)); fixed++; }
+    }
+    if (fixed) console.log(`[airports] names filled for ${fixed}`);
   }
   async health() { await db().execute(sql`SELECT 1`); return true; }
 

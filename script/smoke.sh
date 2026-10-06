@@ -29,7 +29,7 @@ check "me"                "\"handle\":\"$H\"" "$(curl -s $BASE/api/me -H "$A")"
 check "login by handle"   '"token"'        "$(curl -s -XPOST $BASE/api/auth/login -H "$J" -d "{\"handle\":\"$H\",\"password\":\"smoke-pass-123\"}")"
 check "login by email"    '"token"'        "$(curl -s -XPOST $BASE/api/auth/login -H "$J" -d "{\"handle\":\"$H@example.com\",\"password\":\"smoke-pass-123\"}")"
 check "bad password"      'wrong'          "$(curl -s -XPOST $BASE/api/auth/login -H "$J" -d "{\"handle\":\"$H\",\"password\":\"nope\"}")"
-S=$(curl -s -XPOST $BASE/api/spots -H "$A" -H "$J" -d '{"icao":"KMIA","category":"eat","name":"Smoke Test Cafe","costLevel":1,"minutesNeeded":30,"milesFromField":2}')
+S=$(curl -s -XPOST $BASE/api/spots -H "$A" -H "$J" -d '{"icao":"KMIA","category":"eat","name":"Smoke Test Cafe","costLevel":1,"pace":"grab","minutesNeeded":30,"milesFromField":2}')
 SID=$(echo "$S" | jget "d.get('id','')" 2>/dev/null)
 [[ -n "$SID" ]] && ok "add listing" || bad "add listing" "$S"
 check "vote up"           '"ok":true'      "$(curl -s -XPOST $BASE/api/spots/$SID/vote -H "$A" -H "$J" -d '{"value":1}')"

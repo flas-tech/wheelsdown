@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { Link } from "wouter";
+import { ChevronRight } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { TIERS, type PublicUser } from "@shared/tiers";
 import { useAuth, Insignia, TierChip } from "@/lib/auth";
@@ -19,7 +21,7 @@ export default function CrewPage() {
     <div className="space-y-5">
       <header>
         <h1 className="text-xl font-semibold">Crew leaderboard</h1>
-        <p className="text-sm text-muted-foreground mt-1">The people keeping the network vetted. Points come from listings, ratings and votes.</p>
+        <p className="text-sm text-muted-foreground mt-1">The people keeping the network vetted. Tap anyone to see what they've posted.</p>
       </header>
 
       {albatrosses.length > 0 && (
@@ -46,7 +48,8 @@ export default function CrewPage() {
       <ol className="rounded-2xl border border-card-border bg-card divide-y divide-border">
         {isLoading && <li className="p-4"><Skeleton className="h-10" /></li>}
         {rows.map((u, i) => (
-          <li key={u.id} className={cn("flex items-center gap-3 px-4 py-3", me?.id === u.id && "bg-primary/10")} data-testid={`row-crew-${u.handle}`}>
+          <li key={u.id} className={cn(me?.id === u.id && "bg-primary/10")} data-testid={`row-crew-${u.handle || u.id}`}>
+           <Link href={`/crew/${u.id}`} className="flex items-center gap-3 px-4 py-3 hover-elevate" data-testid={`link-crew-${u.id}`}>
             <span className="w-6 font-code text-sm font-bold text-muted-foreground tabular">{i + 1}</span>
             <Insignia tierId={u.tierId} className="h-6 shrink-0" />
             <div className="min-w-0 flex-1">
@@ -55,8 +58,10 @@ export default function CrewPage() {
             </div>
             <div className="text-right">
               <p className="font-code text-sm font-bold tabular">{u.points.toLocaleString()}</p>
-              <TierChip tierId={u.tierId} />
+              <TierChip tierId={u.tierId} points={u.points} />
             </div>
+            <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+           </Link>
           </li>
         ))}
       </ol>

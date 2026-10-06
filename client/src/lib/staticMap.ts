@@ -1,0 +1,140 @@
+// Static map renderer: OpenStreetMap raster tiles + numbered pins drawn on a canvas.
+// One renderer for the on-screen map and the PDF, so what crews see is what gets exported.
+// Tiles are fetched only for the area being viewed (no prefetching), per the OSM tile usage policy.
+
+export type MapPin = { lat: number; lng: number; label: string; kind: "airport" | "eat" | "do" | "stay" | "fbo" };
+
+const TILE = 256;
+const TILE_URL = (z: number, x: number, y: number) => `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
+export const PIN_COLORS: Record<MapPin["kind"], string> = {
+  airport: "#0B1222", eat: "#E8A317", do: "#0E9F8E", stay: "#7C5CDB", fbo: "#475569",
+};
+
+const lon2x = (lng: number, z: number) => ((lng + 180) / 360) * Math.pow(2, z) * TILE;
+const lat2y = (lat: number, z: number) => {
+  const r = (lat * Math.PI) / 180;
+  return ((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * Math.pow(2, z) * TILE;
+};
+
+const tileCache = new Map<string, Promise<HTMLImageElement | null>>();
+function loadTile(z: number, x: number, y: number): Promise<HTMLImageElement | null> {
+  const n = Math.pow(2, z);
+  const xx = ((x % n) + n) % n;
+  if (y < 0 || y >= n) return Promise.resolve(null);
+  const key = `${z}/${xx}/${y}`;
+  if (!tileCache.has(key)) {
+    tileCache.set(key, new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous"; // keeps the canvas exportable for the PDF
+      img.referrerPolicy = "strict-origin-when-cross-origin";
+      img.onload = () => resolve(img);
+      img.onerror = () => { tileCache.delete(key); resolve(null); };
+      img.src = TILE_URL(z, xx, y);
+    }));
+  }
+  return tileCache.get(key)!;
+}
+
+/** Pick the highest zoom where every pin fits inside the padded frame. */
+function fitZoom(pins: MapPin[], w: number, h: number, pad: number) {
+  if (pins.length <= 1) return 14;
+  for (let z = 16; z >= 2; z--) {
+    const xs = pins.map((p) => lon2x(p.lng, z)), ys = pins.map((p) => lat2y(p.lat, z));
+    if (Math.max(...xs) - Math.min(...xs) <= w - pad * 2 && Math.max(...ys) - Math.min(...ys) <= h - pad * 2) return z;
+  }
+  return 2;
+}
+
+/**
+ * Draw the map into a canvas at `scale` device pixels per CSS pixel.
+ * Returns true when every tile loaded (false = some tiles missing, map still usable).
+ */
+export async function drawStaticMap(canvas: HTMLCanvasElement, pins: MapPin[], w: number, h: number, opts: { scale?: number; route?: boolean } = {}) {
+  const scale = opts.scale ?? Math.min(2, window.devicePixelRatio || 1);
+  canvas.width = Math.round(w * scale);
+  canvas.height = Math.round(h * scale);
+  const ctx = canvas.getContext("2d")!;
+  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  ctx.fillStyle = "#E8ECEF";
+  ctx.fillRect(0, 0, w, h);
+  if (!pins.length) return true;
+
+  const pad = 34;
+  const z = fitZoom(pins, w, h, pad);
+  const xs = pins.map((p) => lon2x(p.lng, z)), ys = pins.map((p) => lat2y(p.lat, z));
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+  const left = cx - w / 2, top = cy - h / 2;
+
+  // tiles
+  const tx0 = Math.floor(left / TILE), ty0 = Math.floor(top / TILE);
+  const tx1 = Math.floor((left + w) / TILE), ty1 = Math.floor((top + h) / TILE);
+  const jobs: Promise<boolean>[] = [];
+  for (let tx = tx0; tx <= tx1; tx++) for (let ty = ty0; ty <= ty1; ty++) {
+    jobs.push(loadTile(z, tx, ty).then((img) => {
+      if (img) ctx.drawImage(img, tx * TILE - left, ty * TILE - top, TILE, TILE);
+      return !!img;
+    }));
+  }
+  const loaded = await Promise.all(jobs);
+
+  // soften tiles so pins read clearly
+  ctx.fillStyle = "rgba(255,255,255,0.12)";
+  ctx.fillRect(0, 0, w, h);
+
+  const pts = pins.map((p) => ({ ...p, x: lon2x(p.lng, z) - left, y: lat2y(p.lat, z) - top }));
+
+  // route line between airports (overview map)
+  if (opts.route) {
+    const aps = pts.filter((p) => p.kind === "airport");
+    if (aps.length > 1) {
+      ctx.save();
+      ctx.strokeStyle = "#0B1222"; ctx.lineWidth = 2; ctx.setLineDash([6, 5]);
+      ctx.beginPath(); aps.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y))); ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  // pins: airports last so they sit on top
+  const order = [...pts].sort((a, b) => (a.kind === "airport" ? 1 : 0) - (b.kind === "airport" ? 1 : 0));
+  for (const p of order) {
+    if (p.kind === "airport") {
+      ctx.font = "700 11px ui-monospace, Menlo, monospace";
+      const tw = ctx.measureText(p.label).width + 12;
+      roundRect(ctx, p.x - tw / 2, p.y - 11, tw, 22, 5);
+      ctx.fillStyle = "#F5C518"; ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = "#0B1222"; ctx.stroke();
+      ctx.fillStyle = "#0B1222"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(p.label, p.x, p.y + 0.5);
+    } else {
+      const r = 11;
+      ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = PIN_COLORS[p.kind]; ctx.fill();
+      ctx.lineWidth = 2.5; ctx.strokeStyle = "#FFFFFF"; ctx.stroke();
+      ctx.fillStyle = "#FFFFFF"; ctx.font = "700 11px system-ui, -apple-system, sans-serif";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(p.label, p.x, p.y + 0.5);
+    }
+  }
+
+  // attribution (required by the OSM licence)
+  const att = "© OpenStreetMap contributors";
+  ctx.font = "10px system-ui, -apple-system, sans-serif";
+  const aw = ctx.measureText(att).width + 8;
+  ctx.fillStyle = "rgba(255,255,255,0.85)"; ctx.fillRect(w - aw, h - 15, aw, 15);
+  ctx.fillStyle = "#334155"; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  ctx.fillText(att, w - 4, h - 7.5);
+  return loaded.every(Boolean);
+}
+
+function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+
+/** Render off-screen and return a PNG data URL (for the PDF). Null if the canvas can't be exported. */
+export async function staticMapDataUrl(pins: MapPin[], w: number, h: number, opts: { route?: boolean } = {}) {
+  const c = document.createElement("canvas");
+  await drawStaticMap(c, pins, w, h, { scale: 2, route: opts.route });
+  try { return c.toDataURL("image/jpeg", 0.88); } catch { return null; }
+}

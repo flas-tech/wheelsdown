@@ -4,6 +4,7 @@ import { Download, Upload, Trash2, Eye, EyeOff, Plus, Lock, Pencil, LogOut } fro
 import { CATEGORIES, DOWN_REASONS, type Ad, type SpotWithStats } from "@shared/schema";
 import { apiRequest, queryClient, API_BASE, IS_STATIC } from "@/lib/queryClient";
 import { CAT_META, COST_LABELS, VetBadge } from "@/lib/ui";
+import { costText, paceOf } from "@shared/cost";
 import { TierChip } from "@/lib/auth";
 import type { PublicUser } from "@shared/tiers";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -172,7 +173,7 @@ function SpotsTable() {
                 <td className="p-2.5 font-code text-xs font-bold">{s.icao}</td>
                 <td className="p-2.5"><p className="font-medium leading-tight">{s.name}</p><p className="text-xs text-muted-foreground">{s.submittedBy}</p></td>
                 <td className="p-2.5 text-xs">{CAT_META[s.category as keyof typeof CAT_META]?.label}</td>
-                <td className="p-2.5 font-code text-xs">{COST_LABELS[s.costLevel]}</td>
+                <td className="p-2.5 font-code text-xs" title={s.costVotes ? `${s.costVotes} price vote(s); submitter set ${COST_LABELS[s.costLevel]}` : ""}>{costText(s) || "–"}</td>
                 <td className="p-2.5 text-xs tabular">{s.reviewCount ? `${s.avgRating?.toFixed(1)} (${s.reviewCount})` : "—"}</td>
                 <td className="p-2.5"><VetBadge vet={s.vet} /></td>
                 <td className="p-2.5"><span className={cn("rounded-md px-1.5 py-0.5 text-xs font-medium", s.status === "live" ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : s.status === "pending" ? "bg-primary/20" : "bg-muted text-muted-foreground")}>{s.status}</span></td>
@@ -211,12 +212,12 @@ function EditSpot({ spot, onClose }: { spot: SpotWithStats; onClose: () => void 
   const [f, setF] = useState({
     icao: spot.icao, category: spot.category, name: spot.name, description: spot.description, address: spot.address || "",
     website: spot.website || "", costLevel: spot.costLevel, minutesNeeded: spot.minutesNeeded, milesFromField: spot.milesFromField ?? 0,
-    crewTip: spot.crewTip || "", tags: (() => { try { return JSON.parse(spot.tags).join(", "); } catch { return ""; } })(), status: spot.status, submittedBy: spot.submittedBy || "",
+    pace: paceOf(spot) || "", crewTip: spot.crewTip || "", tags: (() => { try { return JSON.parse(spot.tags).join(", "); } catch { return ""; } })(), status: spot.status, submittedBy: spot.submittedBy || "",
   });
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
   const m = useMutation({
     mutationFn: async () => (await adm("PATCH", `/api/admin/spots/${spot.id}`, {
-      ...f, costLevel: Number(f.costLevel), minutesNeeded: Number(f.minutesNeeded), milesFromField: Number(f.milesFromField),
+      ...f, pace: f.category === "eat" && f.pace ? f.pace : null, costLevel: Number(f.costLevel), minutesNeeded: Number(f.minutesNeeded), milesFromField: Number(f.milesFromField),
       tags: JSON.stringify(String(f.tags).split(",").map((t: string) => t.trim()).filter(Boolean)),
     })).json(),
     onSuccess: () => { toast({ title: "Saved" }); invalidateAll(); queryClient.invalidateQueries({ queryKey: ["/api/spots"] }); onClose(); },
@@ -231,7 +232,8 @@ function EditSpot({ spot, onClose }: { spot: SpotWithStats; onClose: () => void 
           <L l="ICAO"><input className={inputCls + " font-code uppercase"} value={f.icao} onChange={set("icao")} data-testid="input-edit-icao" /></L>
           <L l="Category"><select className={inputCls} value={f.category} onChange={set("category")} data-testid="select-edit-category">{CATEGORIES.map((c) => <option key={c} value={c}>{CAT_META[c].label}</option>)}</select></L>
           <L l="Description" className="col-span-2"><textarea rows={3} className={inputCls + " h-auto py-2"} value={f.description} onChange={set("description")} data-testid="input-edit-description" /></L>
-          <L l="Cost (0–4)"><select className={inputCls} value={f.costLevel} onChange={set("costLevel")} data-testid="select-edit-cost">{COST_LABELS.map((c, i) => <option key={c} value={i}>{c}</option>)}</select></L>
+          <L l="Submitter price (0–4)"><select className={inputCls} value={f.costLevel} onChange={set("costLevel")} data-testid="select-edit-cost">{COST_LABELS.map((c, i) => <option key={c} value={i}>{c}</option>)}</select></L>
+          {f.category === "eat" && <L l="Pace"><select className={inputCls} value={f.pace} onChange={set("pace")} data-testid="select-edit-pace"><option value="grab">Grab & go</option><option value="sit">Sit-down</option></select></L>}
           <L l="Minutes needed"><input type="number" className={inputCls} value={f.minutesNeeded} onChange={set("minutesNeeded")} data-testid="input-edit-minutes" /></L>
           <L l="Miles from field"><input type="number" step="0.1" className={inputCls} value={f.milesFromField} onChange={set("milesFromField")} data-testid="input-edit-miles" /></L>
           <L l="Status"><select className={inputCls} value={f.status} onChange={set("status")} data-testid="select-edit-status"><option value="live">Live</option><option value="pending">Pending</option><option value="hidden">Hidden</option></select></L>
@@ -304,9 +306,9 @@ function NeedsCheck() {
   );
 }
 
-const TEMPLATE = `id,icao,category,name,description,address,website,costLevel,minutesNeeded,milesFromField,crewTip,tags,submittedBy,status,airportCity,airportName
-,KOPF,eat,Example Café,Great cafecito near the field,123 Main St,,1,30,1.5,Ask for crew discount,coffee; quick,Admin import,live,,
-,KXYZ,do,New Field Example,Unknown airports are created automatically when airportCity is filled,,,0,120,3,,outdoors,Admin import,live,Sample Town,Sample Regional`;
+const TEMPLATE = `id,icao,category,name,description,address,website,costLevel,minutesNeeded,pace,milesFromField,lat,lng,crewTip,tags,submittedBy,status,airportCity,airportName
+,KOPF,eat,Example Café,Great cafecito near the field,123 Main St,,1,30,grab,1.5,,,Ask for crew discount,coffee; quick,Admin import,live,,
+,KXYZ,do,New Field Example,Unknown airports are created automatically when airportCity is filled,,,0,120,,3,,,,outdoors,Admin import,live,Sample Town,Sample Regional`;
 
 function Bulk() {
   const { toast } = useToast();
@@ -369,7 +371,8 @@ function Bulk() {
         <div className="pt-2 text-xs text-muted-foreground space-y-1">
           <p className="font-semibold text-foreground">Columns</p>
           <p><span className="font-code">category</span>: eat, do, stay, fbo</p>
-          <p><span className="font-code">costLevel</span>: 0 free → 4 $$$$</p>
+          <p><span className="font-code">costLevel</span>: 0 free (Do only) → 4 $$$$; eat and stay use 1–4</p>
+          <p><span className="font-code">pace</span>: grab or sit (eat only)</p>
           <p><span className="font-code">status</span>: live, pending, hidden</p>
           <p><span className="font-code">tags</span>: separate with ;</p>
         </div>
