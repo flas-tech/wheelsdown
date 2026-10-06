@@ -1,3 +1,5 @@
+import { ShieldCheck, AlertTriangle, Sparkles, ThumbsUp, ThumbsDown } from "lucide-react";
+import type { VetInfo } from "@shared/schema";
 import { useEffect, useRef, useState, createContext, useContext } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Utensils, Compass, BedDouble, PlaneLanding, Star, Moon, Sun } from "lucide-react";
@@ -146,5 +148,55 @@ export function Chip({ active, onClick, children, testId, className }: { active?
     >
       {children}
     </button>
+  );
+}
+
+// ---------- Vetting ----------
+
+export function timeAgo(ts: number | null) {
+  if (!ts) return "";
+  const d = Math.floor((Date.now() - ts) / 86400_000);
+  if (d <= 0) return "today";
+  if (d === 1) return "yesterday";
+  if (d < 30) return `${d} days ago`;
+  const mo = Math.floor(d / 30);
+  return mo < 12 ? `${mo} mo ago` : "over a year ago";
+}
+
+export function VetBadge({ vet, compact }: { vet: VetInfo; compact?: boolean }) {
+  const map = {
+    vetted: { icon: ShieldCheck, label: "Crew-vetted", cls: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" },
+    needs_check: { icon: AlertTriangle, label: "Needs check", cls: "bg-orange-500/15 text-orange-700 dark:text-orange-400" },
+    new: { icon: Sparkles, label: "New", cls: "bg-muted text-muted-foreground" },
+    ok: { icon: ThumbsUp, label: "Mixed", cls: "bg-muted text-muted-foreground" },
+  } as const;
+  const m = map[vet.level];
+  return (
+    <span className={cn("inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-1.5 py-0.5 text-[11px] font-semibold", m.cls)} data-testid={`badge-vet-${vet.level}`}>
+      <m.icon className="h-3 w-3" />
+      {m.label}
+      {!compact && vet.up + vet.down > 0 && <span className="font-normal opacity-80 tabular">· {vet.up}↑ {vet.down}↓</span>}
+    </span>
+  );
+}
+
+export function VoteButtons({ up, down, mine, onVote, size = "md", testPrefix }: {
+  up: number; down: number; mine: number; onVote: (v: number) => void; size?: "sm" | "md"; testPrefix: string;
+}) {
+  const base = size === "sm" ? "h-7 px-2 text-xs gap-1" : "h-11 px-4 text-sm gap-2";
+  const ic = size === "sm" ? "h-3.5 w-3.5" : "h-4 w-4";
+  return (
+    <div className="inline-flex items-center gap-2">
+      <button type="button" onClick={() => onVote(mine === 1 ? 0 : 1)} aria-pressed={mine === 1} aria-label="Vote up" data-testid={`${testPrefix}-up`}
+        className={cn("inline-flex items-center rounded-full border font-semibold tabular hover-elevate", base,
+          mine === 1 ? "border-emerald-500 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" : "border-border bg-card")}>
+        <ThumbsUp className={cn(ic, mine === 1 && "fill-current")} />{up}
+      </button>
+      <button type="button" onClick={() => onVote(mine === -1 ? 0 : -1)} aria-pressed={mine === -1} aria-label="Vote down" data-testid={`${testPrefix}-down`}
+        className={cn("inline-flex items-center rounded-full border font-semibold tabular hover-elevate", base,
+          mine === -1 ? "border-orange-500 bg-orange-500/15 text-orange-700 dark:text-orange-400" : "border-border bg-card")}>
+        <ThumbsDown className={cn(ic, mine === -1 && "fill-current")} />{down}
+      </button>
+    </div>
   );
 }

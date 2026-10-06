@@ -19,12 +19,22 @@ npm run build && ADMIN_KEY=change-me npm start
 ```
 Env vars: `ADMIN_KEY` (admin console password), `MODERATE=1` (new submissions wait as "pending" until approved), `DB_PATH` (SQLite file location).
 
+## Crew vetting (up/down votes)
+- Crew can vote each listing up or down, one vote per device, and can change or remove it later. A downvote asks for a reason: closed, info outdated, wrong location, not worth it, not crew-friendly, or other.
+- Only votes from the last 12 months count, so a listing has to keep getting upvotes to stay vetted.
+- **Crew-vetted:** 3 or more upvotes, at least 75% positive. **Needs check:** 2 or more downvotes, at least 40% negative. A listing with fewer than 3 votes shows as **New**.
+- A listing with 5 or more downvotes that are at least 60% negative is pulled automatically and sent to the admin **Needs check** queue. From there an admin can keep it and clear the downvotes, edit it, or hide it.
+- Search defaults to **Most trusted** order, which ranks by a lower-bound (Wilson) score so a listing with many votes beats one with only a few. A **Crew-vetted only** switch hides everything else.
+- Reviews also get up/down "Helpful?" votes, and the most helpful reviews are shown first.
+- Logic lives in `shared/vetting.ts` and is used by both the server and the demo build.
+
 ## Data model
 | Table | Purpose |
 |---|---|
 | airports | ICAO primary key, IATA, name, city. Unknown codes are created when someone submits a spot with a city |
 | spots | icao, category (eat/do/stay/fbo), costLevel 0–4, minutesNeeded, milesFromField, crewTip, tags, status (live/pending/hidden) |
 | reviews | 1–5 rating, comment, author, crew role |
+| votes | targetType (spot/review), targetId, voter, value ±1, reason. One per voter per target |
 | ads | slot (top/inline/footer), optional targetIcao, active, impressions, clicks |
 
 Time filter: activity minutes plus a round trip at about 2 minutes per mile.

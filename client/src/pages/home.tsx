@@ -1,10 +1,11 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { ArrowRight, MapPin, Clock, Search, Plus, X, ChevronRight, Lightbulb } from "lucide-react";
+import { ArrowRight, MapPin, Clock, Search, Plus, X, ChevronRight, Lightbulb, ShieldCheck } from "lucide-react";
 import { TIME_BUCKETS, type Category, type SpotWithStats, type Airport } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
-import { CAT_META, COST_LABELS, fmtMinutes, totalMinutes, parseTags, Stars, AdBanner, Chip } from "@/lib/ui";
+import { CAT_META, COST_LABELS, fmtMinutes, totalMinutes, parseTags, Stars, AdBanner, Chip, VetBadge } from "@/lib/ui";
+import { trustScore } from "@shared/vetting";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
@@ -13,14 +14,15 @@ type SearchState = {
   route: string;
   time: string | null;
   cost: number | null;
-  sort: "rating" | "close" | "new";
+  sort: "trusted" | "rating" | "close" | "new";
+  vettedOnly: boolean;
 };
 const SearchCtx = createContext<[SearchState, (p: Partial<SearchState>) => void]>([
-  { category: null, route: "", time: null, cost: null, sort: "rating" },
+  { category: null, route: "", time: null, cost: null, sort: "trusted", vettedOnly: false },
   () => {},
 ]);
 export function SearchProvider({ children }: { children: React.ReactNode }) {
-  const [s, set] = useState<SearchState>({ category: null, route: "", time: null, cost: null, sort: "rating" });
+  const [s, set] = useState<SearchState>({ category: null, route: "", time: null, cost: null, sort: "trusted", vettedOnly: false });
   return <SearchCtx.Provider value={[s, (p) => set((o) => ({ ...o, ...p }))]}>{children}</SearchCtx.Provider>;
 }
 export const useSearch = () => useContext(SearchCtx);
@@ -127,13 +129,15 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
     let list = (data?.spots || []).filter((x) => x.category === cat);
     if (showTime && bucket) list = list.filter((x) => totalMinutes(x) <= bucket.max);
     if (showCost && s.cost != null) list = list.filter((x) => x.costLevel <= s.cost!);
+    if (s.vettedOnly) list = list.filter((x) => x.vet.level === "vetted");
     const sorters = {
+      trusted: (a: SpotWithStats, b: SpotWithStats) => trustScore(b.vet) - trustScore(a.vet) || (b.avgRating ?? 0) - (a.avgRating ?? 0),
       rating: (a: SpotWithStats, b: SpotWithStats) => (b.avgRating ?? 0) - (a.avgRating ?? 0) || b.reviewCount - a.reviewCount,
       close: (a: SpotWithStats, b: SpotWithStats) => (a.milesFromField ?? 0) - (b.milesFromField ?? 0),
       new: (a: SpotWithStats, b: SpotWithStats) => b.createdAt - a.createdAt,
     };
     return [...list].sort(sorters[s.sort]);
-  }, [data, cat, s.time, s.cost, s.sort, showTime, showCost]);
+  }, [data, cat, s.time, s.cost, s.sort, s.vettedOnly, showTime, showCost]);
 
   const legs = data?.legs || [];
   const icaos = legs.filter((l) => l.airport).map((l) => l.airport!.icao);
@@ -235,6 +239,26 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
         </div>
       )}
 
+      <button
+        type="button"
+        onClick={() => set({ vettedOnly: !s.vettedOnly })}
+        aria-pressed={s.vettedOnly}
+        data-testid="toggle-vetted"
+        className={cn("w-full flex items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-left hover-elevate",
+          s.vettedOnly ? "border-emerald-500/60 bg-emerald-500/10" : "border-border bg-card")}
+      >
+        <span className="flex items-center gap-2.5">
+          <ShieldCheck className={cn("h-4 w-4", s.vettedOnly ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground")} />
+          <span>
+            <span className="block text-sm font-semibold">Crew-vetted only</span>
+            <span className="block text-xs text-muted-foreground">3+ upvotes in the last year, 75%+ positive</span>
+          </span>
+        </span>
+        <span className={cn("h-5 w-9 rounded-full p-0.5 transition-colors", s.vettedOnly ? "bg-emerald-500" : "bg-muted")}>
+          <span className={cn("block h-4 w-4 rounded-full bg-white shadow transition-transform", s.vettedOnly && "translate-x-4")} />
+        </span>
+      </button>
+
       <AdBanner slot="top" icaos={icaos} />
 
       <div className="flex items-center justify-between pt-1">
@@ -249,6 +273,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
           className="h-8 rounded-lg border border-input bg-card px-2 text-xs"
           aria-label="Sort results"
         >
+          <option value="trusted">Most trusted</option>
           <option value="rating">Top rated</option>
           <option value="close">Closest to field</option>
           <option value="new">Newest</option>
@@ -271,7 +296,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
             )}
             {g.spots.length === 0 ? (
               <Empty
-                title={`No ${M.label.toLowerCase()} picks${s.time || s.cost != null ? " match these filters" : " yet"}`}
+                title={`No ${M.label.toLowerCase()} picks${s.time || s.cost != null || s.vettedOnly ? " match these filters" : " yet"}`}
                 body="Be the first crew to drop one here."
                 icao={g.icao}
               />
@@ -326,7 +351,8 @@ export function SpotCard({ spot }: { spot: SpotWithStats }) {
         <span className="font-code text-sm font-bold text-primary shrink-0" data-testid={`text-cost-${spot.id}`}>{COST_LABELS[spot.costLevel]}</span>
       </div>
       <p className="mt-1.5 text-sm text-muted-foreground line-clamp-2">{spot.description}</p>
-      <div className="mt-3 flex items-center justify-between gap-2">
+      <div className="mt-2.5"><VetBadge vet={spot.vet} /></div>
+      <div className="mt-2.5 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           {spot.reviewCount > 0 ? (
             <>

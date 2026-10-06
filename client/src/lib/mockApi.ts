@@ -1,12 +1,13 @@
 // In-browser demo backend used for the static GitHub Pages build (VITE_STATIC=1).
 // Mirrors server/routes.ts. Data is seeded from shared/seed.ts and saved only in this browser.
 import { seedAirports, seedSpots, seedReviews, seedAds } from "@shared/seed";
-import type { Airport, Spot, Review, Ad } from "@shared/schema";
+import type { Airport, Spot, Review, Ad, Vote } from "@shared/schema";
+import { computeVet, seedVotesFor, shouldAutoHold } from "@shared/vetting";
 
 export const DEMO_ADMIN_KEY = "wheelsdown-admin";
-const STORE_KEY = "wheelsdown-demo-v1";
+const STORE_KEY = "wheelsdown-demo-v2";
 
-type DB = { airports: Airport[]; spots: Spot[]; reviews: Review[]; ads: Ad[]; seq: { spot: number; review: number; ad: number } };
+type DB = { airports: Airport[]; spots: Spot[]; reviews: Review[]; ads: Ad[]; votes: Vote[]; seq: { spot: number; review: number; ad: number; vote: number } };
 
 function seed(): DB {
   const now = Date.now();
@@ -22,7 +23,9 @@ function seed(): DB {
     if (sp) reviews.push({ id: reviews.length + 1, spotId: sp.id, rating: r.rating, comment: r.comment, author: r.author, crewRole: r.crewRole, createdAt: now - i * 7200_000 });
   });
   const ads: Ad[] = seedAds.map((a, i) => ({ id: i + 1, ...a, impressions: 0, clicks: 0 }));
-  return { airports, spots, reviews, ads, seq: { spot: spots.length, review: reviews.length, ad: ads.length } };
+  const votes: Vote[] = [];
+  spots.forEach((sp, i) => seedVotesFor(i, now).forEach((v) => votes.push({ id: votes.length + 1, targetType: "spot", targetId: sp.id, ...v })));
+  return { airports, spots, reviews, ads, votes, seq: { spot: spots.length, review: reviews.length, ad: ads.length, vote: votes.length } };
 }
 
 function load(): DB {
@@ -55,11 +58,20 @@ function ensureAirport(code: string, city?: string, name?: string) {
   db.airports.push({ icao, iata: code.length === 3 ? code : null, name: name || icao, city: city || "Unknown", region: "", country: "" });
   return icao;
 }
-function withStats(rows: Spot[]) {
+function withStats(rows: Spot[], voter = "") {
   return rows.map((s) => {
     const rs = db.reviews.filter((r) => r.spotId === s.id);
-    return { ...s, avgRating: rs.length ? rs.reduce((a, r) => a + r.rating, 0) / rs.length : null, reviewCount: rs.length, airport: db.airports.find((a) => a.icao === s.icao) };
+    const vs = db.votes.filter((v) => v.targetType === "spot" && v.targetId === s.id);
+    return { ...s, avgRating: rs.length ? rs.reduce((a, r) => a + r.rating, 0) / rs.length : null, reviewCount: rs.length, airport: db.airports.find((a) => a.icao === s.icao), vet: computeVet(vs, voter) };
   });
+}
+function castVote(targetType: string, targetId: number, voter: string, value: number, reason = "") {
+  db.votes = db.votes.filter((v) => !(v.targetType === targetType && v.targetId === targetId && v.voter === voter));
+  if (value !== 0) db.votes.push({ id: ++db.seq.vote, targetType, targetId, voter, value: value > 0 ? 1 : -1, reason: value < 0 ? reason : "", createdAt: Date.now() });
+  if (targetType === "spot") {
+    const s = db.spots.find((x) => x.id === targetId);
+    if (s && s.status === "live" && shouldAutoHold(withStats([s])[0].vet)) s.status = "pending";
+  }
 }
 function cleanSpot(o: any) {
   const out: any = {};
@@ -101,6 +113,7 @@ class HttpError extends Error { constructor(public status: number, msg: string) 
 function route(method: string, path: string, query: URLSearchParams, body: any, headers: Record<string, string>): any {
   const admin = () => { if ((headers["x-admin-key"] || query.get("key")) !== DEMO_ADMIN_KEY) throw new HttpError(401, "Admin key required"); };
   let m: RegExpMatchArray | null;
+  const voter = headers["x-voter-id"] || "";
 
   if (method === "GET" && path === "/api/airports") return [...db.airports].sort((a, b) => a.icao.localeCompare(b.icao));
   if (method === "GET" && path === "/api/search") {
@@ -109,12 +122,23 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
     const icaos = legs.filter((l) => l.airport).map((l) => l.airport!.icao);
     const live = db.spots.filter((s) => s.status === "live");
     const rows = codes.length ? live.filter((s) => icaos.includes(s.icao)) : [...live].sort((a, b) => b.createdAt - a.createdAt);
-    return { legs, spots: withStats(rows) };
+    return { legs, spots: withStats(rows, voter) };
   }
   if (method === "GET" && (m = path.match(/^\/api\/spots\/(\d+)$/))) {
     const s = db.spots.find((x) => x.id === Number(m![1]));
     if (!s || s.status === "hidden") throw new HttpError(404, "Not found");
-    return { spot: withStats([s])[0], reviews: db.reviews.filter((r) => r.spotId === s.id).sort((a, b) => b.createdAt - a.createdAt) };
+    const reviews = db.reviews.filter((r) => r.spotId === s.id).sort((a, b) => b.createdAt - a.createdAt).map((r) => {
+      const vs = db.votes.filter((v) => v.targetType === "review" && v.targetId === r.id);
+      return { ...r, up: vs.filter((v) => v.value > 0).length, down: vs.filter((v) => v.value < 0).length, myVote: vs.find((v) => v.voter === voter)?.value ?? 0 };
+    });
+    return { spot: withStats([s], voter)[0], reviews };
+  }
+  if (method === "POST" && (m = path.match(/^\/api\/(spots|reviews)\/(\d+)\/vote$/))) {
+    if (!voter) throw new HttpError(400, "Missing voter id");
+    const value = Number(body.value);
+    if (![1, -1, 0].includes(value)) throw new HttpError(400, "value must be 1, -1 or 0");
+    castVote(m[1] === "spots" ? "spot" : "review", Number(m[2]), voter, value, String(body.reason || "").slice(0, 40));
+    save(); return { ok: true };
   }
   if (method === "POST" && path === "/api/spots") {
     const code = String(body.icao || "").trim().toUpperCase();
@@ -149,11 +173,21 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
   if (method === "GET" && path === "/api/admin/stats") {
     return {
       spots: db.spots.filter((s) => s.status === "live").length, pending: db.spots.filter((s) => s.status === "pending").length,
-      reviews: db.reviews.length, airports: new Set(db.spots.map((s) => s.icao)).size,
+      reviews: db.reviews.length, votes: db.votes.filter((v) => v.targetType === "spot").length, airports: new Set(db.spots.map((s) => s.icao)).size,
       impressions: db.ads.reduce((a, x) => a + x.impressions, 0), clicks: db.ads.reduce((a, x) => a + x.clicks, 0),
     };
   }
   if (method === "GET" && path === "/api/admin/spots") return withStats([...db.spots].sort((a, b) => b.createdAt - a.createdAt));
+  if (method === "GET" && (m = path.match(/^\/api\/admin\/spots\/(\d+)\/votes$/))) {
+    const id = Number(m[1]);
+    return db.votes.filter((v) => v.targetType === "spot" && v.targetId === id).sort((a, b) => b.createdAt - a.createdAt);
+  }
+  if (method === "POST" && (m = path.match(/^\/api\/admin\/spots\/(\d+)\/clear-downvotes$/))) {
+    const id = Number(m[1]);
+    db.votes = db.votes.filter((v) => !(v.targetType === "spot" && v.targetId === id && v.value < 0));
+    const s = db.spots.find((x) => x.id === id); if (s) s.status = "live";
+    save(); return { ok: true };
+  }
   if (method === "PATCH" && (m = path.match(/^\/api\/admin\/spots\/(\d+)$/))) {
     const s = db.spots.find((x) => x.id === Number(m![1]));
     if (!s) throw new HttpError(404, "Not found");
@@ -163,7 +197,7 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
     const ids: number[] = body.ids || [];
     if (body.action === "delete") {
       const before = db.spots.length;
-      db.spots = db.spots.filter((s) => !ids.includes(s.id)); db.reviews = db.reviews.filter((r) => !ids.includes(r.spotId));
+      db.spots = db.spots.filter((s) => !ids.includes(s.id)); db.votes = db.votes.filter((v) => !(v.targetType === "spot" && ids.includes(v.targetId))); db.reviews = db.reviews.filter((r) => !ids.includes(r.spotId));
       save(); return { changed: before - db.spots.length };
     }
     if ((body.action === "status" && ["live", "pending", "hidden"].includes(body.value)) || (body.action === "category" && CATS.includes(body.value))) {

@@ -13,6 +13,8 @@ function requireAdmin(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
+const voterOf = (req: Request) => String(req.headers["x-voter-id"] || req.headers["x-visitor-id"] || "").slice(0, 64);
+
 // Split "MIA-TEB ASE/KAPA,TJSJ" into codes
 function parseRoute(route: string) {
   return route.toUpperCase().split(/[^A-Z0-9]+/).filter((c) => c.length === 3 || c.length === 4);
@@ -63,15 +65,29 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const codes = parseRoute(String(req.query.route || ""));
     const legs = codes.map((code) => ({ code, airport: storage.resolveCode(code) || null }));
     const icaos = legs.filter((l) => l.airport).map((l) => l.airport!.icao);
-    const results = codes.length ? (icaos.length ? storage.searchSpots(icaos) : []) : storage.searchSpots([]);
+    const v = voterOf(req);
+    const results = codes.length ? (icaos.length ? storage.searchSpots(icaos, false, v) : []) : storage.searchSpots([], false, v);
     res.json({ legs, spots: results });
   });
 
   app.get("/api/spots/:id", (req, res) => {
-    const s = storage.getSpot(Number(req.params.id));
+    const v = voterOf(req);
+    const s = storage.getSpot(Number(req.params.id), v);
     if (!s || s.status === "hidden") return res.status(404).json({ message: "Not found" });
-    res.json({ spot: s, reviews: storage.listReviews(s.id) });
+    res.json({ spot: s, reviews: storage.listReviewsWithVotes(s.id, v) });
   });
+
+  // Up/down vote on a listing or review. value: 1, -1, or 0 to clear. One vote per voter per target.
+  const voteHandler = (type: "spot" | "review") => (req: Request, res: Response) => {
+    const voter = voterOf(req);
+    if (!voter) return res.status(400).json({ message: "Missing voter id" });
+    const value = Number(req.body?.value);
+    if (![1, -1, 0].includes(value)) return res.status(400).json({ message: "value must be 1, -1 or 0" });
+    storage.vote(type, Number(req.params.id), voter, value, String(req.body?.reason || "").slice(0, 40));
+    res.json({ ok: true });
+  };
+  app.post("/api/spots/:id/vote", voteHandler("spot"));
+  app.post("/api/reviews/:id/vote", voteHandler("review"));
 
   const submitSchema = insertSpotSchema.extend({
     icao: z.string().trim().min(3).max(4),
@@ -112,6 +128,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.post("/api/admin/login", requireAdmin, (_req, res) => res.json({ ok: true }));
   app.get("/api/admin/stats", requireAdmin, (_req, res) => res.json(storage.stats()));
   app.get("/api/admin/spots", requireAdmin, (_req, res) => res.json(storage.searchSpots([], true)));
+  app.get("/api/admin/spots/:id/votes", requireAdmin, (req, res) => res.json(storage.listSpotVotes(Number(req.params.id))));
+  app.post("/api/admin/spots/:id/clear-downvotes", requireAdmin, (req, res) => {
+    storage.clearDownvotes(Number(req.params.id));
+    storage.updateSpot(Number(req.params.id), { status: "live" });
+    res.json({ ok: true });
+  });
 
   app.patch("/api/admin/spots/:id", requireAdmin, (req, res) => {
     const p = insertSpotSchema.partial().safeParse(req.body);

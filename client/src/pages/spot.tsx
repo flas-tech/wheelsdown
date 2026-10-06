@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useRoute } from "wouter";
-import { ArrowLeft, MapPin, Clock, Globe, Lightbulb, User } from "lucide-react";
-import type { Category, Review, SpotWithStats } from "@shared/schema";
+import { ArrowLeft, MapPin, Clock, Globe, Lightbulb, User, AlertTriangle } from "lucide-react";
+import { DOWN_REASONS, type Category, type ReviewWithVotes, type SpotWithStats } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { CAT_META, COST_LABELS, fmtMinutes, totalMinutes, parseTags, Stars, AdBanner, Chip } from "@/lib/ui";
+import { CAT_META, COST_LABELS, fmtMinutes, totalMinutes, parseTags, Stars, AdBanner, Chip, VetBadge, VoteButtons, timeAgo } from "@/lib/ui";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 
@@ -13,7 +13,7 @@ const ROLES = ["Captain", "First Officer", "Flight Attendant", "Mechanic", "Disp
 export default function SpotPage() {
   const [, params] = useRoute("/spot/:id");
   const id = params?.id;
-  const { data, isLoading, isError } = useQuery<{ spot: SpotWithStats; reviews: Review[] }>({ queryKey: ["/api/spots", id] });
+  const { data, isLoading, isError } = useQuery<{ spot: SpotWithStats; reviews: ReviewWithVotes[] }>({ queryKey: ["/api/spots", id] });
 
   if (isLoading) return <div className="space-y-4"><Skeleton className="h-8 w-40" /><Skeleton className="h-40 rounded-2xl" /><Skeleton className="h-24 rounded-2xl" /></div>;
   if (isError || !data) return <p className="text-sm text-muted-foreground">This spot isn't available. <Link href="/" className="text-primary underline">Back to search</Link></p>;
@@ -44,6 +44,8 @@ export default function SpotPage() {
           </span>
         </div>
       </header>
+
+      <CrewVote spot={spot} />
 
       <div className="grid grid-cols-3 gap-2">
         <Fact label="Cost" value={COST_LABELS[spot.costLevel]} mono />
@@ -90,7 +92,7 @@ export default function SpotPage() {
         </div>
         <ReviewForm spotId={spot.id} />
         {reviews.length === 0 && <p className="text-sm text-muted-foreground">No reviews yet — be the first.</p>}
-        {reviews.map((r) => (
+        {[...reviews].sort((a, b) => (b.up - b.down) - (a.up - a.down) || b.createdAt - a.createdAt).map((r) => (
           <article key={r.id} className="rounded-2xl border border-card-border bg-card p-4" data-testid={`review-${r.id}`}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm">
@@ -101,7 +103,10 @@ export default function SpotPage() {
               <Stars value={r.rating} size={12} />
             </div>
             {r.comment && <p className="mt-2 text-sm leading-relaxed">{r.comment}</p>}
-            <p className="mt-1.5 text-[11px] text-muted-foreground">{new Date(r.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</p>
+            <div className="mt-2.5 flex items-center justify-between gap-2">
+              <p className="text-[11px] text-muted-foreground">{new Date(r.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</p>
+              <ReviewVote review={r} spotId={spot.id} />
+            </div>
           </article>
         ))}
       </section>
@@ -173,5 +178,85 @@ function ReviewForm({ spotId }: { spotId: number }) {
         <button type="button" onClick={() => setOpen(false)} data-testid="button-cancel-review" className="h-10 px-4 rounded-full border border-border text-sm hover-elevate">Cancel</button>
       </div>
     </form>
+  );
+}
+
+function useVote(path: string, spotId: number) {
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: async (p: { value: number; reason?: string }) => (await apiRequest("POST", path, p)).json(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/spots", String(spotId)] });
+      queryClient.invalidateQueries({ queryKey: ["/api/search"] });
+    },
+    onError: (e: Error) => toast({ title: "Vote didn't go through", description: e.message, variant: "destructive" }),
+  });
+}
+
+function CrewVote({ spot }: { spot: SpotWithStats }) {
+  const { toast } = useToast();
+  const v = spot.vet;
+  const m = useVote(`/api/spots/${spot.id}/vote`, spot.id);
+  const [askReason, setAskReason] = useState(false);
+  const total = v.up + v.down;
+  const pct = total ? Math.round((v.up / total) * 100) : 0;
+  const topReasons = Object.entries(v.reasons).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  const label = (id: string) => DOWN_REASONS.find((r) => r.id === id)?.label || id;
+
+  const onVote = (value: number) => {
+    if (value === -1) { setAskReason(true); return; }
+    setAskReason(false);
+    m.mutate({ value }, { onSuccess: () => value === 1 && toast({ title: "Upvoted — thanks for vetting this for the next crew" }) });
+  };
+
+  return (
+    <section className="rounded-2xl border border-card-border bg-card p-4 space-y-3" data-testid="panel-crew-vote">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold">Is this listing still good?</p>
+          <p className="text-xs text-muted-foreground mt-0.5" data-testid="text-vote-summary">
+            {total ? <>{pct}% of {total} crew vote up{v.lastUpAt ? <> · last upvote {timeAgo(v.lastUpAt)}</> : null}</> : "No votes yet — be the first to vet it."}
+          </p>
+        </div>
+        <VetBadge vet={v} compact />
+      </div>
+      {total > 0 && (
+        <div className="h-1.5 w-full rounded-full bg-orange-500/30 overflow-hidden" aria-hidden>
+          <div className="h-full bg-emerald-500" style={{ width: `${pct}%` }} />
+        </div>
+      )}
+      <VoteButtons up={v.up} down={v.down} mine={v.myVote} onVote={onVote} testPrefix="button-vote-spot" />
+      {askReason && (
+        <div className="space-y-2 rounded-xl bg-muted/50 p-3" data-testid="panel-down-reason">
+          <p className="text-xs font-medium">What's wrong with it?</p>
+          <div className="flex flex-wrap gap-1.5">
+            {DOWN_REASONS.map((r) => (
+              <Chip key={r.id} className="text-xs" testId={`chip-reason-${r.id}`}
+                onClick={() => { setAskReason(false); m.mutate({ value: -1, reason: r.id }, { onSuccess: () => toast({ title: "Thanks — we'll flag it for a check" }) }); }}>
+                {r.label}
+              </Chip>
+            ))}
+          </div>
+          <button type="button" onClick={() => setAskReason(false)} className="text-xs text-muted-foreground hover:text-foreground" data-testid="button-cancel-reason">Cancel</button>
+        </div>
+      )}
+      {v.level === "needs_check" && topReasons.length > 0 && (
+        <div className="flex gap-2 rounded-xl bg-orange-500/10 p-3 text-xs" data-testid="text-needs-check">
+          <AlertTriangle className="h-4 w-4 shrink-0 text-orange-600 dark:text-orange-400" />
+          <p>Recent crew reports: {topReasons.map(([k, n]) => `${label(k)} (${n})`).join(", ")}. Confirm before you go.</p>
+        </div>
+      )}
+      <p className="text-[11px] text-muted-foreground">One vote per device. Votes older than 12 months stop counting, so listings stay current.</p>
+    </section>
+  );
+}
+
+function ReviewVote({ review, spotId }: { review: ReviewWithVotes; spotId: number }) {
+  const m = useVote(`/api/reviews/${review.id}/vote`, spotId);
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-[11px] text-muted-foreground">Helpful?</span>
+      <VoteButtons size="sm" up={review.up} down={review.down} mine={review.myVote} onVote={(value) => m.mutate({ value })} testPrefix={`button-vote-review-${review.id}`} />
+    </div>
   );
 }

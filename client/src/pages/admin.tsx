@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Download, Upload, Trash2, Eye, EyeOff, Plus, Lock, Pencil, LogOut } from "lucide-react";
-import { CATEGORIES, type Ad, type SpotWithStats } from "@shared/schema";
+import { CATEGORIES, DOWN_REASONS, type Ad, type SpotWithStats } from "@shared/schema";
 import { apiRequest, queryClient, API_BASE, IS_STATIC } from "@/lib/queryClient";
-import { CAT_META, COST_LABELS } from "@/lib/ui";
+import { CAT_META, COST_LABELS, VetBadge } from "@/lib/ui";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -63,7 +63,7 @@ function Console({ onLogout }: { onLogout: () => void }) {
       <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
         {[
           ["Live spots", stats?.spots], ["Pending", stats?.pending], ["Reviews", stats?.reviews],
-          ["Airfields", stats?.airports], ["Ad views", stats?.impressions], ["Ad CTR", ctr],
+          ["Crew votes", stats?.votes], ["Ad views", stats?.impressions], ["Ad CTR", ctr],
         ].map(([l, v]) => (
           <div key={l as string} className="rounded-xl border border-card-border bg-card px-3 py-2.5">
             <p className="text-[11px] text-muted-foreground">{l}</p>
@@ -74,10 +74,12 @@ function Console({ onLogout }: { onLogout: () => void }) {
       <Tabs defaultValue="spots">
         <TabsList>
           <TabsTrigger value="spots" data-testid="tab-spots">Spots</TabsTrigger>
+          <TabsTrigger value="check" data-testid="tab-check">Needs check</TabsTrigger>
           <TabsTrigger value="bulk" data-testid="tab-bulk">Import / Export</TabsTrigger>
           <TabsTrigger value="ads" data-testid="tab-ads">Ad banners</TabsTrigger>
         </TabsList>
         <TabsContent value="spots"><SpotsTable /></TabsContent>
+        <TabsContent value="check"><NeedsCheck /></TabsContent>
         <TabsContent value="bulk"><Bulk /></TabsContent>
         <TabsContent value="ads"><AdsManager /></TabsContent>
       </Tabs>
@@ -153,12 +155,13 @@ function SpotsTable() {
               <th className="p-2.5 text-left font-medium">Cat</th>
               <th className="p-2.5 text-left font-medium">Cost</th>
               <th className="p-2.5 text-left font-medium">Rating</th>
+              <th className="p-2.5 text-left font-medium">Crew votes</th>
               <th className="p-2.5 text-left font-medium">Status</th>
               <th className="p-2.5" />
             </tr>
           </thead>
           <tbody>
-            {isLoading && <tr><td colSpan={8} className="p-3"><Skeleton className="h-6" /></td></tr>}
+            {isLoading && <tr><td colSpan={9} className="p-3"><Skeleton className="h-6" /></td></tr>}
             {rows.map((s) => (
               <tr key={s.id} className="border-t border-border" data-testid={`row-spot-${s.id}`}>
                 <td className="p-2.5"><Checkbox checked={sel.has(s.id)} onCheckedChange={() => toggle(s.id)} data-testid={`checkbox-spot-${s.id}`} aria-label={`Select ${s.name}`} /></td>
@@ -167,11 +170,12 @@ function SpotsTable() {
                 <td className="p-2.5 text-xs">{CAT_META[s.category as keyof typeof CAT_META]?.label}</td>
                 <td className="p-2.5 font-code text-xs">{COST_LABELS[s.costLevel]}</td>
                 <td className="p-2.5 text-xs tabular">{s.reviewCount ? `${s.avgRating?.toFixed(1)} (${s.reviewCount})` : "—"}</td>
+                <td className="p-2.5"><VetBadge vet={s.vet} /></td>
                 <td className="p-2.5"><span className={cn("rounded-md px-1.5 py-0.5 text-xs font-medium", s.status === "live" ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : s.status === "pending" ? "bg-primary/20" : "bg-muted text-muted-foreground")}>{s.status}</span></td>
                 <td className="p-2.5 text-right"><button onClick={() => setEdit(s)} className="h-8 w-8 grid place-items-center rounded-lg hover-elevate" aria-label="Edit" data-testid={`button-edit-${s.id}`}><Pencil className="h-4 w-4" /></button></td>
               </tr>
             ))}
-            {!isLoading && rows.length === 0 && <tr><td colSpan={8} className="p-6 text-center text-sm text-muted-foreground">No spots match.</td></tr>}
+            {!isLoading && rows.length === 0 && <tr><td colSpan={9} className="p-6 text-center text-sm text-muted-foreground">No spots match.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -239,6 +243,60 @@ function EditSpot({ spot, onClose }: { spot: SpotWithStats; onClose: () => void 
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function NeedsCheck() {
+  const { toast } = useToast();
+  const { data, isLoading } = useQuery<SpotWithStats[]>({ queryKey: ["/api/admin/spots"], queryFn: admGet("/api/admin/spots") });
+  const [edit, setEdit] = useState<SpotWithStats | null>(null);
+  const rows = (data || []).filter((s) => s.vet.level === "needs_check" || s.status === "pending")
+    .sort((a, b) => b.vet.down - a.vet.down);
+  const keep = useMutation({
+    mutationFn: async (id: number) => adm("POST", `/api/admin/spots/${id}/clear-downvotes`),
+    onSuccess: () => { invalidateAll(); queryClient.invalidateQueries({ queryKey: ["/api/spots"] }); toast({ title: "Downvotes cleared — listing is live" }); },
+  });
+  const hide = useMutation({
+    mutationFn: async (id: number) => adm("POST", "/api/admin/spots/bulk", { ids: [id], action: "status", value: "hidden" }),
+    onSuccess: () => { invalidateAll(); toast({ title: "Listing hidden" }); },
+  });
+  const label = (id: string) => DOWN_REASONS.find((r) => r.id === id)?.label || id;
+  return (
+    <div className="mt-3 space-y-3">
+      <p className="text-sm text-muted-foreground">
+        Listings crews have voted down (2+ downvotes, 40%+ negative) or that were pulled automatically (5+ downvotes, 60%+ negative) and are waiting for review.
+        Verify the listing, then edit it, keep it and clear the downvotes, or hide it.
+      </p>
+      {isLoading && <Skeleton className="h-24 rounded-2xl" />}
+      {!isLoading && rows.length === 0 && <div className="rounded-2xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">Nothing needs a check right now.</div>}
+      <div className="grid gap-3 lg:grid-cols-2">
+        {rows.map((s) => (
+          <div key={s.id} className="rounded-2xl border border-card-border bg-card p-4 space-y-2.5" data-testid={`card-check-${s.id}`}>
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <p className="text-xs text-muted-foreground"><span className="font-code font-bold text-foreground">{s.icao}</span> · {CAT_META[s.category as keyof typeof CAT_META]?.label}</p>
+                <p className="text-sm font-semibold">{s.name}</p>
+              </div>
+              <div className="flex flex-col items-end gap-1">
+                <VetBadge vet={s.vet} />
+                {s.status !== "live" && <span className="rounded-md bg-primary/20 px-1.5 py-0.5 text-[11px] font-semibold">{s.status === "pending" ? "Pulled — awaiting review" : s.status}</span>}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {Object.entries(s.vet.reasons).sort((a, b) => b[1] - a[1]).map(([k, n]) => (
+                <span key={k} className="rounded-md bg-orange-500/15 px-2 py-0.5 text-xs text-orange-700 dark:text-orange-400">{label(k)} · {n}</span>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2 pt-1">
+              <button className={btnPrimary} onClick={() => keep.mutate(s.id)} data-testid={`button-keep-${s.id}`}>Keep & clear downvotes</button>
+              <button className={btn} onClick={() => setEdit(s)} data-testid={`button-check-edit-${s.id}`}><Pencil className="h-4 w-4" />Edit</button>
+              <button className={cn(btn, "text-destructive")} onClick={() => hide.mutate(s.id)} data-testid={`button-hide-${s.id}`}><EyeOff className="h-4 w-4" />Hide</button>
+            </div>
+          </div>
+        ))}
+      </div>
+      {edit && <EditSpot spot={edit} onClose={() => setEdit(null)} />}
+    </div>
   );
 }
 

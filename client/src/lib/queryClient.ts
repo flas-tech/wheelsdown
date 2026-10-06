@@ -3,6 +3,19 @@ import { QueryClient, QueryFunction } from "@tanstack/react-query";
 export const IS_STATIC = import.meta.env.VITE_STATIC === "1";
 const mock = () => import("./mockApi");
 
+// Anonymous per-device id so each crew member gets one vote per listing.
+export const VOTER_ID: string = (() => {
+  const make = () => "v-" + Math.random().toString(36).slice(2) + Date.now().toString(36);
+  try {
+    const k = "wheelsdown-voter";
+    const v = window.localStorage.getItem(k) || make();
+    window.localStorage.setItem(k, v);
+    return v;
+  } catch {
+    return make();
+  }
+})();
+
 export const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
 
 async function throwIfResNotOk(res: Response) {
@@ -19,13 +32,13 @@ export async function apiRequest(
   extraHeaders: Record<string, string> = {},
 ): Promise<Response> {
   if (IS_STATIC) {
-    const res = await (await mock()).mockFetch(method, url, data, extraHeaders);
+    const res = await (await mock()).mockFetch(method, url, data, { "x-voter-id": VOTER_ID, ...extraHeaders });
     await throwIfResNotOk(res);
     return res;
   }
   const res = await fetch(`${API_BASE}${url}`, {
     method,
-    headers: { ...(data ? { "Content-Type": "application/json" } : {}), ...extraHeaders },
+    headers: { ...(data ? { "Content-Type": "application/json" } : {}), "x-voter-id": VOTER_ID, ...extraHeaders },
     body: data ? JSON.stringify(data) : undefined,
   });
 
@@ -40,7 +53,7 @@ export const getQueryFn: <T>(options: {
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
     const path = queryKey.join("/");
-    const res = IS_STATIC ? await (await mock()).mockFetch("GET", path) : await fetch(`${API_BASE}${path}`);
+    const res = IS_STATIC ? await (await mock()).mockFetch("GET", path, undefined, { "x-voter-id": VOTER_ID }) : await fetch(`${API_BASE}${path}`, { headers: { "x-voter-id": VOTER_ID } });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
       return null;

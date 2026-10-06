@@ -86,4 +86,32 @@ export const insertAdSchema = createInsertSchema(ads).omit({ id: true, impressio
 export type InsertAd = z.infer<typeof insertAdSchema>;
 export type Ad = typeof ads.$inferSelect;
 
-export type SpotWithStats = Spot & { avgRating: number | null; reviewCount: number; airport?: Airport };
+export type SpotWithStats = Spot & { avgRating: number | null; reviewCount: number; airport?: Airport; vet: VetInfo };
+
+// ---- Crew votes (up/down) on listings and reviews ----
+export const votes = sqliteTable("votes", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  targetType: text("target_type").notNull(), // spot | review
+  targetId: integer("target_id").notNull(),
+  voter: text("voter").notNull(),
+  value: integer("value").notNull(), // 1 or -1
+  reason: text("reason").default(""),
+  createdAt: integer("created_at").notNull().default(0),
+});
+export type Vote = typeof votes.$inferSelect;
+
+export const DOWN_REASONS = [
+  { id: "closed", label: "Closed / gone" },
+  { id: "outdated", label: "Info outdated" },
+  { id: "location", label: "Wrong location" },
+  { id: "not_worth", label: "Not worth it" },
+  { id: "not_crew", label: "Not crew-friendly" },
+  { id: "other", label: "Other" },
+] as const;
+
+export type VetLevel = "vetted" | "needs_check" | "new" | "ok";
+export type VetInfo = {
+  up: number; down: number; score: number; level: VetLevel;
+  lastUpAt: number | null; reasons: Record<string, number>; myVote: number;
+};
+export type ReviewWithVotes = Review & { up: number; down: number; myVote: number };
