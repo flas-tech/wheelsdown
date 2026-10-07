@@ -1,6 +1,8 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { InterestChips } from "@/lib/interests";
+import { WrightCard } from "@/lib/club";
+import { BadgeShelf } from "@/lib/achievements";
 import { useToast } from "@/hooks/use-toast";
 import { UserPlus, UserCheck } from "lucide-react";
 import { Link, useRoute } from "wouter";
@@ -18,6 +20,7 @@ type CrewProfile = {
   user: PublicUser; rank: number; hidden: boolean; counts: { listings: number; reviews: number };
   spots: SpotWithStats[]; reviews: (Omit<Review, "userId"> & { spotName: string })[];
   follow: { followers: number; following: number; isFollowing: boolean } | null;
+  wrightNo?: number | null; badges?: string[];
 };
 
 export default function CrewProfilePage() {
@@ -50,6 +53,8 @@ export default function CrewProfilePage() {
         <Stat label="Ratings" value={counts.reviews} />
         <Stat label="Contributions" value={u.participation} />
       </div>
+      {data.wrightNo ? <WrightCard no={data.wrightNo} name={isMe ? undefined : u.displayName} /> : null}
+      <BadgeShelf ids={data.badges || []} />
       {(u.bio || u.interests?.length > 0 || data.follow) && (
         <section className="space-y-3" data-testid="section-crew-about">
           {u.bio && <p className="text-sm whitespace-pre-line" data-testid="text-crew-bio">{u.bio}</p>}

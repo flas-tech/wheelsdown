@@ -1,6 +1,7 @@
 import { airports, spots, reviews, ads, votes, users, sessions, passwordResets, briefings, favorites, modLog, appSettings, follows } from "@shared/schema";
 import { parseInterests } from "@shared/interests";
 import { WRIGHT_SEATS, isTestSignup } from "@shared/club";
+import { achievementProgress, type AchStats } from "@shared/achievements";
 import type { Briefing, BriefingStop } from "@shared/schema";
 import { crewCost } from "@shared/cost";
 import { refAirport, isCode } from "./airportsData";
@@ -471,7 +472,7 @@ export class DatabaseStorage {
       return {
         id: u.id, handle: anon && !admin ? "" : u.handle, displayName: admin ? u.displayName : publicName(u), crewRole: u.crewRole, homeBase: u.homeBase || "",
         anonymous: anon, participation: b.participation, points: b.total, tierId: tierFor(b.total).tier.id, createdAt: u.createdAt, aircraft: u.aircraft || "",
-        bio: anon && !admin ? "" : u.bio || "", interests: anon && !admin ? [] : parseInterests(u.interests), wrightNo: admin ? u.wrightNo ?? null : null, // badge shows only on the member's own Logbook
+        bio: anon && !admin ? "" : u.bio || "", interests: anon && !admin ? [] : parseInterests(u.interests), wrightNo: admin ? u.wrightNo ?? null : null, // not on lists or the leaderboard; the Logbook and crew profile show it
         ...(admin ? { email: u.email } : {}),
       };
     }).sort((a, b) => b.points - a.points);
@@ -523,6 +524,7 @@ export class DatabaseStorage {
       id: u.id, handle: u.handle, email: u.email || "", displayName: u.displayName, crewRole: u.crewRole, homeBase: u.homeBase || "", anonymous: !!u.anonymous,
       participation: b.participation, points: b.total, tierId: tierFor(b.total).tier.id, createdAt: u.createdAt, aircraft: u.aircraft || "", breakdown: b,
       bio: u.bio || "", interests: parseInterests(u.interests), follows: await this.followCounts(u.id), wrightNo: u.wrightNo ?? null,
+      achievements: achievementProgress(await this.achievementStats(u.id)),
     };
   }
   async userContributions(userId: number) {
@@ -544,15 +546,40 @@ export class DatabaseStorage {
     const counts = { listings: c.spots.filter((s) => s.status === "live").length, reviews: c.reviews.filter((r) => r.status === "live").length };
     // anonymous members can't be followed, so their follower counts aren't shown either
     const follow = u?.anonymous ? null : { ...(await this.followCounts(userId)), isFollowing: viewerId ? await this.isFollowing(viewerId, userId) : false };
-    if (u?.anonymous) return { user: pub, rank, counts, follow, spots: [], reviews: [], hidden: true };
+    if (u?.anonymous) return { user: pub, rank, counts, follow, spots: [], reviews: [], hidden: true, wrightNo: null, badges: [] };
+    // founding-club seat and earned badges show on the public profile (never on the leaderboard)
+    const badges = achievementProgress(await this.achievementStats(userId)).filter((b) => b.earned).map((b) => b.id);
     const live = new Set(c.spots.filter((s) => s.status === "live").map((s) => s.id));
     const liveIds = (await db().select({ id: spots.id }).from(spots).where(eq(spots.status, "live"))).map((x) => x.id);
     const liveAll = new Set(liveIds);
     return {
-      user: pub, rank, counts, follow, hidden: false,
+      user: pub, rank, counts, follow, hidden: false, wrightNo: u?.wrightNo ?? null, badges,
       spots: c.spots.filter((s) => live.has(s.id)).map(({ mod: _m, ...s }) => s),
       reviews: c.reviews.filter((r) => liveAll.has(r.spotId) && r.status === "live").map(({ userId: _u, pendingEdit: _p, modNote: _n, ...r }) => r),
     };
+  }
+
+  // ---- earned badges (cosmetic; no points) ----
+  async achievementStats(userId: number): Promise<AchStats> {
+    const q = async (s: ReturnType<typeof sql>) => ((await db().execute(s)).rows[0] as any) || {};
+    const [sp, rv, fav, five, br, first] = await Promise.all([
+      q(sql`SELECT COUNT(*)::int AS listings, COUNT(DISTINCT icao)::int AS airports,
+              COUNT(*) FILTER (WHERE category = 'eat')::int AS eat, COUNT(*) FILTER (WHERE category = 'do')::int AS "do",
+              COUNT(*) FILTER (WHERE category = 'stay')::int AS stay, COUNT(*) FILTER (WHERE category = 'fbo')::int AS fbo
+            FROM spots WHERE user_id = ${userId} AND status = 'live'`),
+      q(sql`SELECT COUNT(*)::int AS ratings, COUNT(*) FILTER (WHERE length(trim(comment)) >= 40)::int AS detailed,
+              COUNT(*) FILTER (WHERE rating = 0)::int AS go_arounds
+            FROM reviews r JOIN spots s ON s.id = r.spot_id AND s.status = 'live' WHERE r.user_id = ${userId} AND r.status = 'live'`),
+      q(sql`SELECT COUNT(*)::int AS n FROM favorites f JOIN spots s ON s.id = f.spot_id AND s.status = 'live' WHERE s.user_id = ${userId} AND f.user_id <> ${userId}`),
+      q(sql`SELECT COUNT(*)::int AS n FROM (SELECT s.id FROM spots s JOIN reviews r ON r.spot_id = s.id AND r.status = 'live'
+              WHERE s.user_id = ${userId} AND s.status = 'live' GROUP BY s.id HAVING COUNT(*) >= 3 AND AVG(r.rating) >= 4.5) x`),
+      q(sql`SELECT COUNT(*)::int AS n FROM briefings WHERE user_id = ${userId}`),
+      q(sql`SELECT COUNT(*)::int AS n FROM (SELECT DISTINCT ON (icao) icao, user_id FROM spots WHERE status = 'live' ORDER BY icao, created_at, id) x WHERE x.user_id = ${userId}`),
+    ]);
+    const followers = (await this.followCounts(userId)).followers;
+    return { listings: sp.listings || 0, airports: sp.airports || 0, eat: sp.eat || 0, do: sp.do || 0, stay: sp.stay || 0, fbo: sp.fbo || 0,
+      ratings: rv.ratings || 0, detailed: rv.detailed || 0, goArounds: rv.go_arounds || 0, favoritedByOthers: fav.n || 0, fiveStarFinds: five.n || 0,
+      briefings: br.n || 0, firstAtAirport: first.n || 0, followers };
   }
 
   // ---- founding club ----

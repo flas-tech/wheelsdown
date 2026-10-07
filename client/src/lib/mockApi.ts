@@ -6,6 +6,7 @@ import { computeVet, seedVotesFor, shouldAutoHold } from "@shared/vetting";
 import { computePoints, recentActivity, publicName, tierFor, SEED_USERS, SEED_PASSWORD } from "@shared/tiers";
 import { CREW_ROLES } from "@shared/schema";
 import { SERVICES } from "@shared/services";
+import { achievementProgress, type AchStats } from "@shared/achievements";
 import { validAircraftList } from "@shared/aircraft";
 import { BIO_MAX, INTERESTS, MAX_INTERESTS } from "@shared/interests";
 import { WRIGHT_SEATS } from "@shared/club";
@@ -135,11 +136,24 @@ export function exportCsv() {
   return lines.join("\n");
 }
 
+function achStats(uid: number): AchStats {
+  const live = db.spots.filter((s) => s.status === "live"), mine = live.filter((s) => s.userId === uid), liveIds = new Set(live.map((s) => s.id));
+  const revs = db.reviews.filter((r) => r.userId === uid && r.status === "live" && liveIds.has(r.spotId));
+  const firstBy = new Map<string, number | null>();
+  [...live].sort((a, b) => a.createdAt - b.createdAt || a.id - b.id).forEach((s) => { if (!firstBy.has(s.icao)) firstBy.set(s.icao, s.userId ?? null); });
+  const mineIds = new Set(mine.map((s) => s.id));
+  const five = mine.filter((s) => { const rs = db.reviews.filter((r) => r.spotId === s.id && r.status === "live"); return rs.length >= 3 && rs.reduce((a, r) => a + r.rating, 0) / rs.length >= 4.5; }).length;
+  return { listings: mine.length, airports: new Set(mine.map((s) => s.icao)).size, eat: mine.filter((s) => s.category === "eat").length, do: mine.filter((s) => s.category === "do").length,
+    stay: mine.filter((s) => s.category === "stay").length, fbo: mine.filter((s) => s.category === "fbo").length, ratings: revs.length,
+    detailed: revs.filter((r) => r.comment.trim().length >= 40).length, goArounds: revs.filter((r) => r.rating === 0).length,
+    favoritedByOthers: (db.favorites || []).filter((f) => mineIds.has(f.spotId) && f.userId !== uid).length, fiveStarFinds: five,
+    briefings: (db.briefings || []).filter((b) => b.userId === uid).length, firstAtAirport: Array.from(firstBy.values()).filter((x) => x === uid).length, followers: followCounts(uid).followers };
+}
 function meOf(u: DemoUser) {
   const b = computePoints(db, u.id, u.bonusPoints);
   return { id: u.id, handle: u.handle, displayName: u.displayName, crewRole: u.crewRole, homeBase: u.homeBase, anonymous: !!u.anonymous, email: u.email || "",
     participation: b.participation, points: b.total, tierId: tierFor(b.total).tier.id, createdAt: u.createdAt, aircraft: u.aircraft || "", breakdown: b,
-    bio: u.bio || "", interests: u.interests || [], follows: followCounts(u.id), wrightNo: u.wrightNo ?? null };
+    bio: u.bio || "", interests: u.interests || [], follows: followCounts(u.id), wrightNo: u.wrightNo ?? null, achievements: achievementProgress(achStats(u.id)) };
 }
 const fl = () => (db.follows ||= []);
 function followCounts(id: number) {
@@ -147,7 +161,7 @@ function followCounts(id: number) {
 }
 function publicUsers(admin = false) {
   return db.users.map((u) => {
-    const { breakdown, follows: _f, wrightNo: _w, ...rest } = meOf(u);
+    const { breakdown, follows: _f, wrightNo: _w, achievements: _a, ...rest } = meOf(u);
     return admin || !u.anonymous ? rest : { ...rest, handle: "", displayName: publicName(u), bio: "", interests: [] };
   }).sort((a, b) => b.points - a.points);
 }
@@ -397,8 +411,8 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
     const myRevs = db.reviews.filter((r) => r.userId === uid && liveIds.has(r.spotId)).sort((a, b) => b.createdAt - a.createdAt);
     const counts = { listings: mySpots.length, reviews: myRevs.length };
     const follow = du.anonymous ? null : { ...followCounts(uid), isFollowing: !!user && fl().some((f) => f.a === user.id && f.b === uid) };
-    if (du.anonymous) return { user: list[idx], rank: idx + 1, counts, follow, spots: [], reviews: [], hidden: true };
-    return { user: list[idx], rank: idx + 1, counts, follow, hidden: false, spots: mySpots,
+    if (du.anonymous) return { user: list[idx], rank: idx + 1, counts, follow, spots: [], reviews: [], hidden: true, wrightNo: null, badges: [] };
+    return { user: list[idx], rank: idx + 1, counts, follow, hidden: false, spots: mySpots, wrightNo: du.wrightNo ?? null, badges: achievementProgress(achStats(uid)).filter((b) => b.earned).map((b) => b.id),
       reviews: myRevs.map(({ userId: _u, ...r }) => ({ ...r, spotName: db.spots.find((s) => s.id === r.spotId)?.name || "" })) };
   }
 

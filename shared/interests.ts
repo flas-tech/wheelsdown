@@ -3,7 +3,7 @@ export const INTEREST_GROUPS = [
   { group: "Eat & drink", items: [
     ["pizza", "Pizza expert"], ["bbq", "BBQ expert"], ["sushi", "Sushi expert"], ["burgers", "Burger expert"], ["tacos", "Taco expert"],
     ["steak", "Steakhouse expert"], ["seafood", "Seafood expert"], ["coffee", "Coffee expert"], ["brunch", "Brunch expert"], ["dessert", "Dessert expert"],
-    ["street_food", "Street food expert"], ["fine_dining", "Fine dining expert"], ["plant_based", "Plant-based expert"], ["healthy", "Healthy eats expert"],
+    ["street_food", "Street food expert"], ["fine_dining", "Fine dining expert"], ["plant_based", "Plant-based expert"], ["healthy", "Healthy eats expert"], ["unhealthy", "Unhealthy eater"],
     ["craft_beer", "Craft beer expert"], ["wine", "Wine expert"], ["cocktails", "Cocktail expert"], ["late_night", "Late-night eats expert"],
   ] },
   { group: "Things to do", items: [
