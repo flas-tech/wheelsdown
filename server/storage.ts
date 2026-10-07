@@ -247,6 +247,11 @@ export class DatabaseStorage {
       return { ...r, authorId: r.userId != null && named.has(r.userId) ? r.userId : null, up: mine.filter((v) => v.value > 0).length, down: mine.filter((v) => v.value < 0).length, myVote: mine.find((v) => v.voter === voter)?.value ?? 0 };
     });
   }
+  /** True when the person who posted the listing also rated it "Go around" (they added it as a warning). */
+  async ownerWarns(spotId: number, userId: number | null) {
+    if (userId == null) return false;
+    return !!(await db().select({ id: reviews.id }).from(reviews).where(and(eq(reviews.spotId, spotId), eq(reviews.userId, userId), eq(reviews.rating, 0))))[0];
+  }
   async getReview(id: number) { return Number.isFinite(id) ? (await db().select().from(reviews).where(eq(reviews.id, id)))[0] : undefined; }
   async updateReview(id: number, patch: { rating?: number; comment?: string; costLevel?: number | null }) {
     invalidateActivity();

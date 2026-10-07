@@ -257,7 +257,14 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     airportCity: z.string().max(80).optional(),
     tags: z.union([z.string(), z.array(z.string())]).optional(),
     website: z.union([z.literal(""), z.string().url("Website should start with https://")]).optional(),
+    // new listings only: the poster says crews should avoid it, saved as their own "Go around" (0-star) rating
+    goAround: z.object({ comment: z.string().trim().min(10, "Tell crews why to go around (a sentence is enough)").max(1000) }).optional(),
   });
+  /** The poster's own "Go around" on a listing they just added. Goes through the same checks as any rating. */
+  async function addGoAround(spotId: number, user: User, comment: string, checking: boolean) {
+    const r = await storage.createReview({ spotId, rating: 0, comment, costLevel: null, author: publicName(user), crewRole: user.crewRole, userId: user.id } as any);
+    if (checking) await storage.setReviewMod(r.id, { status: "pending", modState: "checking" });
+  }
   /** Category rules shared by new listings and edits. Returns an error message, or null. */
   function applyCategoryRules(rest: { category: string; costLevel?: number | null; pace?: string | null; minutesNeeded?: number }) {
     if (rest.category === "fbo") rest.costLevel = 0;
@@ -284,7 +291,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const user = (req as any).user as User;
     const p = submitSchema.safeParse(req.body);
     if (!p.success) return res.status(400).json({ message: msg(p.error) });
-    const { airportCity, tags, ...rest } = p.data;
+    const { airportCity, tags, goAround, ...rest } = p.data;
     const code = rest.icao.toUpperCase();
     if (!(await storage.resolveCode(code)) && !refAirport(code) && !airportCity) return res.status(400).json({ message: `We don't know ${code} yet — add the city so we can create it.` });
     const err = applyCategoryRules(rest);
@@ -298,10 +305,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       // saved unpublished; the background check publishes it (usually within a minute) or holds it with a note
       const spot = await storage.createSpot({ ...rest, icao, tags: tagJson(tags), submittedBy: publicName(user), userId: user.id, status: "pending" });
       await storage.setSpotMod(spot.id, { modState: "checking", modNote: "" });
+      if (goAround) await addGoAround(spot.id, user, goAround.comment, true);
       kickModerator();
       return res.status(201).json({ ...spot, modState: "checking" });
     }
     const spot = await storage.createSpot({ ...rest, icao, tags: tagJson(tags), submittedBy: publicName(user), userId: user.id, status: MODERATE && !trusted ? "pending" : "live" });
+    if (goAround) await addGoAround(spot.id, user, goAround.comment, false);
     res.status(201).json(spot);
   });
 

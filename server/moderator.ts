@@ -57,7 +57,7 @@ async function verdictForSpot(s: Spot, edit: SpotEdit | null): Promise<Verdict> 
   const v = await checkSpot(merged, {
     airport: airport ? { name: airport.name, city: airport.city } : null,
     nearbyNames: others.map((o) => `${o.name} (${o.category}${o.address ? ", " + o.address : ""})`),
-    isEdit: !!edit, previous: edit ? s : null,
+    isEdit: !!edit, previous: edit ? s : null, warning: await storage.ownerWarns(s.id, s.userId),
   });
   // the local duplicate check can only escalate an approval to a human look, never publish something the AI held
   if (v.verdict === "approve" && dup && (!edit || (!!edit.name && edit.name.trim().toLowerCase() !== s.name.trim().toLowerCase()))) {

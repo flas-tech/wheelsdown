@@ -311,8 +311,14 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
     const ap = resolve(icao);
     if (data.lat != null && data.lng != null && ap?.lat != null && ap?.lon != null)
       data.milesFromField = Math.round(milesBetween({ lat: ap.lat, lon: ap.lon }, { lat: data.lat, lon: data.lng }) * 10) / 10;
+    if (body.goAround && String(body.goAround.comment || "").trim().length < 10) throw new HttpError(400, "Tell crews why to go around (a sentence is enough)");
     const spot: Spot = { id: ++db.seq.spot, description: "", address: "", website: "", costLevel: 1, minutesNeeded: 60, milesFromField: 0, crewTip: "", pace: null, lat: null, lng: null, placeRef: null, ...data, submittedBy: publicName(u), userId: u.id, status: "live", createdAt: Date.now() };
-    db.spots.push(spot); save(); return spot;
+    db.spots.push(spot);
+    const why = String(body.goAround?.comment || "").trim();
+    if (body.goAround) {
+      db.reviews.push({ id: ++db.seq.review, spotId: spot.id, rating: 0, comment: why.slice(0, 1000), author: publicName(u), crewRole: u.crewRole, userId: u.id, createdAt: Date.now(), costLevel: null, status: "live", modState: "", modNote: "", modAttempts: 0, pendingEdit: null } as Review);
+    }
+    save(); return spot;
   }
   if (method === "PATCH" && (m = path.match(/^\/api\/spots\/(\d+)$/))) {
     const u = needUser();

@@ -197,7 +197,7 @@ export type SpotForCheck = {
   costLevel?: number | null; pace?: string | null; minutesNeeded?: number; milesFromField?: number | null; lat?: number | null; lng?: number | null;
   placeRef?: string | null; tags?: string | null;
 };
-export async function checkSpot(s: SpotForCheck, ctx: { airport?: { name: string; city: string } | null; nearbyNames: string[]; isEdit: boolean; previous?: SpotForCheck | null }): Promise<Verdict> {
+export async function checkSpot(s: SpotForCheck, ctx: { airport?: { name: string; city: string } | null; nearbyNames: string[]; isEdit: boolean; previous?: SpotForCheck | null; warning?: boolean }): Promise<Verdict> {
   const text = [s.name, s.description, s.crewTip, s.address, s.website, s.tags].filter(Boolean).join("\n");
   const mod = await moderationEndpoint(text);
   if (mod?.flagged && mod.categories.some((c) => !/^(violence|self-harm)$/.test(c))) return { verdict: "reject", problem: "inappropriate", reason: "This listing contains language that isn't allowed. Please keep it about the place and keep it civil." };
@@ -208,7 +208,7 @@ Also check accuracy using the data given and web search:
 - The place should exist and be near the airport (milesFromField is measured from the airport; over 30 miles is suspicious unless it's a known day trip). milesFromField of 0 or null just means it wasn't measured; never hold for that.
 - Category must fit (${CAT_HELP}). Price level, pace and address should be roughly consistent with what you find. Price guide: ${priceGuide(s.category)}.
 - A duplicate is a listing of the same business at the same airport already in existingListings (minor spelling differences count).
-Verdicts:
+${ctx.warning ? `- The poster added this place as a "Go around": a warning that crews should avoid it. A critical, factual description of the place (bad service, unsafe area, hygiene, closed early, not crew-friendly) is expected; never hold it for being negative. Still hold personal attacks on named staff, accusations of crimes, or personal information.\n` : ""}Verdicts:
 - approve: appropriate and plausibly correct. Small differences (formatting, a suite number, a neighboring city or suburb name, a slightly different price tier or distance, hours, missing details) are fine; approve and say nothing. If the business and address check out, approve. Don't block because you can't find a small local place online if nothing contradicts it.
 - review: likely incorrect, a probable duplicate, wrong airport or city, closed permanently, or not a real place. A person will look.
 - reject: clearly inappropriate or spam.

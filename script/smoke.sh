@@ -93,6 +93,7 @@ check "regular crew is not admin" 'Admin key' "$(curl -s $BASE/api/admin/stats -
 check "multi aircraft saves" '"aircraft":"heli_mt,airliner"' "$(curl -s -XPATCH $BASE/api/me -H "$A" -H 'content-type: application/json' -d '{"aircraft":"heli_mt,airliner"}')"
 check "aircraft limit"      'up to 6'         "$(curl -s -XPATCH $BASE/api/me -H "$A" -H 'content-type: application/json' -d '{"aircraft":"sep,mep,setp,metp,light_jet,midsize_jet,large_jet"}')"
 check "dispatcher role"     '"crewRole":"Dispatcher"' "$(curl -s -XPATCH $BASE/api/me -H "$A" -H 'content-type: application/json' -d '{"crewRole":"Flight Scheduler"}' >/dev/null; curl -s -XPATCH $BASE/api/me -H "$A" -H 'content-type: application/json' -d '{"crewRole":"Dispatcher"}')"
+check "go-around needs a reason" 'why to go around' "$(curl -s -XPOST $BASE/api/spots -H "$A" -H 'content-type: application/json' -d '{"icao":"KMIA","category":"eat","name":"Smoke Go Around","costLevel":1,"pace":"grab","goAround":{"comment":"no"}}')"
 check "me reports no admin" '"isAdmin":false' "$(curl -s $BASE/api/me -H "$A")"
 check "advertiser report"  '"traffic"'      "$(curl -s "$BASE/api/admin/advertisers?days=30" -H "x-admin-key: $ADMIN_KEY")"
 check "advertiser airports" '"airports"'    "$(curl -s "$BASE/api/admin/advertisers?days=7" -H "x-admin-key: $ADMIN_KEY")"

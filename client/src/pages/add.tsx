@@ -7,7 +7,7 @@ import { TIME_BUCKETS, type Airport, type Category, type SpotWithStats, type Rev
 import { COST_LABELS, PACES, costOptions, costUnit, paceOf, togglePace, isPace, type PaceValue } from "@shared/cost";
 import { CostChoice } from "@/lib/costChip";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { CAT_META, Chip } from "@/lib/ui";
+import { CAT_META, Chip, GoAroundIcon } from "@/lib/ui";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useSearch } from "./home";
@@ -50,6 +50,8 @@ export default function AddPage() {
   const [address, setAddress] = useState("");
   const [website, setWebsite] = useState("");
   const [tags, setTags] = useState("");
+  const [avoid, setAvoid] = useState(false); // new listings only: "Go around", crews should avoid this place
+  const [why, setWhy] = useState("");
   const [place, setPlace] = useState<PlaceHit | null>(null); // chosen autofill result
   const [here, setHere] = useState<LatLng | null>(null);
   const [locating, setLocating] = useState(false);
@@ -177,14 +179,15 @@ export default function AddPage() {
           milesFromField: miles ? Number(miles) : 0,
           lat: place?.lat ?? null, lng: place?.lng ?? null, placeRef: place?.ref ?? null,
           crewTip, address, website, tags,
+          ...(!editId && avoid ? { goAround: { comment: why.trim() } } : {}),
         })
       ).json(),
     onSuccess: (spot: { id: number; status: string }) => {
       for (const k of ["/api/search", "/api/airports", "/api/me", "/api/crew", "/api/highlights", "/api/spots", "/api/me/favorites", "/api/briefings"]) queryClient.invalidateQueries({ queryKey: [k] });
       const checking = (spot as any).modState === "checking";
       if (editId) { toast({ title: checking ? "Edit saved" : "Listing updated", description: checking ? "It goes live after a quick automatic check." : undefined }); navigate(`/spot/${spot.id}`); return; }
-      if (checking) { toast({ title: "Spot saved", description: "A quick automatic check runs before crews can see it, usually under a minute." }); navigate(`/spot/${spot.id}`); return; }
-      toast({ title: spot.status === "pending" ? "Submitted for review" : "Spot added — thanks for helping the next crew" });
+      if (checking) { toast({ title: avoid ? "Go-around saved" : "Spot saved", description: "A quick automatic check runs before crews can see it, usually under a minute." }); navigate(`/spot/${spot.id}`); return; }
+      toast({ title: spot.status === "pending" ? "Submitted for review" : avoid ? "Go-around posted. Thanks for the warning." : "Spot added — thanks for helping the next crew" });
       navigate(spot.status === "pending" ? "/" : `/spot/${spot.id}`);
     },
     onError: (e: Error) => toast({ title: editId ? "Couldn't save changes" : "Couldn't add spot", description: errText(e), variant: "destructive" }),
@@ -198,6 +201,7 @@ export default function AddPage() {
     needsCost && costLevel == null && "price",
     category === "eat" && !pace && "Grab & go and/or Sit-down",
     category === "do" && !time && "time needed",
+    !editId && avoid && why.trim().length < 10 && "why to go around",
   ].filter(Boolean) as string[];
   const canSubmit = missing.length === 0 && !notOwner && (!editId || loaded);
 
@@ -306,10 +310,34 @@ export default function AddPage() {
         </Field>
       )}
 
+      {!editId && (
+        <section className={cn("rounded-2xl border p-4", avoid ? "border-orange-500/50 bg-orange-500/5" : "border-card-border bg-card/60")} data-testid="section-add-verdict">
+          <p className="text-sm font-semibold">Recommend it, or warn crews off?</p>
+          <div className="mt-2 grid grid-cols-2 gap-2" role="radiogroup" aria-label="Recommend or go around">
+            <button type="button" role="radio" aria-checked={!avoid} onClick={() => setAvoid(false)} data-testid="button-add-recommend"
+              className={cn("flex h-11 items-center justify-center gap-1.5 rounded-xl border text-sm font-semibold", !avoid ? "border-primary bg-primary/10" : "border-input text-muted-foreground")}>
+              <Check className="h-4 w-4" />Worth a stop
+            </button>
+            <button type="button" role="radio" aria-checked={avoid} onClick={() => setAvoid(true)} data-testid="button-add-go-around"
+              className={cn("flex h-11 items-center justify-center gap-1.5 rounded-xl border text-sm font-semibold", avoid ? "border-orange-500 bg-orange-500/15 text-orange-700 dark:text-orange-300" : "border-input text-muted-foreground")}>
+              <GoAroundIcon className="h-4 w-4" />Go around
+            </button>
+          </div>
+          {avoid && (
+            <div className="mt-3 space-y-1.5">
+              <textarea value={why} onChange={(e) => setWhy(e.target.value)} rows={3} maxLength={1000} data-testid="input-add-why"
+                placeholder="Why should crews go around? (required) Service, safety, hygiene, closed early, not crew-friendly…"
+                className="w-full rounded-xl border border-input bg-background p-3 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+              <p className="text-[11px] text-muted-foreground">Posted as your Go around rating (0 stars) on this listing. It keeps the place out of suggested trip briefings when most crews agree. Stick to what happened; no names of staff.</p>
+            </div>
+          )}
+        </section>
+      )}
+
       <div className="space-y-5 rounded-2xl border border-card-border bg-card/60 p-4">
         {aiFields.has("description") && <div className="-mb-3 flex justify-end"><AiTag /></div>}
         <textarea value={description} onChange={(e) => { setDescription(e.target.value); touch("description"); }} rows={3} data-testid="input-add-description"
-          placeholder={category === "fbo" ? "Lounge, snooze rooms, crew car, fees, service — the real story." : "Why it's worth it, what to order, what to skip."}
+          placeholder={avoid ? "What the place is, so crews recognize it." : category === "fbo" ? "Lounge, snooze rooms, crew car, fees, service — the real story." : "Why it's worth it, what to order, what to skip."}
           className="w-full rounded-xl border border-input bg-background p-3 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
         <div>
           <p className="text-xs font-medium text-muted-foreground mb-1.5">Miles from {resolved?.icao || "the field"} {placeMiles != null ? "(measured from the airport)" : ""}</p>
@@ -337,7 +365,7 @@ export default function AddPage() {
         {!canSubmit && (name || code) && <p className="mb-2 text-center text-xs text-muted-foreground" data-testid="text-add-missing">Still needed: {missing.join(", ")}</p>}
         <button type="submit" disabled={!canSubmit || m.isPending} data-testid="button-submit-spot"
           className="w-full h-12 rounded-full taxi-sign text-base font-semibold shadow-lg disabled:opacity-50 hover-elevate">
-          {m.isPending ? (editId ? "Saving…" : "Adding…") : editId ? "Save changes" : me ? `Add spot · +${POINTS.listing} pts` : "Sign in & add spot"}
+          {m.isPending ? (editId ? "Saving…" : "Adding…") : editId ? "Save changes" : me ? (avoid ? `Add go-around · +${POINTS.listing + POINTS.review + (why.trim().length >= 40 ? POINTS.reviewDetail : 0)} pts` : `Add spot · +${POINTS.listing} pts`) : "Sign in & add spot"}
         </button>
       </div>
     </form>
