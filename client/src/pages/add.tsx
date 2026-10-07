@@ -55,7 +55,8 @@ export default function AddPage() {
   const [locating, setLocating] = useState(false);
   const [nearMsg, setNearMsg] = useState("");
   const { me, requireAuth } = useAuth();
-  const { data: cfg } = useQuery<{ ai?: boolean }>({ queryKey: ["/api/config"], staleTime: 600_000 });
+  // re-check on every visit so a tab opened before AI was switched on still gets autofill
+  const { data: cfg } = useQuery<{ ai?: boolean }>({ queryKey: ["/api/config"], staleTime: 0, refetchOnMount: "always", refetchOnWindowFocus: true });
   const aiOn = !!cfg?.ai;
   const [ai, setAi] = useState<{ state: "idle" | "busy" | "done" | "error"; result: AutofillResult | null; error: string; filled: number }>({ state: "idle", result: null, error: "", filled: 0 });
   const [aiFields, setAiFields] = useState<Set<string>>(new Set());
