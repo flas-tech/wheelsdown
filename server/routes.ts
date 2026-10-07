@@ -189,7 +189,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   /** Full leaderboard: ?q= name or handle, ?base= home airport (any form), paged with offset/limit. */
   app.get("/api/leaderboard", async (req, res) => res.json(await storage.leaderboard({
     q: String(req.query.q || "").slice(0, 60), base: String(req.query.base || "").slice(0, 4),
-    offset: Number(req.query.offset) || 0, limit: Number(req.query.limit) || 50,
+    offset: Number(req.query.offset) || 0, limit: Number(req.query.limit) || 50, around: Number(req.query.around) || undefined,
   })));
   app.get("/api/leaderboard/bases", async (_req, res) => res.json(await storage.homeBases()));
 

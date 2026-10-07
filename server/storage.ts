@@ -482,7 +482,7 @@ export class DatabaseStorage {
    * list still shows where each person stands. q matches name or handle; base matches the home
    * airport however it was typed (OPF, KOPF).
    */
-  async leaderboard(opts: { q?: string; base?: string; offset?: number; limit?: number }) {
+  async leaderboard(opts: { q?: string; base?: string; offset?: number; limit?: number; around?: number }) {
     const all = await this.publicUsers();
     let rank = 0, prev = -1;
     const ranked = all.map((u, i) => { if (u.points !== prev) { rank = i + 1; prev = u.points; } return { ...u, rank }; });
@@ -492,8 +492,15 @@ export class DatabaseStorage {
     const rows = ranked.filter((u) =>
       (!q || u.displayName.toLowerCase().includes(q) || (!!u.handle && u.handle.toLowerCase().includes(q.replace(/^@/, "")))) &&
       (!base || (!!u.homeBase && canon(u.homeBase) === base)));
+    // around: the member's spot on the full board plus a few crews either side, kept below the top rows already shown
+    let around: { rows: typeof ranked; position: number } | null = null;
+    if (opts.around && !q && !base) {
+      const pos = ranked.findIndex((u) => u.id === opts.around);
+      const top = Math.max(0, opts.limit || 0);
+      if (pos >= top && top > 0) { const from = Math.max(top, pos - 3); around = { rows: ranked.slice(from, pos + 4), position: pos + 1 }; }
+    }
     const offset = Math.max(0, opts.offset || 0), limit = Math.min(1000, Math.max(1, opts.limit || 50));
-    return { total: rows.length, crewTotal: all.length, base: base || null, rows: rows.slice(offset, offset + limit), offset, limit };
+    return { total: rows.length, crewTotal: all.length, base: base || null, rows: rows.slice(offset, offset + limit), offset, limit, around };
   }
   /** Home bases people have set, most common first (used for type-ahead, not as preset filters). */
   async homeBases() {

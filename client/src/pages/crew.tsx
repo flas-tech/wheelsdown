@@ -10,8 +10,9 @@ import { TierLadder } from "./profile";
 import { CrewAvatar } from "@/lib/aircraft";
 
 type Row = PublicUser & { rank: number };
-type Board = { total: number; crewTotal: number; base: string | null; rows: Row[]; offset: number; limit: number };
+type Board = { total: number; crewTotal: number; base: string | null; rows: Row[]; offset: number; limit: number; around?: { rows: Row[]; position: number } | null };
 const PAGE = 50;
+const TOP = 10; // the unfiltered board shows only the top 10; search reaches everyone
 
 function useDebounced<T>(v: T, ms = 250) {
   const [d, setD] = useState(v);
@@ -27,9 +28,11 @@ export default function CrewPage() {
   const dq = useDebounced(q.trim()), dbase = useDebounced(base.trim().toUpperCase());
   useEffect(() => setShown(PAGE), [dq, dbase]);
 
-  const params = new URLSearchParams({ offset: "0", limit: String(shown) });
+  const filtered = !!dq || dbase.length >= 3;
+  const params = new URLSearchParams({ offset: "0", limit: String(filtered ? shown : TOP) });
   if (dq) params.set("q", dq);
   if (dbase.length >= 3) params.set("base", dbase);
+  if (!filtered && me) params.set("around", String(me.id));
   const { data: first, isLoading, isFetching } = useQuery<Board>({ queryKey: [`/api/leaderboard?${params}`], placeholderData: keepPreviousData, staleTime: 30_000 });
   const rows = first?.rows || [];
   const { data: top } = useQuery<Board>({ queryKey: ["/api/leaderboard?offset=0&limit=50"], staleTime: 30_000 });
@@ -37,7 +40,11 @@ export default function CrewPage() {
   const { data: mine } = useQuery<{ rank: number; user: PublicUser }>({ queryKey: [`/api/crew/${me?.id}`], enabled: !!me, staleTime: 30_000 });
   const { data: bases } = useQuery<{ code: string; n: number }[]>({ queryKey: ["/api/leaderboard/bases"] });
   const baseHints = base.trim().length >= 1 ? (bases || []).filter((b) => b.code.startsWith(base.trim().toUpperCase()) && b.code !== base.trim().toUpperCase()).slice(0, 5) : [];
-  const filtered = !!dq || dbase.length >= 3;
+  const around = !filtered ? first?.around : null;
+  const gap = around && around.rows.length ? around.rows[0] && (around.position - (around.rows.findIndex((u) => u.id === me?.id) + 1)) - TOP : 0;
+  const myIdx = around ? around.rows.findIndex((u) => u.id === me?.id) : -1;
+  const ahead = myIdx > 0 ? around!.rows[myIdx - 1] : null;
+  const meRow = myIdx >= 0 ? around!.rows[myIdx] : null;
 
   return (
     <div className="space-y-5">
@@ -99,14 +106,51 @@ export default function CrewPage() {
         </div>
       </div>
       <p className="-mt-3 text-[11px] text-muted-foreground" data-testid="text-crew-count">
-        {first ? (filtered ? `${first.total} of ${first.crewTotal} crew match${first.base ? ` · base ${first.base}` : ""}` : `${first.crewTotal} crew ranked`) : "\u00a0"}
+        {first ? (filtered ? `${first.total} of ${first.crewTotal} crew match${first.base ? ` · base ${first.base}` : ""}` : first.crewTotal > TOP ? `Top ${TOP} of ${first.crewTotal} crew · search to find anyone` : `${first.crewTotal} crew ranked`) : "\u00a0"}
         {base.trim().length > 0 && base.trim().length < 3 ? " · type 3 or 4 characters for a base" : ""}
       </p>
 
       <ol className={cn("rounded-2xl border border-card-border bg-card divide-y divide-border", isFetching && "opacity-80")} data-testid="list-leaderboard">
         {isLoading && <li className="p-4 space-y-2"><Skeleton className="h-10" /><Skeleton className="h-10" /></li>}
         {!isLoading && rows.length === 0 && <li className="p-4 text-sm text-muted-foreground" data-testid="text-crew-empty">No crew match that search.</li>}
-        {rows.map((u) => (
+        {rows.map((u) => <CrewRow key={u.id} u={u} meId={me?.id} />)}
+      </ol>
+      {around && around.rows.length > 0 && (
+        <section className="space-y-2" data-testid="section-my-neighborhood">
+          <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+            <span className="h-px flex-1 bg-border" />
+            <span data-testid="text-rank-gap">{gap > 0 ? `${gap.toLocaleString()} crew between` : "Just outside the top 10"}</span>
+            <span className="h-px flex-1 bg-border" />
+          </div>
+          <div className="flex items-baseline justify-between gap-2 px-1">
+            <h2 className="text-sm font-semibold">Your position</h2>
+            {ahead && meRow && (
+              <p className="text-[11px] text-muted-foreground" data-testid="text-points-to-pass">
+                {ahead.points > meRow.points ? <><span className="font-code font-bold text-foreground tabular">{(ahead.points - meRow.points + 1).toLocaleString()}</span> pts to pass {ahead.displayName}</> : `Tied with ${ahead.displayName}`}
+              </p>
+            )}
+          </div>
+          <ol className="rounded-2xl border border-card-border bg-card divide-y divide-border" data-testid="list-my-neighborhood">
+            {around.rows.map((u) => <CrewRow key={u.id} u={u} meId={me?.id} />)}
+          </ol>
+        </section>
+      )}
+      {filtered && first && rows.length < first.total && (
+        <button type="button" onClick={() => setShown(shown + PAGE)} disabled={isFetching} data-testid="button-crew-more"
+          className="w-full h-11 rounded-full border border-border text-sm font-medium hover-elevate disabled:opacity-60">
+          {isFetching ? "Loading…" : `Show more · ${first.total - rows.length} left`}
+        </button>
+      )}
+
+      <TierLadder points={me?.points ?? 0} signedIn={!!me} />
+      <p className="text-[11px] text-muted-foreground">{TIERS.length} ratings. Points are counted from your activity, so the total always matches your logbook. Equal points share a rank.</p>
+    </div>
+  );
+}
+
+function CrewRow({ u, meId }: { u: Row; meId?: number }) {
+  const me = meId ? { id: meId } : null;
+  return (
           <li key={u.id} className={cn(me?.id === u.id && "bg-primary/10")} data-testid={`row-crew-${u.handle || u.id}`}>
             <Link href={`/crew/${u.id}`} className="flex items-center gap-3 px-4 py-3 hover-elevate" data-testid={`link-crew-${u.id}`}>
               <span className={cn("min-w-[2rem] font-code text-sm font-bold tabular", u.rank <= 3 ? "text-primary" : "text-muted-foreground")}>{u.rank}</span>
@@ -123,17 +167,5 @@ export default function CrewPage() {
               <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
             </Link>
           </li>
-        ))}
-      </ol>
-      {first && rows.length < first.total && (
-        <button type="button" onClick={() => setShown(shown + PAGE)} disabled={isFetching} data-testid="button-crew-more"
-          className="w-full h-11 rounded-full border border-border text-sm font-medium hover-elevate disabled:opacity-60">
-          {isFetching ? "Loading…" : `Show more · ${first.total - rows.length} left`}
-        </button>
-      )}
-
-      <TierLadder points={me?.points ?? 0} signedIn={!!me} />
-      <p className="text-[11px] text-muted-foreground">{TIERS.length} ratings. Points are counted from your activity, so the total always matches your logbook. Equal points share a rank.</p>
-    </div>
   );
 }

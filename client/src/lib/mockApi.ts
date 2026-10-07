@@ -255,7 +255,10 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
     const base = String(query.get("base") || "").trim() ? canon(String(query.get("base"))) : "";
     const rows = ranked.filter((u) => (!q || u.displayName.toLowerCase().includes(q) || (!!u.handle && u.handle.toLowerCase().includes(q))) && (!base || (!!u.homeBase && canon(u.homeBase) === base)));
     const offset = Number(query.get("offset")) || 0, limit = Math.min(1000, Number(query.get("limit")) || 50);
-    return { total: rows.length, crewTotal: all.length, base: base || null, rows: rows.slice(offset, offset + limit), offset, limit };
+    let around: { rows: typeof ranked; position: number } | null = null;
+    const aid = Number(query.get("around")) || 0;
+    if (aid && !q && !base) { const pos = ranked.findIndex((u) => u.id === aid); if (pos >= limit) { const from = Math.max(limit, pos - 3); around = { rows: ranked.slice(from, pos + 4), position: pos + 1 }; } }
+    return { total: rows.length, crewTotal: all.length, base: base || null, rows: rows.slice(offset, offset + limit), offset, limit, around };
   }
   if (method === "GET" && path === "/api/leaderboard/bases") {
     const c = new Map<string, number>();
