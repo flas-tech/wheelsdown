@@ -7,7 +7,8 @@ import { TIME_BUCKETS, type Category, type SpotWithStats, type Airport } from "@
 import { apiRequest } from "@/lib/queryClient";
 import { CAT_META, fmtMinutes, totalMinutes, parseTags, Stars, AdBanner, Chip, VetBadge, GoAroundBadge } from "@/lib/ui";
 import { FavoriteButton } from "@/lib/favorites";
-import { COST_LABELS, PACES, costOptions, costText, paceLabel, paceOf, type PaceId } from "@shared/cost";
+import { COST_LABELS, PACES, costOptions, costRange, costText, paceLabel, paceOf, type PaceId } from "@shared/cost";
+import { CostChoice } from "@/lib/costChip";
 import { getPosition, type NearAirport } from "@/lib/geo";
 import { useToast } from "@/hooks/use-toast";
 import { trustScore } from "@shared/vetting";
@@ -339,7 +340,8 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
           <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4">
             <Chip active={budget == null} onClick={() => set({ cost: null })} testId="chip-cost-any">Any</Chip>
             {costOptions(cat).map((i) => (
-              <Chip key={i} active={budget === i} onClick={() => set({ cost: i })} testId={`chip-cost-${i}`} className="font-code">{COST_LABELS[i]}</Chip>
+              cat ? <CostChoice key={i} category={cat} level={i} compact active={budget === i} onClick={() => set({ cost: i })} testId={`chip-cost-${i}`} />
+                : <Chip key={i} active={budget === i} onClick={() => set({ cost: i })} testId={`chip-cost-${i}`} className="font-code">{COST_LABELS[i]}</Chip>
             ))}
           </div>
         </div>
@@ -473,6 +475,7 @@ export function SpotCard({ spot }: { spot: SpotWithStats }) {
           {spot.category !== "fbo" && (
             <span className="text-right pt-1" data-testid={`text-cost-${spot.id}`}>
               <span className={cn("font-code text-sm font-bold", spot.cost == null ? "text-muted-foreground" : "text-primary")}>{costText(spot)}</span>
+              {spot.cost != null && spot.cost > 0 && <span className="block text-[10px] text-muted-foreground leading-tight whitespace-nowrap" data-testid={`text-cost-range-${spot.id}`}>{costRange(spot.category, spot.cost)}</span>}
               {spot.costVotes > 1 && <span className="block text-[10px] text-muted-foreground leading-tight">{spot.costVotes} crew</span>}
             </span>
           )}

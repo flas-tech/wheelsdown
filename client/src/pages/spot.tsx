@@ -6,7 +6,8 @@ import { DOWN_REASONS, type Category, type ReviewWithVotes, type SpotWithStats }
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { CAT_META, fmtMinutes, totalMinutes, parseTags, Stars, AdBanner, Chip, VetBadge, VoteButtons, timeAgo, GoAroundBadge, GoAroundIcon } from "@/lib/ui";
 import { FavoriteButton } from "@/lib/favorites";
-import { COST_LABELS, costOptions, hasCost, paceLabel, paceOf } from "@shared/cost";
+import { COST_LABELS, costOptions, costRange, costUnit, hasCost, paceLabel, paceOf } from "@shared/cost";
+import { CostChoice } from "@/lib/costChip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -68,7 +69,8 @@ export default function SpotPage() {
 
       <div className={cn("grid gap-2", spot.category === "do" || spot.category === "eat" ? "grid-cols-3" : hasCost(spot.category) ? "grid-cols-2" : "grid-cols-1")}>
         {hasCost(spot.category) && (
-          <Fact label={spot.costVotes > 1 ? `Crew price · ${spot.costVotes} crew` : "Price"} value={spot.cost == null ? "Not priced" : COST_LABELS[spot.cost]} mono={spot.cost != null} testId="text-spot-cost" />
+          <Fact label={spot.costVotes > 1 ? `Crew price · ${spot.costVotes} crew` : "Price"} value={spot.cost == null ? "Not priced" : COST_LABELS[spot.cost]} mono={spot.cost != null} testId="text-spot-cost"
+            sub={spot.cost != null && spot.cost > 0 ? `${costRange(spot.category, spot.cost)} ${spot.category === "stay" ? "/ night" : "pp"}` : undefined} />
         )}
         {spot.category === "eat" && <Fact label="Pace" value={paceLabel(paceOf(spot))} testId="text-spot-pace" />}
         {spot.category === "do" && <Fact label="Time needed" value={fmtMinutes(totalMinutes(spot))} />}
@@ -125,7 +127,7 @@ export default function SpotPage() {
                 {r.userId && crew.get(r.userId) ? <TierChip tierId={crew.get(r.userId)!.tierId} /> : <span className="text-xs text-muted-foreground">{r.crewRole}</span>}
               </div>
               <span className="flex items-center gap-2">
-                {r.costLevel != null && hasCost(spot.category) && <span className="font-code text-xs font-bold text-primary" title="Price this crew member paid">{COST_LABELS[r.costLevel]}</span>}
+                {r.costLevel != null && hasCost(spot.category) && <span className="font-code text-xs font-bold text-primary" title={`Price this crew member paid: ${costRange(spot.category, r.costLevel) || "Free"}`}>{COST_LABELS[r.costLevel]}</span>}
                 {r.rating === 0 ? <GoAroundBadge /> : <Stars value={r.rating} size={12} />}
               </span>
             </div>
@@ -142,11 +144,12 @@ export default function SpotPage() {
   );
 }
 
-function Fact({ label, value, mono, testId }: { label: string; value: string; mono?: boolean; testId?: string }) {
+function Fact({ label, value, mono, testId, sub }: { label: string; value: string; mono?: boolean; testId?: string; sub?: string }) {
   return (
     <div className="rounded-xl border border-card-border bg-card px-3 py-2.5 min-w-0">
       <p className="text-[11px] text-muted-foreground truncate">{label}</p>
       <p className={mono ? "font-code text-base font-bold text-primary" : "text-sm font-semibold"} data-testid={testId}>{value}</p>
+      {sub && <p className="text-[11px] text-muted-foreground truncate" data-testid={testId ? `${testId}-range` : undefined}>{sub}</p>}
     </div>
   );
 }
@@ -203,10 +206,10 @@ function ReviewForm({ spotId, category, edit, onDone }: { spotId: number; catego
         <div className="mt-3 space-y-3">
           {hasCost(category) && (
             <div data-testid="panel-review-cost">
-              <p className="text-xs font-medium mb-1.5">What did it cost? <span className="text-muted-foreground font-normal">optional · {category === "stay" ? "per night" : "per person"}</span></p>
+              <p className="text-xs font-medium mb-1.5">What did it cost? <span className="text-muted-foreground font-normal">optional · {costUnit(category)}</span></p>
               <div className="flex gap-1.5 flex-wrap">
                 {costOptions(category).map((i) => (
-                  <Chip key={i} active={paid === i} onClick={() => setPaid(paid === i ? null : i)} testId={`chip-review-cost-${i}`} className="font-code text-xs">{COST_LABELS[i]}</Chip>
+                  <CostChoice key={i} category={category} level={i} compact active={paid === i} onClick={() => setPaid(paid === i ? null : i)} testId={`chip-review-cost-${i}`} />
                 ))}
               </div>
             </div>

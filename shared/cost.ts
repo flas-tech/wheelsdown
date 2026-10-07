@@ -3,6 +3,27 @@ import type { Category } from "./schema";
 
 export const COST_LABELS = ["Free", "$", "$$", "$$$", "$$$$"];
 
+/**
+ * What each price level means in dollars (labels only; listings store the 0-4 level, so nothing is re-priced).
+ * Eat is per person for one meal: $ is a fast-food meal, $$$$ is fine dining. Stay is per night; Do is per person.
+ */
+export const COST_RANGES: Record<string, string[]> = {
+  eat: ["", "Under $15", "$15–30", "$30–60", "$60+"],
+  stay: ["", "Under $125", "$125–200", "$200–325", "$325+"],
+  do: ["Free", "Under $20", "$20–50", "$50–100", "$100+"],
+};
+export const COST_EXAMPLES: Record<string, string[]> = {
+  eat: ["", "Fast food", "Casual", "Nice dinner", "Fine dining"],
+  stay: ["", "Budget", "Mid-range", "Upscale", "Luxury"],
+  do: ["Free", "Cheap", "Moderate", "Pricey", "Splurge"],
+};
+export const costRange = (category: string, level: number | null | undefined) => (level == null ? "" : COST_RANGES[category]?.[level] || "");
+export const costExample = (category: string, level: number | null | undefined) => (level == null ? "" : COST_EXAMPLES[category]?.[level] || "");
+export const costUnit = (category: string) => (category === "stay" ? "per night" : category === "eat" ? "per person, one meal" : "per person");
+/** "$$ · $15–30" for compact displays. */
+export const costWithRange = (category: string, level: number | null | undefined) =>
+  level == null ? "" : level === 0 ? "Free" : `${COST_LABELS[level]} · ${costRange(category, level)}`;
+
 /** Which price levels a category may use. FBO listings have no price. */
 export function costOptions(category: string): number[] {
   if (category === "fbo") return [];

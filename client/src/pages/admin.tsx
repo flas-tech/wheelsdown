@@ -4,6 +4,7 @@ import { Download, Upload, Trash2, Eye, EyeOff, Plus, Lock, Pencil, LogOut } fro
 import { CATEGORIES, DOWN_REASONS, type Ad, type SpotWithStats } from "@shared/schema";
 import { apiRequest, queryClient, API_BASE, IS_STATIC } from "@/lib/queryClient";
 import { CAT_META, COST_LABELS, VetBadge } from "@/lib/ui";
+import { COST_RANGES } from "@shared/cost";
 import { costText, paceOf } from "@shared/cost";
 import { TierChip } from "@/lib/auth";
 import type { PublicUser } from "@shared/tiers";
@@ -232,7 +233,7 @@ function EditSpot({ spot, onClose }: { spot: SpotWithStats; onClose: () => void 
           <L l="ICAO"><input className={inputCls + " font-code uppercase"} value={f.icao} onChange={set("icao")} data-testid="input-edit-icao" /></L>
           <L l="Category"><select className={inputCls} value={f.category} onChange={set("category")} data-testid="select-edit-category">{CATEGORIES.map((c) => <option key={c} value={c}>{CAT_META[c].label}</option>)}</select></L>
           <L l="Description" className="col-span-2"><textarea rows={3} className={inputCls + " h-auto py-2"} value={f.description} onChange={set("description")} data-testid="input-edit-description" /></L>
-          <L l="Submitter price (0–4)"><select className={inputCls} value={f.costLevel} onChange={set("costLevel")} data-testid="select-edit-cost">{COST_LABELS.map((c, i) => <option key={c} value={i}>{c}</option>)}</select></L>
+          <L l="Submitter price (0–4)"><select className={inputCls} value={f.costLevel} onChange={set("costLevel")} data-testid="select-edit-cost">{COST_LABELS.map((c, i) => <option key={c} value={i}>{c}{i > 0 && COST_RANGES[f.category]?.[i] ? ` (${COST_RANGES[f.category][i]})` : ""}</option>)}</select></L>
           {f.category === "eat" && <L l="Pace"><select className={inputCls} value={f.pace} onChange={set("pace")} data-testid="select-edit-pace"><option value="grab">Grab & go</option><option value="sit">Sit-down</option></select></L>}
           <L l="Minutes needed"><input type="number" className={inputCls} value={f.minutesNeeded} onChange={set("minutesNeeded")} data-testid="input-edit-minutes" /></L>
           <L l="Miles from field"><input type="number" step="0.1" className={inputCls} value={f.milesFromField} onChange={set("milesFromField")} data-testid="input-edit-miles" /></L>

@@ -409,6 +409,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.status(existing ? 200 : 201).json(await expandBriefing(b, true));
   });
   app.delete("/api/briefings/:id", requireUser, writeLimit, async (req, res) => {
+    const b = await storage.getBriefing(id(req));
+    if (!b || b.userId !== (req as any).user.id) return res.status(404).json({ message: "Not found" });
     await storage.deleteBriefing((req as any).user.id, id(req));
     res.json({ ok: true });
   });

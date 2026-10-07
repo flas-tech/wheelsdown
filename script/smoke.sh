@@ -46,6 +46,11 @@ check "edit own rating"    '"rating":0'     "$(curl -s -XPATCH $BASE/api/reviews
 check "go-around counted"  '"goArounds":1'  "$(curl -s $BASE/api/spots/$SID -H "$A")"
 check "leaderboard"        '"crewTotal"'    "$(curl -s "$BASE/api/leaderboard?q=$H")"
 check "leaderboard bases"  '['              "$(curl -s $BASE/api/leaderboard/bases)"
+BID=$(curl -s -XPOST $BASE/api/briefings -H "$A" -H "$J" -d '{"title":"Smoke","stops":[{"icao":"KMIA","layover":"hours","picks":[]}]}' | jget "d.get('id','')" 2>/dev/null)
+[[ -n "$BID" ]] && ok "save briefing" || bad "save briefing" "no id"
+check "delete briefing"    '"ok":true'      "$(curl -s -XDELETE $BASE/api/briefings/$BID -H "$A")"
+check "briefing gone"      'Not found'      "$(curl -s $BASE/api/briefings/$BID -H "$A")"
+check "delete again 404"   'Not found'      "$(curl -s -XDELETE $BASE/api/briefings/$BID -H "$A")"
 check "go anonymous"      '"anonymous":true' "$(curl -s -XPATCH $BASE/api/me -H "$A" -H "$J" -d '{"anonymous":true}')"
 check "author relabeled"  'Anonymous pilot' "$(curl -s $BASE/api/spots/$SID)"
 P=$(curl -s $BASE/api/me -H "$A" | jget "d['points']")

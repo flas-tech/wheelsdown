@@ -4,7 +4,8 @@ import { useLocation, useRoute } from "wouter";
 import { ArrowLeft, Check, ChevronDown, LocateFixed, Loader2, MapPin, Search, AlertTriangle, PlaneLanding } from "lucide-react";
 import { Link } from "wouter";
 import { TIME_BUCKETS, type Airport, type Category, type SpotWithStats, type ReviewWithVotes } from "@shared/schema";
-import { COST_LABELS, PACES, costOptions, paceOf, type PaceId } from "@shared/cost";
+import { COST_LABELS, PACES, costOptions, costUnit, paceOf, type PaceId } from "@shared/cost";
+import { CostChoice } from "@/lib/costChip";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { CAT_META, Chip } from "@/lib/ui";
 import { useToast } from "@/hooks/use-toast";
@@ -224,11 +225,11 @@ export default function AddPage() {
       </Field>
 
       {needsCost && (
-        <Field n={4} label="Price" hint={category === "do" ? "per person" : category === "stay" ? "per night" : "per person"}>
+        <Field n={4} label="Price" hint={costUnit(category)}>
           <div className="flex gap-2 flex-wrap">
-            {costOptions(category).map((i) => <Chip key={i} active={costLevel === i} onClick={() => setCost(i)} testId={`chip-add-cost-${i}`} className="font-code">{COST_LABELS[i]}</Chip>)}
+            {costOptions(category).map((i) => <CostChoice key={i} category={category} level={i} active={costLevel === i} onClick={() => setCost(i)} testId={`chip-add-cost-${i}`} />)}
           </div>
-          <p className="mt-1.5 text-[11px] text-muted-foreground">Crews who rate it add their own price — the listing shows the crew's typical price.</p>
+          <p className="mt-1.5 text-[11px] text-muted-foreground">{category === "eat" ? "One meal per person: $ is a fast-food meal, $$$$ is fine dining. " : category === "stay" ? "Per night, before taxes. " : "Per person. "}Crews who rate it add their own price — the listing shows the crew's typical price.</p>
         </Field>
       )}
       {category === "eat" && (

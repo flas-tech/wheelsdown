@@ -1,7 +1,7 @@
 // Trip briefing → PDF (US Letter), built in the browser so nothing leaves the device until the crew shares it.
 import type { Airport, SpotWithStats } from "@shared/schema";
 import { LAYOVERS } from "@shared/schema";
-import { costText, paceLabel, paceOf } from "@shared/cost";
+import { costText, paceLabel, paceOf, costRange } from "@shared/cost";
 import { fmtMinutes, totalMinutes } from "@/lib/ui";
 import { PIN_COLORS, staticMapDataUrl, type MapPin } from "@/lib/staticMap";
 
@@ -175,7 +175,7 @@ export async function buildBriefPdf(b: BriefFull, opts: { appUrl: string; prepar
       }
       const nmLines = doc.splitTextToSize(nm, CW - 150 - (nx - M - 26)) as string[];
       doc.text(nmLines.length > 1 ? nmLines[0].replace(/[\s,.-]+$/, "") + "..." : nmLines[0], nx, yy);
-      const right = [costText(spot), spot.avgRating ? `${spot.avgRating.toFixed(1)}/5 (${spot.reviewCount})` : "Not rated"].filter(Boolean).join("  ·  ");
+      const right = [costText(spot) + (spot.cost != null && spot.cost > 0 ? ` (${costRange(spot.category, spot.cost)}${spot.category === "stay" ? "/night" : " pp"})` : ""), spot.avgRating ? `${spot.avgRating.toFixed(1)}/5 (${spot.reviewCount})` : "Not rated"].filter(Boolean).join("  ·  ");
       doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.setTextColor(...slate);
       doc.text(clean(right), W - M, yy, { align: "right" });
       yy += 13;

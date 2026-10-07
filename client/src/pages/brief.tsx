@@ -4,7 +4,7 @@ import { Link, useLocation, useRoute } from "wouter";
 import {
   ArrowLeft, ChevronRight, ClipboardList, FileDown, Link2, Loader2, MapPin, Plus, RefreshCw, Share2, Trash2, X, Plane, Lightbulb, Heart } from "lucide-react";
 import { LAYOVERS, type LayoverId, type SpotWithStats } from "@shared/schema";
-import { costText, paceLabel, paceOf } from "@shared/cost";
+import { costRange, costText, paceLabel, paceOf } from "@shared/cost";
 import { LAYOVER_PLAN } from "@shared/briefing";
 import { apiRequest, queryClient, IS_STATIC } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -21,6 +21,53 @@ type BriefSummary = { id: number; title: string; stops: { icao: string; layover:
 const parseCodes = (r: string) => r.toUpperCase().split(/[^A-Z0-9]+/).filter((c) => c.length === 3 || c.length === 4).slice(0, 12);
 const appUrl = () => `${window.location.origin}${window.location.pathname}`;
 const toInput = (b: BriefFull): StopInput[] => b.stops.map((s) => ({ icao: s.icao, layover: s.layover as LayoverId, nights: s.nights, picks: s.picks.map((p) => p.id) }));
+
+// ---------------- delete (two taps, no browser pop-up) ----------------
+function useDeleteBriefing(onDone?: () => void) {
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: async (bid: number) => (await apiRequest("DELETE", `/api/briefings/${bid}`)).json(),
+    onSuccess: (_r, bid) => {
+      queryClient.setQueryData<BriefSummary[]>(["/api/briefings"], (old) => old?.filter((b) => b.id !== bid));
+      queryClient.removeQueries({ queryKey: ["/api/briefings", String(bid)] });
+      queryClient.invalidateQueries({ queryKey: ["/api/briefings"], exact: true });
+      toast({ title: "Briefing deleted", description: "Its shared link no longer works." });
+      onDone?.();
+    },
+    onError: (e: Error) => toast({ title: "Couldn't delete the briefing", description: errText(e), variant: "destructive" }),
+  });
+}
+
+function DeleteBriefing({ id, onDone, compact }: { id: number; onDone?: () => void; compact?: boolean }) {
+  const [ask, setAsk] = useState(false);
+  const del = useDeleteBriefing(onDone);
+  useEffect(() => { if (!ask) return; const t = setTimeout(() => setAsk(false), 6000); return () => clearTimeout(t); }, [ask]);
+  if (compact && !ask) {
+    return (
+      <button type="button" onClick={() => setAsk(true)} aria-label="Delete briefing" data-testid={`button-brief-delete-${id}`}
+        className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-muted-foreground hover-elevate">
+        <Trash2 className="h-4 w-4" />
+      </button>
+    );
+  }
+  if (!ask) {
+    return (
+      <button type="button" onClick={() => setAsk(true)} className="w-full h-10 rounded-full border border-border text-sm text-muted-foreground hover-elevate inline-flex items-center justify-center gap-1.5" data-testid="button-brief-delete">
+        <Trash2 className="h-4 w-4" /> Delete briefing
+      </button>
+    );
+  }
+  return (
+    <div className={cn("flex items-center gap-1.5", compact ? "shrink-0" : "w-full rounded-2xl border border-destructive/40 bg-destructive/5 p-2.5")} data-testid={`panel-brief-delete-${id}`}>
+      {!compact && <p className="flex-1 text-xs text-muted-foreground pl-1">Delete for good? Shared links stop working.</p>}
+      <button type="button" onClick={() => del.mutate(id)} disabled={del.isPending} data-testid={`button-brief-delete-confirm-${id}`}
+        className="h-9 rounded-full bg-destructive px-3.5 text-xs font-semibold text-destructive-foreground hover-elevate disabled:opacity-60">
+        {del.isPending ? "Deleting…" : "Delete"}
+      </button>
+      <button type="button" onClick={() => setAsk(false)} className="h-9 rounded-full border border-border px-3 text-xs hover-elevate" data-testid={`button-brief-delete-cancel-${id}`}>Cancel</button>
+    </div>
+  );
+}
 
 // ---------------- list ----------------
 export function BriefListPage() {
@@ -51,14 +98,17 @@ export function BriefListPage() {
             {isLoading && <Skeleton className="h-16 rounded-2xl" />}
             {data && data.length === 0 && <p className="text-sm text-muted-foreground">No briefings yet.</p>}
             {data?.map((b) => (
-              <Link key={b.id} href={`/brief/${b.id}`} className="flex items-center justify-between gap-3 rounded-2xl border border-card-border bg-card p-4 hover-elevate" data-testid={`link-brief-${b.id}`}>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold truncate">{b.title || routeText(b)}</p>
-                  <p className="font-code text-xs text-muted-foreground truncate">{routeText(b)}</p>
-                  <p className="text-[11px] text-muted-foreground">Updated {new Date(b.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</p>
-                </div>
-                <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
-              </Link>
+              <div key={b.id} className="flex items-center gap-1 rounded-2xl border border-card-border bg-card pr-2" data-testid={`row-brief-${b.id}`}>
+                <Link href={`/brief/${b.id}`} className="flex min-w-0 flex-1 items-center justify-between gap-3 rounded-2xl p-4 hover-elevate" data-testid={`link-brief-${b.id}`}>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold truncate">{b.title || routeText(b)}</p>
+                    <p className="font-code text-xs text-muted-foreground truncate">{routeText(b)}</p>
+                    <p className="text-[11px] text-muted-foreground">Updated {new Date(b.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</p>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                </Link>
+                <DeleteBriefing id={b.id} compact />
+              </div>
             ))}
           </section>
         </>
@@ -177,10 +227,6 @@ export function BriefEditorPage() {
     onError: (e: Error) => toast({ title: "Couldn't save the briefing", description: errText(e), variant: "destructive" }),
   });
 
-  const del = useMutation({
-    mutationFn: async () => (await apiRequest("DELETE", `/api/briefings/${id}`)).json(),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/briefings"] }); navigate("/brief"); },
-  });
 
   if (loading) return <Skeleton className="h-40 rounded-2xl" />;
   if (!me) return <BriefListPage />;
@@ -239,9 +285,7 @@ export function BriefEditorPage() {
           busy={save.isPending} />
       ))}
 
-      <button onClick={() => { if (confirm("Delete this briefing? Shared links will stop working.")) del.mutate(); }} className="w-full h-10 rounded-full border border-border text-sm text-muted-foreground hover-elevate inline-flex items-center justify-center gap-1.5" data-testid="button-brief-delete">
-        <Trash2 className="h-4 w-4" /> Delete briefing
-      </button>
+      <DeleteBriefing id={Number(id)} onDone={() => navigate("/brief")} />
     </div>
   );
 }
@@ -418,7 +462,7 @@ function PickRow({ n, spot, count, onRemove, onUp, onDown, busy, readOnly, favor
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
             <Link href={`/spot/${spot.id}`} className="text-sm font-semibold leading-snug hover:underline underline-offset-2">{spot.name}</Link>
-            {spot.category !== "fbo" && <span className="font-code text-xs font-bold text-primary shrink-0">{costText(spot)}</span>}
+            {spot.category !== "fbo" && <span className="shrink-0 text-right"><span className="block font-code text-xs font-bold text-primary">{costText(spot)}</span>{spot.cost != null && spot.cost > 0 && <span className="block text-[10px] text-muted-foreground whitespace-nowrap">{costRange(spot.category, spot.cost)}</span>}</span>}
           </div>
           {favorite && <p className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-semibold text-rose-600 dark:text-rose-400" data-testid={`text-pick-favorite-${spot.id}`}><Heart className="h-3 w-3" fill="currentColor" />Favorite{readOnly ? "" : " · always included"}</p>}
           <p className="mt-0.5 text-[11px] text-muted-foreground">

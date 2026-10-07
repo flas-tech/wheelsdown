@@ -426,7 +426,7 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
   if ((m = path.match(/^\/api\/briefings\/(\d+)$/))) {
     const u = needUser();
     const b = bList().find((x) => x.id === Number(m![1]) && x.userId === u.id);
-    if (method === "DELETE") { db.briefings = bList().filter((x) => x !== b); save(); return { ok: true }; }
+    if (method === "DELETE") { if (!b) throw new HttpError(404, "Not found"); db.briefings = bList().filter((x) => x !== b); save(); return { ok: true }; }
     if (!b) throw new HttpError(404, "Not found");
     return expand(b, true);
   }
