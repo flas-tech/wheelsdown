@@ -579,6 +579,11 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
   }
   if (method === "GET" && (m = path.match(/^\/api\/crew\/(\d+)\/map$/))) { const du = db.users.find((x) => x.id === Number(m![1])); return { added: du && !du.anonymous ? addedDots(du.id) : [], checkins: [] }; }
 
+  // ---- moderation fixes and owner questions need the live server ----
+  if (method === "GET" && path === "/api/me/notices") return [];
+  if (method === "GET" && path === "/api/admin/moderation/extras") { admin(); return { duplicates: {} }; }
+  if (method === "POST" && /^\/api\/admin\/moderation\/(spot|review)\/\d+\/(fix|fix\/apply|ask-owner)$/.test(path)) { admin(); throw new HttpError(400, "AI fixes and owner questions only work on the live site."); }
+
   // ---- feedback (demo: stored in this browser) ----
   const fb = () => (db.feedback ||= []);
   if (method === "POST" && path === "/api/feedback") {

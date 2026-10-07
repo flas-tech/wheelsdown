@@ -24,6 +24,7 @@ import { BriefListPage, BriefEditorPage, SharedBriefPage } from "@/pages/brief";
 import { AuthProvider, useAuth, Insignia } from "@/lib/auth";
 import { CrewAvatar } from "@/lib/aircraft";
 import { tierFor } from "@shared/tiers";
+import { NoticeDot } from "@/lib/notices";
 import { Logo, ThemeProvider, ThemeToggle } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { FeedbackLink } from "@/lib/feedback";
@@ -58,7 +59,7 @@ function Shell() {
             {nav.map((n) => (
               <Link key={n.href} href={n.href} aria-label={n.label} data-testid={`link-nav-${n.label}`}
                 className={cn("whitespace-nowrap hidden sm:inline-flex items-center gap-1.5 rounded-full px-2.5 lg:px-3 h-9 text-sm font-medium hover-elevate", n.active ? "text-foreground" : "text-muted-foreground")}>
-                <n.icon className="h-4 w-4" /><span className="hidden lg:inline">{n.label}</span>
+                <span className="relative"><n.icon className="h-4 w-4" />{n.href === "/me" && <NoticeDot />}</span><span className="hidden lg:inline">{n.label}</span>
               </Link>
             ))}
             <ShareButton />
@@ -124,7 +125,7 @@ function Shell() {
           <div className="mx-auto max-w-xl grid grid-cols-6 px-safe">
             {nav.map((n) => (
               <Link key={n.href} href={n.href} data-testid={`tab-${n.label}`} className={cn("flex min-w-0 flex-col items-center gap-0.5 pt-2 pb-1 text-[10px] font-medium tracking-tight", n.active ? "text-primary" : "text-muted-foreground")}>
-                <n.icon className="h-5 w-5" /><span className="truncate max-w-full">{n.label}</span>
+                <span className="relative"><n.icon className="h-5 w-5" />{n.href === "/me" && <NoticeDot />}</span><span className="truncate max-w-full">{n.label}</span>
               </Link>
             ))}
           </div>

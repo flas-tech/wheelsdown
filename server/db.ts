@@ -115,6 +115,9 @@ CREATE TABLE IF NOT EXISTS follows (follower_id integer NOT NULL, followee_id in
 CREATE UNIQUE INDEX IF NOT EXISTS follows_pair_idx ON follows(follower_id, followee_id);
 CREATE INDEX IF NOT EXISTS follows_followee_idx ON follows(followee_id);
 CREATE TABLE IF NOT EXISTS metrics_daily (day text NOT NULL, kind text NOT NULL, key text NOT NULL DEFAULT '', n integer NOT NULL DEFAULT 0, PRIMARY KEY (day, kind, key));
+CREATE TABLE IF NOT EXISTS mod_fixes (kind text NOT NULL, target_id integer NOT NULL, sig text NOT NULL, json text NOT NULL, created_at bigint NOT NULL DEFAULT 0, PRIMARY KEY (kind, target_id));
+CREATE TABLE IF NOT EXISTS notices (id serial PRIMARY KEY, user_id integer NOT NULL, kind text NOT NULL, spot_id integer, other_id integer, status text NOT NULL DEFAULT 'open', decision text NOT NULL DEFAULT '', created_at bigint NOT NULL DEFAULT 0, resolved_at bigint);
+CREATE INDEX IF NOT EXISTS notices_user_idx ON notices (user_id, status);
 CREATE TABLE IF NOT EXISTS checkins (id serial PRIMARY KEY, user_id integer NOT NULL, spot_id integer, icao text NOT NULL, lat double precision, lng double precision, created_at bigint NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS checkins_user_idx ON checkins (user_id, created_at);
 CREATE TABLE IF NOT EXISTS feedback (id serial PRIMARY KEY, user_id integer, kind text NOT NULL DEFAULT 'other', message text NOT NULL, contact text NOT NULL DEFAULT '', page text NOT NULL DEFAULT '', device text NOT NULL DEFAULT '', status text NOT NULL DEFAULT 'new', admin_note text NOT NULL DEFAULT '', created_at bigint NOT NULL DEFAULT 0, updated_at bigint NOT NULL DEFAULT 0);

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Download, Upload, Trash2, Eye, EyeOff, Plus, Lock, Pencil, LogOut, BookUser } from "lucide-react";
+import { Download, Upload, Trash2, Eye, EyeOff, Plus, Lock, Pencil, LogOut, BookUser, Loader2, Sparkles, UserCheck } from "lucide-react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { CATEGORIES, DOWN_REASONS, type Ad, type SpotWithStats } from "@shared/schema";
@@ -552,7 +552,8 @@ function StateChip({ status, modState, hasPendingEdit }: { status: string; modSt
 function VerdictChip({ actor, action }: { actor: string; action: string }) {
   const ai = actor === "ai";
   const label = ai ? { approve: "AI approved", hold: "AI held", error: "AI couldn't check" }[action] || `AI ${action}`
-    : { approve: "You approved", reject: "You denied", revert: "You undid edit", recheck: "You re-ran AI" }[action] || action;
+    : actor === "owner" ? ({ approve: "Owner: different place", reject: "Owner: same place", unsure: "Owner not sure" }[action] || `Owner ${action}`)
+    : { approve: "You approved", reject: "You denied", revert: "You undid edit", recheck: "You re-ran AI", ask_owner: "You asked the owner" }[action] || action;
   const good = action === "approve";
   return <span className={cn("rounded-md px-1.5 py-0.5 text-[11px] font-semibold", ai ? (good ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-orange-500/10 text-orange-700 dark:text-orange-300") : "bg-foreground text-background")}>{label}</span>;
 }
@@ -560,13 +561,99 @@ function VerdictChip({ actor, action }: { actor: string; action: string }) {
 const approveBtn = "inline-flex items-center justify-center gap-1.5 h-10 min-w-[104px] rounded-lg px-4 text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-35 disabled:hover:bg-emerald-600";
 const denyBtn = "inline-flex items-center justify-center gap-1.5 h-10 min-w-[104px] rounded-lg px-4 text-sm font-semibold bg-red-600 text-white hover:bg-red-700 disabled:opacity-35 disabled:hover:bg-red-600";
 
+// ---------- AI fix + duplicate questions (moderation queue) ----------
+type FixData = { fixable: boolean; summary: string; changes: { field: string; value: string }[]; current: Record<string, any> };
+const FIELD_LABEL: Record<string, string> = { name: "Name", address: "Address", icao: "Airport", category: "Category", description: "Description", website: "Website", crewTip: "Crew tip", costLevel: "Price level", pace: "Pace", minutesNeeded: "Minutes needed", comment: "Comment" };
+
+/** Ask the AI for exact corrections, review them, apply and publish. */
+function AiFixPanel({ kind, id, onDone }: { kind: "spot" | "review"; id: number; onDone: () => void }) {
+  const { toast } = useToast();
+  const [fix, setFix] = useState<FixData | null>(null);
+  const [off, setOff] = useState<Set<string>>(new Set());
+  const get = useMutation({
+    mutationFn: async () => (await adm("POST", `/api/admin/moderation/${kind}/${id}/fix`)).json() as Promise<FixData>,
+    onSuccess: (f) => { setFix(f); setOff(new Set()); },
+    onError: (e: Error) => toast({ title: "No fix", description: e.message.replace(/^\d+:\s*/, "").replace(/^\{"message":"(.*)"\}$/, "$1"), variant: "destructive" }),
+  });
+  const apply = useMutation({
+    mutationFn: async () => (await adm("POST", `/api/admin/moderation/${kind}/${id}/fix/apply`, { fields: fix!.changes.map((c) => c.field).filter((f) => !off.has(f)) })).json(),
+    onSuccess: () => { setFix(null); onDone(); toast({ title: "Fix applied: it's live" }); },
+    onError: (e: Error) => toast({ title: "Didn't apply", description: e.message.replace(/^\d+:\s*/, "").replace(/^\{"message":"(.*)"\}$/, "$1"), variant: "destructive" }),
+  });
+  if (!fix) return (
+    <button className={btnPrimary} disabled={get.isPending} onClick={() => get.mutate()} data-testid={`button-ai-fix-${kind}-${id}`}>
+      {get.isPending ? <><Loader2 className="h-4 w-4 animate-spin" />Working out the fix…</> : <><Sparkles className="h-4 w-4" />AI fix</>}
+    </button>
+  );
+  const picked = fix.changes.filter((c) => !off.has(c.field)).length;
+  return (
+    <div className="w-full rounded-lg border border-primary/40 bg-primary/5 p-2.5 space-y-2" data-testid={`panel-ai-fix-${kind}-${id}`}>
+      <p className="text-xs"><span className="font-semibold">AI fix:</span> {fix.fixable ? fix.summary : (fix.summary || "The AI couldn't work out a safe correction. Approve, deny or edit it yourself.")}</p>
+      {fix.fixable && (
+        <ul className="space-y-1.5">
+          {fix.changes.map((c) => (
+            <li key={c.field} className="flex items-start gap-2 text-xs">
+              <input type="checkbox" className="mt-0.5" checked={!off.has(c.field)} onChange={(e) => { const n = new Set(off); e.target.checked ? n.delete(c.field) : n.add(c.field); setOff(n); }} data-testid={`check-fix-${c.field}`} />
+              <div className="min-w-0 flex-1">
+                <span className="font-semibold">{FIELD_LABEL[c.field] || c.field}</span>
+                <p className="text-muted-foreground line-through break-words">{String(fix.current?.[c.field] ?? "") || "(empty)"}</p>
+                <p className="break-words">{c.value || "(empty)"}</p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="flex flex-wrap gap-2">
+        {fix.fixable && <button className={approveBtn} disabled={apply.isPending || !picked} onClick={() => apply.mutate()} data-testid={`button-apply-fix-${kind}-${id}`}>{apply.isPending ? "Applying…" : `Apply ${picked} change${picked === 1 ? "" : "s"} and publish`}</button>}
+        <button className={btn} onClick={() => setFix(null)}>Close</button>
+      </div>
+    </div>
+  );
+}
+
+type DupInfo = { candidates: { id: number; name: string; address: string; ownerId: number | null; owner: string | null; ownerHasEmail: boolean; sameOwner: boolean }[];
+  notice: { id: number; status: string; decision: string; createdAt: number; originalId: number; owner: string } | null };
+/** Duplicates: send the question to whoever posted the original listing. */
+function DuplicatePanel({ spotId, info, onDone }: { spotId: number; info?: DupInfo; onDone: () => void }) {
+  const { toast } = useToast();
+  const [pick, setPick] = useState<number | null>(null);
+  const ask = useMutation({
+    mutationFn: async (originalId: number) => (await adm("POST", `/api/admin/moderation/spot/${spotId}/ask-owner`, { originalId })).json() as Promise<{ owner: string; emailed: boolean }>,
+    onSuccess: (r) => { onDone(); toast({ title: `Asked ${r.owner}`, description: r.emailed ? "It's on their Logbook, and they were emailed." : "It's on their Logbook." }); },
+    onError: (e: Error) => toast({ title: "Couldn't ask", description: e.message.replace(/^\d+:\s*/, "").replace(/^\{"message":"(.*)"\}$/, "$1"), variant: "destructive" }),
+  });
+  if (!info) return null;
+  const n = info.notice;
+  if (n?.status === "open") return <p className="w-full rounded-lg bg-orange-500/10 px-2.5 py-2 text-xs" data-testid={`text-dup-waiting-${spotId}`}>Waiting on <span className="font-semibold">{n.owner}</span> (original poster) since {ago(n.createdAt)}. You can still Approve or Deny it yourself.</p>;
+  const cands = info.candidates;
+  if (!cands.length) return <p className="w-full text-xs text-muted-foreground">No matching live listing found at this airport. Approve or deny it yourself.</p>;
+  const sel = cands.find((c) => c.id === (pick ?? cands[0].id))!;
+  return (
+    <div className="w-full rounded-lg border border-border p-2.5 space-y-2" data-testid={`panel-dup-${spotId}`}>
+      {n?.status === "resolved" && n.decision === "unsure" && <p className="text-xs text-orange-700 dark:text-orange-300">{n.owner} wasn't sure, so it's your call.</p>}
+      <label className="block text-xs">
+        <span className="font-semibold">Duplicate of</span>
+        <select value={sel.id} onChange={(e) => setPick(Number(e.target.value))} className="mt-1 block h-9 w-full rounded-lg border border-border bg-background px-2 text-sm" data-testid={`select-dup-original-${spotId}`}>
+          {cands.map((c) => <option key={c.id} value={c.id}>{c.name}{c.address ? ` · ${c.address}` : ""} · {c.owner ? `by ${c.owner}` : "no owner"}</option>)}
+        </select>
+      </label>
+      {sel.ownerId
+        ? <button className={btnPrimary} disabled={ask.isPending} onClick={() => ask.mutate(sel.id)} data-testid={`button-ask-owner-${spotId}`}><UserCheck className="h-4 w-4" />Ask {sel.owner} to decide</button>
+        : <p className="text-xs text-muted-foreground">The original has no owner to ask. Approve or deny it yourself.</p>}
+      {sel.sameOwner && <p className="text-[11px] text-muted-foreground">The same member posted both.</p>}
+      <p className="text-[11px] text-muted-foreground">They'll see both listings on their Logbook{sel.ownerHasEmail ? " and get an email" : ""}, and choose: same place (the copy comes down and its ratings move to the original), different places (both stay), or not sure (back to you).</p>
+    </div>
+  );
+}
+
 /** Admin view of AI moderation: live status, what's waiting, every decision, and Approve / Deny overrides. */
 function ModerationQueue() {
   const { toast } = useToast();
   const [view, setView] = useState<"needs" | "all">("needs");
   const [filter, setFilter] = useState<"all" | "ai_ok" | "ai_held" | "mine">("all");
   const { data, isLoading } = useQuery<ModData>({ queryKey: ["/api/admin/moderation"], queryFn: admGet("/api/admin/moderation"), refetchInterval: 6000 });
-  const done = () => { queryClient.invalidateQueries({ queryKey: ["/api/admin/moderation"] }); invalidateAll(); };
+  const { data: extras } = useQuery<{ duplicates: Record<number, DupInfo> }>({ queryKey: ["/api/admin/moderation/extras"], queryFn: admGet("/api/admin/moderation/extras"), refetchInterval: 20000 });
+  const done = () => { queryClient.invalidateQueries({ queryKey: ["/api/admin/moderation"] }); queryClient.invalidateQueries({ queryKey: ["/api/admin/moderation/extras"] }); invalidateAll(); };
   const act = useMutation({
     mutationFn: async (a: { kind: "spot" | "review"; id: number; action: "approve" | "reject" | "recheck" }) => (await adm("POST", `/api/admin/moderation/${a.kind}/${a.id}`, { action: a.action })).json(),
     onSuccess: (_r, a) => { done(); toast({ title: a.action === "approve" ? "Approved: it's live" : a.action === "reject" ? "Denied: it's off the site" : "Checking again" }); },
@@ -657,6 +744,9 @@ function ModerationQueue() {
                     <button className={approveBtn} disabled={busy} onClick={() => act.mutate({ kind: "spot", id: s.id, action: "approve" })} data-testid={`button-mod-approve-spot-${s.id}`}>Approve</button>
                     <button className={denyBtn} disabled={busy} onClick={() => act.mutate({ kind: "spot", id: s.id, action: "reject" })} data-testid={`button-mod-reject-spot-${s.id}`}>{edit ? "Deny edit" : "Deny"}</button>
                     <button className={btn} disabled={busy || !data.ai} onClick={() => act.mutate({ kind: "spot", id: s.id, action: "recheck" })}>Re-run AI</button>
+                    {PROBLEM(s.modNote) === "duplicate"
+                      ? <DuplicatePanel spotId={s.id} info={extras?.duplicates?.[s.id]} onDone={done} />
+                      : s.modNote && data.ai && <AiFixPanel kind="spot" id={s.id} onDone={done} />}
                   </div>
                 )}
               </article>
@@ -682,6 +772,7 @@ function ModerationQueue() {
                     <button className={approveBtn} disabled={busy} onClick={() => act.mutate({ kind: "review", id: r.id, action: "approve" })} data-testid={`button-mod-approve-review-${r.id}`}>Approve</button>
                     <button className={denyBtn} disabled={busy} onClick={() => act.mutate({ kind: "review", id: r.id, action: "reject" })} data-testid={`button-mod-reject-review-${r.id}`}>{edit ? "Deny edit" : "Deny"}</button>
                     <button className={btn} disabled={busy || !data.ai} onClick={() => act.mutate({ kind: "review", id: r.id, action: "recheck" })}>Re-run AI</button>
+                    {r.modNote && data.ai && <AiFixPanel kind="review" id={r.id} onDone={done} />}
                   </div>
                 )}
               </article>
@@ -912,7 +1003,7 @@ type CostData = {
   services: { id: string; name: string; role: string; what: string; plan: string; monthly: number | null; costText: string; note?: string; dashboard: string; pricing: string; monthToDate?: number }[];
   fixedMonthly: number;
 };
-const PURPOSE_LABEL: Record<string, string> = { listing: "Listing checks (new and edits)", rating: "Rating checks", autofill: "Add spot autofill", name: "Display-name checks", bio: "Bio checks", safety: "First-pass safety check (free)" };
+const PURPOSE_LABEL: Record<string, string> = { listing: "Listing checks (new and edits)", rating: "Rating checks", autofill: "Add spot autofill", name: "Display-name checks", bio: "Bio checks", safety: "First-pass safety check (free)", fix: "Moderation fixes (AI fix button)" };
 const usd = (n: number) => n < 0.01 && n > 0 ? "<$0.01" : `$${n.toFixed(n < 10 ? 2 : 0)}`;
 const tok = (n: number) => n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n);
 

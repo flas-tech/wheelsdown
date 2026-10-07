@@ -298,7 +298,7 @@ export class DatabaseStorage {
     const names = new Map((r.length ? await d.select({ id: spots.id, name: spots.name, icao: spots.icao }).from(spots).where(inArray(spots.id, r.map((x) => x.spotId))) : []).map((x) => [x.id, x]));
     return { spots: s, reviews: r.map((x) => ({ ...x, spotName: names.get(x.spotId)?.name || "", icao: names.get(x.spotId)?.icao || "" })) };
   }
-  async logMod(e: { kind: "spot" | "review"; targetId: number; actor: "ai" | "admin" | "system"; action: string; problem?: string; reason?: string; isEdit?: boolean; before?: unknown; after?: unknown }) {
+  async logMod(e: { kind: "spot" | "review"; targetId: number; actor: "ai" | "admin" | "system" | "owner"; action: string; problem?: string; reason?: string; isEdit?: boolean; before?: unknown; after?: unknown }) {
     await db().insert(modLog).values({ kind: e.kind, targetId: e.targetId, actor: e.actor, action: e.action, problem: e.problem || "", reason: (e.reason || "").slice(0, 600),
       isEdit: e.isEdit ? 1 : 0, before: e.before === undefined ? null : JSON.stringify(e.before), after: e.after === undefined ? null : JSON.stringify(e.after), createdAt: Date.now() });
   }

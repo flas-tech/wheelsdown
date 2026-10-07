@@ -283,3 +283,53 @@ function normalize(v: Verdict): Verdict {
   if (v.verdict !== "approve" && !v.reason) v.reason = v.verdict === "reject" ? "This doesn't meet the community guidelines." : "A moderator will double-check this before it goes live.";
   return v;
 }
+
+// ---------------------------------------------------------------- moderation fixes (admin "AI fix" button)
+export const FIX_FIELDS = ["name", "address", "icao", "category", "description", "website", "crewTip", "costLevel", "pace", "minutesNeeded", "comment"] as const;
+export type FixField = (typeof FIX_FIELDS)[number];
+export type FixSuggestion = { fixable: boolean; summary: string; changes: { field: FixField; value: string }[] };
+const FIX_SCHEMA = { name: "moderation_fix", schema: {
+  type: "object", additionalProperties: false, required: ["fixable", "summary", "changes"],
+  properties: {
+    fixable: { type: "boolean" },
+    summary: { type: "string" },
+    changes: { type: "array", items: { type: "object", additionalProperties: false, required: ["field", "value"], properties: {
+      field: { type: "string", enum: [...FIX_FIELDS] }, value: { type: "string" } } } },
+  } } };
+
+/** What to change so a held listing can be published, as concrete field values. The admin reviews and applies it. */
+export async function suggestSpotFix(s: SpotForCheck, note: string, ctx: { airport?: { name: string; city: string } | null; nearbyNames: string[] }): Promise<FixSuggestion> {
+  const [osm, site] = await Promise.all([osmTags(s.placeRef), s.website ? readWebsite(s.website) : Promise.resolve(null)]);
+  const system = `You help a moderator of Wheelsdown, a guide where flight crews share places near airports, fix a listing the automatic check held.
+Use web search and the data given to work out the corrected values. Return only fields that need to change, with the exact new value:
+- name, address (full street address), website (official URL), description and crewTip (keep the poster's wording; only remove problems), category (${CAT_HELP}),
+  icao (4-letter code of the nearest suitable airport if the listing is filed at the wrong one), costLevel (1-4 as a string), pace ("grab" | "sit" | "both", eat only), minutesNeeded (number as a string).
+- Price guide: ${priceGuide(s.category)}.
+- Never invent facts. If the place can't be identified, it's a duplicate of an existing listing, it's spam or inappropriate beyond simple trimming, or the correct details can't be confirmed, set fixable false with no changes.
+summary: one short sentence for the moderator saying what the fix does. No emojis or exclamation points.`;
+  const user = JSON.stringify({
+    heldBecause: note, airport: { code: s.icao, name: ctx.airport?.name, city: ctx.airport?.city }, listing: s,
+    existingListings: ctx.nearbyNames.slice(0, 80), openStreetMapTags: osm || {},
+    officialWebsiteText: site?.text.slice(0, 3500) || (s.website ? "(website could not be loaded)" : ""),
+  });
+  return cleanFix(await callModel<FixSuggestion>(system, user, { purpose: "fix", search: true, schema: FIX_SCHEMA, timeoutMs: 90_000 }), "spot");
+}
+
+/** A rating held for its wording: a civil version of the comment that keeps the poster's meaning. The star rating never changes. */
+export async function suggestReviewFix(r: { rating: number; comment: string }, spotName: string, note: string): Promise<FixSuggestion> {
+  const system = `You help a moderator of Wheelsdown fix a crew rating the automatic check held. Rewrite only the comment so it can be published:
+remove slurs, personal attacks on named staff, personal information or spam, and keep the poster's honest opinion, details and tone otherwise (negative opinions are allowed).
+${SAFETY}
+Return one change with field "comment". If nothing publishable is left, set fixable false with no changes. summary: one short sentence for the moderator. No emojis or exclamation points.`;
+  return cleanFix(await callModel<FixSuggestion>(system, JSON.stringify({ heldBecause: note, place: spotName, rating: r.rating, comment: r.comment }),
+    { purpose: "fix", schema: FIX_SCHEMA, timeoutMs: 30_000, effort: "low" }), "review");
+}
+
+function cleanFix(f: FixSuggestion, kind: "spot" | "review"): FixSuggestion {
+  const ok = kind === "review" ? ["comment"] : FIX_FIELDS.filter((x) => x !== "comment");
+  const seen = new Set<string>();
+  const changes = (f.changes || []).filter((c) => ok.includes(c.field) && !seen.has(c.field) && !!seen.add(c.field))
+    .map((c) => ({ field: c.field, value: String(c.value ?? "").trim().slice(0, c.field === "description" || c.field === "comment" ? 1000 : 300) }))
+    .filter((c) => c.field === "crewTip" || c.field === "description" || c.value);
+  return { fixable: !!f.fixable && changes.length > 0, summary: String(f.summary || "").slice(0, 300), changes };
+}

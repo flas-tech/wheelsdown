@@ -19,6 +19,7 @@ import { isTestSignup } from "@shared/club";
 import { AI_PRICES, costOf, costReport } from "./aiUsage";
 import { registerFeedback } from "./feedback";
 import { registerCheckins } from "./checkins";
+import { registerModFix, closeDuplicateNotices } from "./modfix";
 import { dayKey } from "./metrics";
 import { SERVICES } from "@shared/services";
 import { track, visit, pageKey, outboundKey, report, untracked } from "./metrics";
@@ -614,6 +615,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // ---------- admin ----------
   registerFeedback(app, { userOf, requireAdmin });
   registerCheckins(app, { requireUser, userOf });
+  registerModFix(app, { requireAdmin, requireUser, ensureAirport: (c) => ensureAirport(c), byAdmin });
   app.get("/api/admin/costs", requireAdmin, async (req, res) => {
     const days = [7, 30, 90].includes(Number(req.query.days)) ? Number(req.query.days) : 30;
     const r = await costReport(days);
@@ -702,6 +704,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         await storage.setSpotMod(s.id, { status: "live", pendingEdit: null, modState: "approved", modNote: "", modAttempts: 0 });
       } else await storage.setSpotMod(s.id, edit ? { pendingEdit: null, modState: "approved", modNote: "" } : { status: "rejected", modState: "rejected", modNote: note ? `[admin] ${note}` : "[admin] Removed by a moderator." });
       const before = edit && action === "approve" ? Object.fromEntries(Object.keys(edit).map((k) => [k, (s as any)[k] ?? null])) : undefined;
+      if (action !== "recheck") await closeDuplicateNotices(s.id, `admin_${action}`);
       await storage.logMod({ kind: "spot", targetId: s.id, actor: "admin", action, reason: byAdmin(req, note || (edit ? (action === "approve" ? "Edit applied" : action === "reject" ? "Edit discarded" : "") : "")), isEdit: !!edit, before, after: edit || undefined });
     } else {
       const r = await storage.getReview(id(req));

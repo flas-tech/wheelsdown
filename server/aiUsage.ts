@@ -13,7 +13,7 @@ export const AI_PRICES = {
   output: Number(process.env.AI_PRICE_OUTPUT || 2),
   search: Number(process.env.AI_PRICE_SEARCH || 10),
 };
-export type AiPurpose = "listing" | "rating" | "autofill" | "name" | "bio" | "safety";
+export type AiPurpose = "listing" | "rating" | "autofill" | "name" | "bio" | "safety" | "fix";
 export type AiUse = { input: number; cached: number; output: number; searches: number; failed?: boolean };
 
 export function usageOf(j: any): AiUse {
