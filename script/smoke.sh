@@ -8,6 +8,7 @@ H="smoke$(date +%s)"
 PASS=0; FAIL=0
 ok()   { echo "  PASS  $1"; PASS=$((PASS+1)); }
 bad()  { echo "  FAIL  $1  ->  $2"; FAIL=$((FAIL+1)); }
+curl() { command curl -H "x-wd-test: 1" "$@"; }  # never counted in advertiser metrics
 check(){ # name, expected substring, actual
   if [[ "$3" == *"$2"* ]]; then ok "$1"; else bad "$1" "${3:0:200}"; fi; }
 J='content-type: application/json'
@@ -16,6 +17,8 @@ jget(){ python3 -c "import json,sys; d=json.load(sys.stdin); print($1)"; }
 echo "Smoke test against $BASE"
 check "health"            '"db":"up"'      "$(curl -s $BASE/api/health)"
 check "home page"         '<div id="root"' "$(curl -s $BASE/)"
+check "link preview tags"  'og:image'       "$(curl -s $BASE/)"
+check "preview image"      '200'            "$(curl -s -o /dev/null -w '%{http_code}' $BASE/og.png)"
 check "airports"          'KMIA'           "$(curl -s $BASE/api/airports)"
 check "route search"      '"legs"'         "$(curl -s "$BASE/api/search?route=MIA%20TEB")"
 check "highlights"        '"top"'          "$(curl -s "$BASE/api/highlights?category=eat")"
@@ -86,6 +89,9 @@ check "leaderboard"       '"tierId"'       "$(curl -s $BASE/api/crew)"
 check "forgot password"   'on its way'     "$(curl -s -XPOST $BASE/api/auth/forgot -H "$J" -d "{\"email\":\"nobody-$H@example.invalid\"}")"
 check "admin rejects bad key" 'Admin key'  "$(curl -s $BASE/api/admin/stats -H 'x-admin-key: wrong')"
 check "admin stats"       '"users"'        "$(curl -s $BASE/api/admin/stats -H "x-admin-key: $ADMIN_KEY")"
+check "advertiser report"  '"traffic"'      "$(curl -s "$BASE/api/admin/advertisers?days=30" -H "x-admin-key: $ADMIN_KEY")"
+check "advertiser airports" '"airports"'    "$(curl -s "$BASE/api/admin/advertisers?days=7" -H "x-admin-key: $ADMIN_KEY")"
+check "usage beacon"       '"ok":true'      "$(curl -s -XPOST $BASE/api/t -H 'content-type: application/json' -d '{"vid":"v-smoketest123","page":"home"}')"
 check "admin export"      'icao,category'  "$(curl -s "$BASE/api/admin/export.csv" -H "x-admin-key: $ADMIN_KEY" | head -1)"
 check "admin removes listing" '"changed":1' "$(curl -s -XPOST $BASE/api/admin/spots/bulk -H "x-admin-key: $ADMIN_KEY" -H "$J" -d "{\"ids\":[$SID],\"action\":\"delete\"}")"
 check "delete account"    '"ok":true'      "$(curl -s -XDELETE $BASE/api/me -H "$A" -H "$J" -d "{\"confirm\":\"$H\"}")"

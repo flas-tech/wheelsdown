@@ -7,6 +7,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { CAT_META, fmtMinutes, totalMinutes, parseTags, Stars, AdBanner, Chip, VetBadge, VoteButtons, timeAgo, GoAroundBadge, GoAroundIcon } from "@/lib/ui";
 import { FavoriteButton } from "@/lib/favorites";
 import { ShareButton } from "@/lib/share";
+import { trackOut } from "@/lib/metrics";
 import { CrewAvatar } from "@/lib/aircraft";
 import { ModNotice, type ModInfo } from "@/lib/moderation";
 import { COST_LABELS, costOptions, costRange, costUnit, hasCost, paceLabel, paceOf } from "@shared/cost";
@@ -88,8 +89,8 @@ export default function SpotPage() {
         )}
         <div className="space-y-1.5 text-sm text-muted-foreground">
           {spot.address && <p className="flex items-center gap-2"><MapPin className="h-4 w-4" />
-            <a className="hover:text-foreground underline-offset-2 hover:underline" target="_blank" rel="noopener noreferrer" href={`https://maps.apple.com/?q=${encodeURIComponent(spot.name + " " + spot.address)}`} data-testid="link-map">{spot.address}</a></p>}
-          {spot.website && <p className="flex items-center gap-2"><Globe className="h-4 w-4" /><a className="hover:text-foreground hover:underline" target="_blank" rel="noopener noreferrer" href={spot.website} data-testid="link-website">Website</a></p>}
+            <a className="hover:text-foreground underline-offset-2 hover:underline" target="_blank" rel="noopener noreferrer" href={`https://maps.apple.com/?q=${encodeURIComponent(spot.name + " " + spot.address)}`} onClick={() => trackOut("map")} data-testid="link-map">{spot.address}</a></p>}
+          {spot.website && <p className="flex items-center gap-2"><Globe className="h-4 w-4" /><a className="hover:text-foreground hover:underline" target="_blank" rel="noopener noreferrer" href={spot.website} onClick={() => trackOut("website")} data-testid="link-website">Website</a></p>}
           {spot.category === "do" && <p className="flex items-center gap-2"><Clock className="h-4 w-4" />Time estimate includes ~2 min/mile each way from the field</p>}
         </div>
         {tags.length > 0 && (

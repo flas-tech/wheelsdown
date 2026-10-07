@@ -113,6 +113,8 @@ CREATE INDEX IF NOT EXISTS mod_log_created_idx ON mod_log(created_at);
 CREATE TABLE IF NOT EXISTS follows (follower_id integer NOT NULL, followee_id integer NOT NULL, created_at bigint NOT NULL DEFAULT 0);
 CREATE UNIQUE INDEX IF NOT EXISTS follows_pair_idx ON follows(follower_id, followee_id);
 CREATE INDEX IF NOT EXISTS follows_followee_idx ON follows(followee_id);
+CREATE TABLE IF NOT EXISTS metrics_daily (day text NOT NULL, kind text NOT NULL, key text NOT NULL DEFAULT '', n integer NOT NULL DEFAULT 0, PRIMARY KEY (day, kind, key));
+CREATE TABLE IF NOT EXISTS visitors_daily (day text NOT NULL, vid text NOT NULL, signed_in integer NOT NULL DEFAULT 0, PRIMARY KEY (day, vid));
 CREATE TABLE IF NOT EXISTS app_settings (key text PRIMARY KEY, value text NOT NULL DEFAULT '');
 INSERT INTO app_settings (key, value) VALUES ('wright_seats_taken', '0') ON CONFLICT (key) DO NOTHING;
 `;

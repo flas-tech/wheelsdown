@@ -511,6 +511,18 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
   if (method === "GET" && path === "/api/admin/moderation") return { ai: false, manual: false, spots: [], reviews: [], log: [],
     status: { lastRunAt: 0, lastError: "", lastErrorAt: 0, checking: 0, held: 0, approved24h: 0, held24h: 0, errors24h: 0, overrides24h: 0 } };
   if (method === "PUT" && path === "/api/admin/moderation/settings") return { manual: false };
+  // the demo records no traffic; the report shows its real ad, audience and content numbers with empty traffic
+  if (method === "GET" && path === "/api/admin/advertisers") {
+    const days = [7, 30, 90].includes(Number(query.get("days"))) ? Number(query.get("days")) : 30;
+    const live = db.spots.filter((s) => s.status === "live");
+    const tally = (v: string[]) => Object.entries(v.reduce((m: Record<string, number>, x) => { if (x) m[x] = (m[x] || 0) + 1; return m; }, {})).sort((a, b) => b[1] - a[1]);
+    return { days, since: new Date(Date.now() - (days - 1) * 86400000).toISOString().slice(0, 10),
+      traffic: { visitors: 0, crewActive: 0, visits: 0, pageviews: 0, searches: 0, spotViews: 0, outbound: 0, shares: 0, signups: 0 },
+      series: [], pages: {}, outbound: {}, devices: {}, airports: [],
+      ads: db.ads.map((x) => ({ id: x.id, advertiser: x.advertiser, headline: x.headline, targetIcao: x.targetIcao || "", active: !!x.active, impressions: 0, clicks: 0, lifetimeImpressions: x.impressions, lifetimeClicks: x.clicks })),
+      audience: { crew: db.users.length, newCrew: 0, roles: tally(db.users.map((u: any) => u.crewRole || "")), aircraft: [], homeBases: tally(db.users.map((u: any) => String(u.homeBase || "").toUpperCase())).slice(0, 12), interests: [] },
+      content: { listings: live.length, airports: new Set(live.map((x) => x.icao)).size, eat: live.filter((x) => x.category === "eat").length, do: live.filter((x) => x.category === "do").length, stay: live.filter((x) => x.category === "stay").length, fbo: live.filter((x) => x.category === "fbo").length, ratings: db.reviews.length } };
+  }
   if (method === "GET" && path === "/api/admin/stats") {
     return {
       spots: db.spots.filter((s) => s.status === "live").length, pending: db.spots.filter((s) => s.status === "pending").length,

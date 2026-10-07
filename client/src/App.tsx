@@ -19,6 +19,7 @@ import LegalPage from "@/pages/legal";
 import CrewProfilePage from "@/pages/crewProfile";
 import FollowingPage from "./pages/following";
 import { ShareButton } from "@/lib/share";
+import { trackPage } from "@/lib/metrics";
 import { BriefListPage, BriefEditorPage, SharedBriefPage } from "@/pages/brief";
 import { AuthProvider, useAuth, Insignia } from "@/lib/auth";
 import { CrewAvatar } from "@/lib/aircraft";
@@ -29,6 +30,7 @@ import { IS_STATIC } from "@/lib/queryClient";
 
 function Shell() {
   const [loc] = useLocation();
+  useEffect(() => { trackPage(loc); }, [loc]);
   const [, setSearch] = useSearch();
   const { me, openAuth } = useAuth();
   const isAdmin = loc.startsWith("/admin");
@@ -44,7 +46,7 @@ function Shell() {
   ];
   return (
     <div className="min-h-[100dvh] flex flex-col">
-      <header className="sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur pt-safe-top px-safe">
+      <header className="print:hidden sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur pt-safe-top px-safe">
         <div className={cn("mx-auto flex h-14 items-center justify-between px-4", isAdmin ? "max-w-6xl" : "max-w-xl")}>
           <Link href="/" onClick={() => setSearch({ category: null })} data-testid="link-home" className="flex items-center gap-2">
             <Logo className="h-7 w-7" />
@@ -99,7 +101,7 @@ function Shell() {
           <Route component={NotFound} />
         </Switch>
         {!isAdmin && (
-          <footer className="mt-12 space-y-3 text-xs text-muted-foreground">
+          <footer className="print:hidden mt-12 space-y-3 text-xs text-muted-foreground">
             <div className="flex items-center justify-between gap-3">
               <p>{IS_STATIC ? "Demo build: sample data, and your additions are saved only in this browser." : "Crew-sourced. Verify hours and prices before you go."}</p>
               <Link href="/admin" data-testid="link-admin" className="inline-flex shrink-0 items-center gap-1 hover:text-foreground"><Shield className="h-3.5 w-3.5" />Admin</Link>
@@ -116,7 +118,7 @@ function Shell() {
 
       {/* iOS-style tab bar */}
       {!isAdmin && (
-        <nav className="sm:hidden fixed bottom-0 inset-x-0 z-30 border-t border-border bg-background/90 backdrop-blur pb-safe">
+        <nav className="print:hidden sm:hidden fixed bottom-0 inset-x-0 z-30 border-t border-border bg-background/90 backdrop-blur pb-safe">
           <div className="mx-auto max-w-xl grid grid-cols-6 px-safe">
             {nav.map((n) => (
               <Link key={n.href} href={n.href} data-testid={`tab-${n.label}`} className={cn("flex min-w-0 flex-col items-center gap-0.5 pt-2 pb-1 text-[10px] font-medium tracking-tight", n.active ? "text-primary" : "text-muted-foreground")}>

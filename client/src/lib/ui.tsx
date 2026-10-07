@@ -1,4 +1,5 @@
 import { ShieldCheck, AlertTriangle, Sparkles, ThumbsUp, ThumbsDown } from "lucide-react";
+import { trackOut } from "@/lib/metrics";
 import type { VetInfo } from "@shared/schema";
 import { useEffect, useRef, useState, createContext, useContext } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -126,6 +127,7 @@ export function AdBanner({ slot, icaos = [], index = 0, className }: { slot: "to
   if (!ad) return null;
   const onClick = () => {
     apiRequest("POST", `/api/ads/${ad.id}/click`).catch(() => {});
+    trackOut("ad");
     if (ad.url) window.open(ad.url, "_blank", "noopener,noreferrer");
   };
   return (

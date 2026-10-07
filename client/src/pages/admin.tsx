@@ -16,6 +16,7 @@ import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 
 const inputCls = "w-full h-9 rounded-lg border border-input bg-background px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring";
 const btn = "inline-flex items-center gap-1.5 h-9 rounded-lg px-3 text-sm font-medium border border-border bg-card hover-elevate disabled:opacity-50";
@@ -60,11 +61,11 @@ function Console({ onLogout }: { onLogout: () => void }) {
   const ctr = stats && stats.impressions ? ((stats.clicks / stats.impressions) * 100).toFixed(1) + "%" : "—";
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between print:hidden">
         <h1 className="text-lg font-semibold">Admin console</h1>
         <button onClick={onLogout} className={btn} data-testid="button-admin-logout"><LogOut className="h-4 w-4" />Lock</button>
       </div>
-      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 print:hidden">
         {[
           ["Live spots", stats?.spots], ["Pending", stats?.pending], ["Reviews", stats?.reviews],
           ["Crew votes", stats?.votes], ["Ad views", stats?.impressions], ["Crew accounts", stats?.users],
@@ -76,8 +77,9 @@ function Console({ onLogout }: { onLogout: () => void }) {
         ))}
       </div>
       <Tabs defaultValue="mod">
-        <TabsList>
+        <TabsList className="print:hidden">
           <TabsTrigger value="mod" data-testid="tab-mod">Moderation</TabsTrigger>
+          <TabsTrigger value="adv" data-testid="tab-advertisers">Advertisers</TabsTrigger>
           <TabsTrigger value="spots" data-testid="tab-spots">Spots</TabsTrigger>
           <TabsTrigger value="check" data-testid="tab-check">Needs check</TabsTrigger>
           <TabsTrigger value="bulk" data-testid="tab-bulk">Import / Export</TabsTrigger>
@@ -85,6 +87,7 @@ function Console({ onLogout }: { onLogout: () => void }) {
           <TabsTrigger value="users" data-testid="tab-users">Crew</TabsTrigger>
         </TabsList>
         <TabsContent value="mod"><ModerationQueue /></TabsContent>
+        <TabsContent value="adv"><AdvertiserReport /></TabsContent>
         <TabsContent value="spots"><SpotsTable /></TabsContent>
         <TabsContent value="check"><NeedsCheck /></TabsContent>
         <TabsContent value="bulk"><Bulk /></TabsContent>
@@ -693,6 +696,185 @@ function ModerationQueue() {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------- Advertisers: audience and performance numbers to show sponsors ----------
+type AdvReport = {
+  days: number; since: string;
+  traffic: { visitors: number; crewActive: number; visits: number; pageviews: number; searches: number; spotViews: number; outbound: number; shares: number; signups: number };
+  series: { day: string; visitors: number; crew: number; pageviews: number }[];
+  pages: Record<string, number>; outbound: Record<string, number>; devices: Record<string, number>;
+  airports: { icao: string; name: string; searches: number; views: number }[];
+  ads: { id: number; advertiser: string; headline: string; targetIcao: string; active: boolean; impressions: number; clicks: number; lifetimeImpressions: number; lifetimeClicks: number }[];
+  audience: { crew: number; newCrew: number; roles: [string, number][]; aircraft: [string, number][]; homeBases: [string, number][]; interests: [string, number][] };
+  content: { listings: number; airports: number; eat: number; do: number; stay: number; fbo: number; ratings: number };
+};
+const PAGE_LABEL: Record<string, string> = { home: "Home / search", spot: "Listing pages", add: "Add a spot", favorites: "Favorites", brief: "Briefings", shared_brief: "Shared briefings", crew: "Crew board", crew_profile: "Crew profiles", following: "Following", logbook: "Logbook", legal: "About & legal", other: "Other" };
+const DEVICE_LABEL: Record<string, string> = { iphone_ipad: "iPhone / iPad", android: "Android", desktop: "Desktop", home_screen_app: "Installed to home screen" };
+const OUT_LABEL: Record<string, string> = { website: "Business websites", map: "Directions (maps)", phone: "Phone calls", ad: "Ad clicks" };
+const pct = (a: number, b: number) => (b ? `${((a / b) * 100).toFixed(1)}%` : "—");
+const fmt = (n: number) => n.toLocaleString();
+
+function Kpi({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="rounded-xl border border-card-border bg-card p-3 break-inside-avoid">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="mt-1 font-code text-xl font-bold tabular">{value}</p>
+      {sub && <p className="text-[11px] text-muted-foreground">{sub}</p>}
+    </div>
+  );
+}
+function Bars({ title, rows, empty = "No data yet" }: { title: string; rows: [string, number][]; empty?: string }) {
+  const total = rows.reduce((a, r) => a + r[1], 0);
+  return (
+    <section className="rounded-xl border border-card-border bg-card p-4 break-inside-avoid">
+      <h3 className="text-sm font-semibold">{title}</h3>
+      {rows.length === 0 ? <p className="mt-2 text-xs text-muted-foreground">{empty}</p> : (
+        <ul className="mt-3 space-y-2">
+          {rows.map(([k, n]) => (
+            <li key={k} className="text-xs">
+              <div className="flex justify-between gap-2"><span className="truncate">{k}</span><span className="font-code tabular text-muted-foreground">{fmt(n)} · {pct(n, total)}</span></div>
+              <div className="mt-1 h-1.5 rounded-full bg-muted"><div className="h-1.5 rounded-full bg-primary" style={{ width: `${total ? Math.max(3, (n / total) * 100) : 0}%` }} /></div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function AdvertiserReport() {
+  const [days, setDays] = useState(30);
+  const { data, isLoading } = useQuery<AdvReport>({ queryKey: ["/api/admin/advertisers", days], queryFn: admGet(`/api/admin/advertisers?days=${days}`), refetchInterval: 60000 });
+  if (isLoading || !data) return <Skeleton className="h-64 rounded-xl" />;
+  const t = data.traffic;
+  const adImp = data.ads.reduce((a, x) => a + x.impressions, 0), adClk = data.ads.reduce((a, x) => a + x.clicks, 0);
+  const label = (o: Record<string, number>, L: Record<string, string>) => Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, n]) => [L[k] || k, n] as [string, number]);
+  const devices = label(Object.fromEntries(Object.entries(data.devices).filter(([k]) => k !== "home_screen_app")), DEVICE_LABEL);
+  const installs = data.devices.home_screen_app || 0;
+  const sinceTxt = new Date(data.since + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+
+  const csv = () => {
+    const rows: (string | number)[][] = [["section", "metric", "value"], ["period", "days", data.days], ["period", "since", data.since]];
+    Object.entries(t).forEach(([k, v]) => rows.push(["traffic", k, v]));
+    rows.push(["ads", "impressions", adImp], ["ads", "clicks", adClk], ["ads", "ctr", pct(adClk, adImp)]);
+    data.series.forEach((s) => rows.push(["daily", s.day, `${s.visitors} visitors / ${s.crew} crew / ${s.pageviews} page views`]));
+    data.airports.forEach((a) => rows.push(["airport", `${a.icao} ${a.name}`, `${a.searches} searches / ${a.views} listing views`]));
+    data.ads.forEach((a) => rows.push(["ad", `${a.advertiser}: ${a.headline}`, `${a.impressions} impressions / ${a.clicks} clicks / lifetime ${a.lifetimeImpressions} / ${a.lifetimeClicks}`]));
+    rows.push(["audience", "registered crew", data.audience.crew], ["audience", "new crew", data.audience.newCrew]);
+    (["roles", "aircraft", "homeBases", "interests"] as const).forEach((k) => data.audience[k].forEach(([n, v]) => rows.push([`audience ${k}`, n, v])));
+    devices.forEach(([n, v]) => rows.push(["device", n, v]));
+    Object.entries(data.content).forEach(([k, v]) => rows.push(["content", k, v]));
+    const blob = new Blob([rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n")], { type: "text/csv" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `wheelsdown-advertiser-metrics-${data.days}d.csv`; a.click();
+  };
+
+  return (
+    <div className="space-y-4" data-testid="panel-advertisers">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h2 className="text-lg font-semibold">Advertiser metrics</h2>
+          <p className="text-xs text-muted-foreground">Last {data.days} days, from {sinceTxt}. Bots, link previews, admin and test traffic are excluded. Counts are anonymous.</p>
+        </div>
+        <div className="flex items-center gap-2 print:hidden">
+          <div className="flex rounded-lg border border-border p-0.5">
+            {[7, 30, 90].map((d) => (
+              <button key={d} onClick={() => setDays(d)} data-testid={`button-range-${d}`} className={cn("h-8 rounded-md px-3 text-sm", days === d ? "bg-primary text-primary-foreground font-semibold" : "text-muted-foreground")}>{d}d</button>
+            ))}
+          </div>
+          <button className={btn} onClick={csv} data-testid="button-adv-csv"><Download className="h-4 w-4" />CSV</button>
+          <button className={btnPrimary} onClick={() => window.print()} data-testid="button-adv-print">Print media kit</button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <Kpi label="Unique visitors" value={fmt(t.visitors)} sub={`${fmt(t.visits)} ${t.visits === 1 ? "day-visit" : "day-visits"} (one per device per day)`} />
+        <Kpi label="Signed-in crew active" value={fmt(t.crewActive)} sub={`${pct(t.crewActive, t.visitors)} of visitors`} />
+        <Kpi label="Page views" value={fmt(t.pageviews)} sub={`${t.visits ? (t.pageviews / t.visits).toFixed(1) : "—"} per visit`} />
+        <Kpi label="Registered crew" value={fmt(data.audience.crew)} sub={`+${fmt(data.audience.newCrew)} in period`} />
+        <Kpi label="Route searches" value={fmt(t.searches)} />
+        <Kpi label="Listing views" value={fmt(t.spotViews)} />
+        <Kpi label="Taps to businesses" value={fmt(t.outbound)} sub="websites, maps, calls, ads" />
+        <Kpi label="Shares" value={fmt(t.shares)} />
+        <Kpi label="Ad impressions" value={fmt(adImp)} />
+        <Kpi label="Ad clicks" value={fmt(adClk)} />
+        <Kpi label="Ad click-through" value={pct(adClk, adImp)} />
+        <Kpi label="Home-screen installs" value={fmt(installs)} sub="devices that opened the installed app" />
+      </div>
+
+      <section className="rounded-xl border border-card-border bg-card p-4 break-inside-avoid">
+        <h3 className="text-sm font-semibold">Daily audience</h3>
+        {data.series.length === 0 ? <p className="mt-2 text-xs text-muted-foreground">Visits will appear here as crews use the site.</p> : (
+          <div className="mt-3 h-56">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={data.series} margin={{ left: -18, right: 8, top: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="day" tickFormatter={(d: string) => d.slice(5)} tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
+                <YAxis allowDecimals={false} tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
+                <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }} />
+                <Area type="monotone" dataKey="pageviews" name="Page views" stroke="hsl(var(--muted-foreground))" fill="hsl(var(--muted-foreground) / 0.12)" />
+                <Area type="monotone" dataKey="visitors" name="Visitors" stroke="hsl(var(--primary))" fill="hsl(var(--primary) / 0.25)" />
+                <Area type="monotone" dataKey="crew" name="Signed-in crew" stroke="hsl(152 60% 40%)" fill="hsl(152 60% 40% / 0.2)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-xl border border-card-border bg-card p-4 break-inside-avoid">
+        <h3 className="text-sm font-semibold">Top airports crews look at</h3>
+        <p className="text-xs text-muted-foreground">Where a targeted banner gets seen. Searches count each airport in a route; views are listing pages opened.</p>
+        {data.airports.length === 0 ? <p className="mt-2 text-xs text-muted-foreground">No searches yet in this period.</p> : (
+          <table className="mt-3 w-full text-sm">
+            <thead><tr className="text-left text-xs text-muted-foreground"><th className="py-1">Airport</th><th className="py-1 text-right">Searches</th><th className="py-1 text-right">Listing views</th></tr></thead>
+            <tbody>{data.airports.map((a) => (
+              <tr key={a.icao} className="border-t border-border" data-testid={`row-adv-airport-${a.icao}`}>
+                <td className="py-1.5"><span className="font-code font-bold">{a.icao}</span> <span className="text-xs text-muted-foreground">{a.name}</span></td>
+                <td className="py-1.5 text-right font-code tabular">{fmt(a.searches)}</td><td className="py-1.5 text-right font-code tabular">{fmt(a.views)}</td>
+              </tr>))}</tbody>
+          </table>
+        )}
+      </section>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Bars title="Crew roles" rows={data.audience.roles} />
+        <Bars title="Aircraft flown (profile icon)" rows={data.audience.aircraft} />
+        <Bars title="Home bases" rows={data.audience.homeBases} />
+        <Bars title="Expertise badges" rows={data.audience.interests} />
+        <Bars title="Devices" rows={devices} />
+        <Bars title="Where they tap out to" rows={label(data.outbound, OUT_LABEL)} />
+        <Bars title="Most-used pages" rows={label(data.pages, PAGE_LABEL)} />
+        <section className="rounded-xl border border-card-border bg-card p-4 break-inside-avoid">
+          <h3 className="text-sm font-semibold">Content inventory</h3>
+          <dl className="mt-3 grid grid-cols-2 gap-y-1.5 text-xs">
+            {[["Live listings", data.content.listings], ["Airports covered", data.content.airports], ["Places to eat", data.content.eat], ["Things to do", data.content.do], ["Places to stay", data.content.stay], ["FBOs", data.content.fbo], ["Crew ratings", data.content.ratings]].map(([k, v]) => (
+              <div key={k as string} className="contents"><dt className="text-muted-foreground">{k}</dt><dd className="text-right font-code tabular">{fmt(v as number)}</dd></div>
+            ))}
+          </dl>
+        </section>
+      </div>
+
+      <section className="rounded-xl border border-card-border bg-card p-4 break-inside-avoid">
+        <h3 className="text-sm font-semibold">Ad performance</h3>
+        {data.ads.length === 0 ? <p className="mt-2 text-xs text-muted-foreground">No ad banners yet.</p> : (
+          <div className="overflow-x-auto">
+            <table className="mt-3 w-full min-w-[560px] text-sm">
+              <thead><tr className="text-left text-xs text-muted-foreground"><th className="py-1">Advertiser</th><th className="py-1">Targeting</th><th className="py-1 text-right">Impressions</th><th className="py-1 text-right">Clicks</th><th className="py-1 text-right">CTR</th><th className="py-1 text-right">Lifetime</th></tr></thead>
+              <tbody>{data.ads.map((a) => (
+                <tr key={a.id} className="border-t border-border" data-testid={`row-adv-ad-${a.id}`}>
+                  <td className="py-1.5"><p className="font-medium">{a.advertiser}{!a.active && <span className="ml-1.5 text-xs text-muted-foreground">(paused)</span>}</p><p className="text-xs text-muted-foreground truncate max-w-[220px]">{a.headline}</p></td>
+                  <td className="py-1.5 font-code text-xs">{a.targetIcao || "All airports"}</td>
+                  <td className="py-1.5 text-right font-code tabular">{fmt(a.impressions)}</td>
+                  <td className="py-1.5 text-right font-code tabular">{fmt(a.clicks)}</td>
+                  <td className="py-1.5 text-right font-code tabular">{pct(a.clicks, a.impressions)}</td>
+                  <td className="py-1.5 text-right font-code text-xs tabular text-muted-foreground">{fmt(a.lifetimeImpressions)} / {fmt(a.lifetimeClicks)}</td>
+                </tr>))}</tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </div>
   );
 }

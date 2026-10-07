@@ -15,6 +15,10 @@ import { suggestPicks } from "@shared/briefing";
 import { refAirport, nearestAirports, isCode } from "./airportsData";
 import { searchPlaces, nearbyPlaces } from "./places";
 import { AI_ENABLED, autofill, checkName, checkBio } from "./ai";
+import { isTestSignup } from "@shared/club";
+import { track, visit, pageKey, outboundKey, report, untracked } from "./metrics";
+import { INTERESTS, parseInterests } from "@shared/interests";
+import { aircraftById } from "@shared/aircraft";
 import { startModerator, kickModerator, findDuplicate, SPOT_EDIT_FIELDS, manualReview, setManualReview, modStatus } from "./moderator";
 import { z } from "zod";
 
@@ -115,6 +119,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (bad) return res.status(400).json({ message: bad });
     try {
       const u = await storage.createUser(p.data);
+      if (!isTestSignup(u.handle, u.email)) track(req, "signup");
       res.status(201).json({ token: await storage.createSession(u.id), me: await storage.me(u) });
     } catch (e: any) { res.status(e.status || 500).json({ message: e.message }); }
   });
@@ -203,6 +208,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const icaos = legs.filter((l) => l.airport).map((l) => l.airport!.icao);
     const v = await voterOf(req);
     const results = codes.length ? (icaos.length ? await storage.searchSpots(icaos, false, v) : []) : await storage.searchSpots([], false, v);
+    if (codes.length) { track(req, "search"); for (const i of Array.from(new Set(icaos))) track(req, "search_airport", i); }
     res.json({ legs, spots: results });
   });
 
@@ -218,6 +224,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const viewer = await userOf(req);
     const mine = !!viewer && s.userId === viewer.id;
     if (s.status !== "live" && !mine) return res.status(404).json({ message: "Not found" });
+    if (!mine) track(req, "spot_view", s.icao);
     let mod: any = null;
     if (mine) {
       const raw = await storage.rawSpot(s.id);
@@ -512,6 +519,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (req.body?.id && (!existing || existing.userId !== user.id)) return res.status(404).json({ message: "Not found" });
     if (!existing && (await storage.listBriefings(user.id)).length >= 100) return res.status(400).json({ message: "You have 100 saved briefings. Delete a few first." });
     const b = await storage.saveBriefing(user.id, { title: p.data.title, stops }, existing?.id);
+    if (!existing) track(req, "briefing");
     res.status(existing ? 200 : 201).json(await expandBriefing(b, true));
   });
   app.delete("/api/briefings/:id", requireUser, writeLimit, async (req, res) => {
@@ -534,11 +542,52 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
   app.post("/api/ads/:id/:kind", writeLimit, async (req, res) => {
     const kind = req.params.kind === "click" ? "clicks" : "impressions";
-    await storage.trackAd(id(req), kind);
+    if (!untracked(req)) await storage.trackAd(id(req), kind);
+    track(req, kind === "clicks" ? "ad_click" : "ad_impression", String(id(req)));
+    res.json({ ok: true });
+  });
+
+  // ---------- anonymous usage counts (see server/metrics.ts) ----------
+  const tLimit = rateLimit({ windowMs: 60_000, limit: 120, standardHeaders: true, legacyHeaders: false, message: { ok: false } });
+  app.post("/api/t", tLimit, async (req, res) => {
+    const b = req.body || {};
+    const signedIn = !!(await userOf(req));
+    if (b.vid) await visit(req, String(b.vid), signedIn, !!b.installed);
+    if (b.page) await track(req, "pageview", pageKey(String(b.page)));
+    if (b.out) await track(req, "outbound", outboundKey(String(b.out)));
+    if (b.share) await track(req, "share", b.share === "spot" ? "spot" : "site");
     res.json({ ok: true });
   });
 
   // ---------- admin ----------
+  app.get("/api/admin/advertisers", requireAdmin, async (req, res) => {
+    const days = [7, 30, 90].includes(Number(req.query.days)) ? Number(req.query.days) : 30;
+    const r = await report(days);
+    const sum = (kind: string, key?: string) => r.sums.filter((x: any) => x.kind === kind && (key === undefined || x.key === key)).reduce((a: number, x: any) => a + x.n, 0);
+    const by = (kind: string) => Object.fromEntries(r.sums.filter((x: any) => x.kind === kind).map((x: any) => [x.key, x.n]));
+    const tally = (vals: string[]) => Object.entries(vals.reduce((m: Record<string, number>, v) => { if (v) m[v] = (m[v] || 0) + 1; return m; }, {})).sort((a, b) => b[1] - a[1]);
+    const real = r.users;
+    const sinceMs = Date.now() - days * 86400_000;
+    const ads = await storage.listAds();
+    const adImp = by("ad_impression"), adClk = by("ad_click");
+    const live = (await storage.searchSpots([], false)).filter((s) => s.status === "live");
+    const names = new Map((await Promise.all(r.airports.map(async (a: any) => [a.icao, (await storage.resolveCode(a.icao)) || refAirport(a.icao)] as const))).map(([k, v]) => [k, v ? `${(v as any).name}${(v as any).city ? `, ${(v as any).city}` : ""}` : ""]));
+    res.json({
+      days, since: r.since,
+      traffic: { visitors: r.uniq?.visitors || 0, crewActive: r.uniq?.crew || 0, visits: r.uniq?.visits || 0, pageviews: sum("pageview"), searches: sum("search"), spotViews: sum("spot_view"), outbound: sum("outbound"), shares: sum("share"), signups: sum("signup") },
+      series: r.series, pages: by("pageview"), outbound: by("outbound"), devices: by("device"),
+      airports: r.airports.map((a: any) => ({ icao: a.icao, name: names.get(a.icao) || "", searches: a.searches || 0, views: a.views || 0 })),
+      ads: ads.map((a) => ({ id: a.id, advertiser: a.advertiser, headline: a.headline, targetIcao: a.targetIcao || "", active: !!a.active, impressions: adImp[String(a.id)] || 0, clicks: adClk[String(a.id)] || 0, lifetimeImpressions: a.impressions, lifetimeClicks: a.clicks })),
+      audience: {
+        crew: real.length, newCrew: real.filter((u: any) => Number(u.created_at) >= sinceMs).length,
+        roles: tally(real.map((u: any) => u.crew_role)),
+        aircraft: tally(real.map((u: any) => aircraftById(u.aircraft)?.label || "")),
+        homeBases: tally(real.map((u: any) => String(u.home_base || "").toUpperCase())).slice(0, 12),
+        interests: tally(real.flatMap((u: any) => parseInterests(u.interests).map((i) => INTERESTS[i]))).slice(0, 12),
+      },
+      content: { listings: live.length, airports: new Set(live.map((s) => s.icao)).size, eat: live.filter((s) => s.category === "eat").length, do: live.filter((s) => s.category === "do").length, stay: live.filter((s) => s.category === "stay").length, fbo: live.filter((s) => s.category === "fbo").length, ratings: live.reduce((a, s) => a + (s.reviewCount || 0), 0) },
+    });
+  });
   app.post("/api/admin/login", authLimit, requireAdmin, (_req, res) => res.json({ ok: true }));
   app.get("/api/admin/moderation", requireAdmin, async (_req, res) => {
     const [queue, log, stats, manual] = await Promise.all([storage.modReviewList(), storage.listModLog(150), storage.modStats(), manualReview()]);
