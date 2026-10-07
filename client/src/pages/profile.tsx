@@ -1,6 +1,7 @@
 import { AircraftPicker, CrewAvatar } from "@/lib/aircraft";
 import { InterestPicker, InterestChips } from "@/lib/interests";
 import { WrightCard } from "@/lib/club";
+import { InviteCard } from "@/lib/share";
 import { BIO_MAX } from "@shared/interests";
 import { aircraftById } from "@shared/aircraft";
 import { useEffect, useState } from "react";
@@ -118,6 +119,8 @@ export default function ProfilePage() {
       )}
 
       <Participation b={b} />
+
+      <InviteCard />
 
       <ProfileSettings />
 

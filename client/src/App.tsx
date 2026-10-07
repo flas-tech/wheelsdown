@@ -18,6 +18,7 @@ import ResetPage from "@/pages/reset";
 import LegalPage from "@/pages/legal";
 import CrewProfilePage from "@/pages/crewProfile";
 import FollowingPage from "./pages/following";
+import { ShareButton } from "@/lib/share";
 import { BriefListPage, BriefEditorPage, SharedBriefPage } from "@/pages/brief";
 import { AuthProvider, useAuth, Insignia } from "@/lib/auth";
 import { CrewAvatar } from "@/lib/aircraft";
@@ -57,6 +58,7 @@ function Shell() {
                 <n.icon className="h-4 w-4" /><span className="hidden lg:inline">{n.label}</span>
               </Link>
             ))}
+            <ShareButton />
             <ThemeToggle />
             {me ? (
               <Link href="/me" data-testid="link-me" className="ml-1 inline-flex items-center gap-1.5 rounded-full border border-border bg-card pl-1.5 pr-2.5 h-9 hover-elevate">

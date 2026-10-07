@@ -6,6 +6,7 @@ import { DOWN_REASONS, type Category, type ReviewWithVotes, type SpotWithStats }
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { CAT_META, fmtMinutes, totalMinutes, parseTags, Stars, AdBanner, Chip, VetBadge, VoteButtons, timeAgo, GoAroundBadge, GoAroundIcon } from "@/lib/ui";
 import { FavoriteButton } from "@/lib/favorites";
+import { ShareButton } from "@/lib/share";
 import { CrewAvatar } from "@/lib/aircraft";
 import { ModNotice, type ModInfo } from "@/lib/moderation";
 import { COST_LABELS, costOptions, costRange, costUnit, hasCost, paceLabel, paceOf } from "@shared/cost";
@@ -54,7 +55,11 @@ export default function SpotPage() {
         </div>
         <div className="mt-2 flex items-start justify-between gap-3">
           <h1 className="text-xl font-semibold leading-tight" data-testid="text-spot-name">{spot.name}</h1>
-          <FavoriteButton spotId={spot.id} name={spot.name} />
+          <div className="flex shrink-0 items-center gap-1">
+            <ShareButton title="Share this spot" path={`/spot/${spot.id}`} className="h-10 w-10 border border-border"
+              message={`${spot.name} near ${spot.icao}${spot.avgRating ? `, rated ${spot.avgRating.toFixed(1)} by crews` : ""}, on Wheelsdown:`} />
+            <FavoriteButton spotId={spot.id} name={spot.name} />
+          </div>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <Stars value={spot.avgRating ?? 0} size={16} />
