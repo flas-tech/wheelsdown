@@ -7,6 +7,7 @@ import { computePoints, recentActivity, publicName, tierFor, SEED_USERS, SEED_PA
 import { CREW_ROLES } from "@shared/schema";
 import { aircraftById } from "@shared/aircraft";
 import { BIO_MAX, INTERESTS, MAX_INTERESTS } from "@shared/interests";
+import { WRIGHT_SEATS } from "@shared/club";
 import { buildHighlights } from "@shared/highlights";
 import { crewCost, costOptions, isValidCost, milesBetween, isPace, paceMinutes } from "@shared/cost";
 import { suggestPicks } from "@shared/briefing";
@@ -16,9 +17,9 @@ import type { BriefingStop } from "@shared/schema";
 export const DEMO_ADMIN_KEY = "wheelsdown-admin";
 const STORE_KEY = "wheelsdown-demo-v4";
 
-type DemoUser = { id: number; handle: string; displayName: string; crewRole: string; homeBase: string; anonymous: boolean; email?: string; aircraft?: string; bio?: string; interests?: string[]; pw: string; bonusPoints: number; createdAt: number };
+type DemoUser = { id: number; handle: string; displayName: string; crewRole: string; homeBase: string; anonymous: boolean; email?: string; aircraft?: string; bio?: string; interests?: string[]; wrightNo?: number | null; pw: string; bonusPoints: number; createdAt: number };
 type DemoBriefing = { id: number; userId: number; title: string; stops: BriefingStop[]; shareToken: string; createdAt: number; updatedAt: number };
-type DB = { airports: Airport[]; spots: Spot[]; reviews: Review[]; ads: Ad[]; votes: Vote[]; users: DemoUser[]; sessions: Record<string, number>; briefings?: DemoBriefing[]; favorites?: { userId: number; spotId: number; at: number }[]; follows?: { a: number; b: number; at: number }[];
+type DB = { airports: Airport[]; spots: Spot[]; reviews: Review[]; ads: Ad[]; votes: Vote[]; users: DemoUser[]; sessions: Record<string, number>; briefings?: DemoBriefing[]; favorites?: { userId: number; spotId: number; at: number }[]; follows?: { a: number; b: number; at: number }[]; wrightTaken?: number;
   seq: { spot: number; review: number; ad: number; vote: number; user: number } };
 // Demo only: not a secure hash. The server build uses scrypt.
 const demoHash = (pw: string) => { let h = 5381; for (let i = 0; i < pw.length; i++) h = ((h << 5) + h + pw.charCodeAt(i)) | 0; return "demo:" + (h >>> 0).toString(36); };
@@ -137,7 +138,7 @@ function meOf(u: DemoUser) {
   const b = computePoints(db, u.id, u.bonusPoints);
   return { id: u.id, handle: u.handle, displayName: u.displayName, crewRole: u.crewRole, homeBase: u.homeBase, anonymous: !!u.anonymous, email: u.email || "",
     participation: b.participation, points: b.total, tierId: tierFor(b.total).tier.id, createdAt: u.createdAt, aircraft: u.aircraft || "", breakdown: b,
-    bio: u.bio || "", interests: u.interests || [], follows: followCounts(u.id) };
+    bio: u.bio || "", interests: u.interests || [], follows: followCounts(u.id), wrightNo: u.wrightNo ?? null };
 }
 const fl = () => (db.follows ||= []);
 function followCounts(id: number) {
@@ -146,7 +147,7 @@ function followCounts(id: number) {
 function publicUsers(admin = false) {
   return db.users.map((u) => {
     const { breakdown, follows: _f, ...rest } = meOf(u);
-    return admin || !u.anonymous ? rest : { ...rest, handle: "", displayName: publicName(u), bio: "", interests: [] };
+    return admin || !u.anonymous ? rest : { ...rest, handle: "", displayName: publicName(u), bio: "", interests: [], wrightNo: null };
   }).sort((a, b) => b.points - a.points);
 }
 function relabel(u: DemoUser) {
@@ -180,6 +181,7 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
     const role = (CREW_ROLES as readonly string[]).includes(body.crewRole) ? body.crewRole : "Pilot";
     const u: DemoUser = { id: ++db.seq.user, handle, displayName: String(body.displayName).trim().slice(0, 40), crewRole: role, anonymous: !!body.anonymous,
       homeBase: String(body.homeBase || "").toUpperCase().slice(0, 4), email: String(body.email || "").trim().toLowerCase(), pw: demoHash(String(body.password)), bonusPoints: 0, createdAt: Date.now() };
+    if ((db.wrightTaken || 0) < WRIGHT_SEATS) { db.wrightTaken = (db.wrightTaken || 0) + 1; u.wrightNo = db.wrightTaken; }
     db.users.push(u); const t = newSession(u.id); save();
     return { token: t, me: meOf(u) };
   }
@@ -393,6 +395,11 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
       reviews: myRevs.map(({ userId: _u, ...r }) => ({ ...r, spotName: db.spots.find((s) => s.id === r.spotId)?.name || "" })) };
   }
 
+  if (method === "GET" && path === "/api/club") {
+    const members = publicUsers().filter((p) => p.wrightNo).map((p) => ({ id: p.id, displayName: p.displayName, aircraft: p.aircraft, wrightNo: p.wrightNo, homeBase: p.homeBase }));
+    const taken = db.wrightTaken || 0;
+    return { seats: WRIGHT_SEATS, taken, left: Math.max(0, WRIGHT_SEATS - taken), members };
+  }
   // ---- following ----
   if ((m = path.match(/^\/api\/crew\/(\d+)\/follow$/)) && (method === "POST" || method === "DELETE")) {
     const u = needUser(), uid = Number(m[1]);

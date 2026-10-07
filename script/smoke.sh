@@ -24,6 +24,8 @@ check "vote needs login"  'Sign in'        "$(curl -s -XPOST $BASE/api/spots/1/v
 R=$(curl -s -XPOST $BASE/api/auth/signup -H "$J" -d "{\"handle\":\"$H\",\"password\":\"smoke-pass-123\",\"displayName\":\"Smoke Test\",\"crewRole\":\"Pilot\",\"email\":\"$H@example.com\",\"acceptTerms\":true}")
 T=$(echo "$R" | jget "d.get('token','')" 2>/dev/null)
 [[ -n "$T" ]] && ok "sign up" || bad "sign up" "$R"
+check "test signup takes no club seat" '"wrightNo":null' "$R"
+check "club"               '"seats":10'     "$(curl -s $BASE/api/club)"
 A="authorization: Bearer $T"
 check "me"                "\"handle\":\"$H\"" "$(curl -s $BASE/api/me -H "$A")"
 check "login by handle"   '"token"'        "$(curl -s -XPOST $BASE/api/auth/login -H "$J" -d "{\"handle\":\"$H\",\"password\":\"smoke-pass-123\"}")"

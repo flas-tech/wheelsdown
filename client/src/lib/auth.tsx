@@ -5,6 +5,8 @@ import { TIERS, tierFor, publicName, SEED_PASSWORD, SOLO_POINTS, type Me, type P
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { WrightFlyer } from "@/lib/club";
+import { WRIGHT_NAME } from "@shared/club";
 
 type AuthCtx = {
   me: Me | null;
@@ -145,6 +147,8 @@ function AuthDialog({ open, onOpenChange, reason, onAuthed }: { open: boolean; o
   const [anonymous, setAnon] = useState(false);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const { toast: clubToast } = useToast();
+  const { data: club } = useQuery<{ seats: number; left: number }>({ queryKey: ["/api/club"], enabled: open && mode === "signup", staleTime: 0 });
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault(); setErr(""); setNotice("");
@@ -162,6 +166,10 @@ function AuthDialog({ open, onOpenChange, reason, onAuthed }: { open: boolean; o
       queryClient.setQueryData(["/api/me"], me);
       setPassword("");
       onAuthed();
+      if (mode === "signup" && me?.wrightNo) {
+        clubToast({ title: `Welcome to the ${WRIGHT_NAME}`, description: `You're founding member No. ${me.wrightNo} of ${club?.seats ?? 10}. Your badge is on your Logbook and crew profile.` });
+        queryClient.invalidateQueries({ queryKey: ["/api/club"] });
+      }
     } catch (e: any) {
       const msg = String(e.message || "").replace(/^\d+:\s*/, "");
       try { setErr(JSON.parse(msg).message); } catch { setErr(msg || "Something went wrong"); }
@@ -179,6 +187,12 @@ function AuthDialog({ open, onOpenChange, reason, onAuthed }: { open: boolean; o
               <>{reason || "Sign in to add spots, rate and vote."} Every contribution earns points toward your next rating, from Student up to Ancient Albatross.</>}
           </DialogDescription>
         </DialogHeader>
+        {mode === "signup" && !!club?.left && (
+          <div className="flex items-center gap-3 rounded-xl border border-[#B8893B]/50 bg-[#F6EBD3] px-3 py-2.5 text-[#5A3E16] dark:bg-[#2A2118] dark:text-[#E9C77E]" data-testid="banner-wright-seats">
+            <WrightFlyer className="h-6 w-12 shrink-0" />
+            <p className="text-xs leading-snug"><span className="font-semibold">{club.left} of {club.seats} founding seats left.</span> The first {club.seats} crews to sign up join the {WRIGHT_NAME} and keep a numbered badge for good.</p>
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted p-1 text-sm font-medium">
           {(["signup", "login"] as const).map((m) => (
             <button key={m} type="button" onClick={() => { setMode(m); setErr(""); }} data-testid={`tab-auth-${m}`}

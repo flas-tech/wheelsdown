@@ -1,5 +1,6 @@
 import { AircraftPicker, CrewAvatar } from "@/lib/aircraft";
 import { InterestPicker, InterestChips } from "@/lib/interests";
+import { WrightCard } from "@/lib/club";
 import { BIO_MAX } from "@shared/interests";
 import { aircraftById } from "@shared/aircraft";
 import { useEffect, useState } from "react";
@@ -101,6 +102,7 @@ export default function ProfilePage() {
   return (
     <div className="space-y-5">
       <TierCard points={me.points} name={me.displayName} sub={`@${me.handle} · ${me.crewRole}${me.homeBase ? " · " + me.homeBase : ""}`} tierId={me.tierId} aircraft={me.aircraft || ""} />
+      {me.wrightNo && <WrightCard no={me.wrightNo} />}
       {(me.bio || me.interests?.length || me.follows) && (
         <div className="space-y-2.5" data-testid="section-my-about">
           {me.bio && <p className="text-sm whitespace-pre-line" data-testid="text-my-bio">{me.bio}</p>}

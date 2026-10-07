@@ -1,5 +1,6 @@
 import { airports, spots, reviews, ads, votes, users, sessions, passwordResets, briefings, favorites, modLog, appSettings, follows } from "@shared/schema";
 import { parseInterests } from "@shared/interests";
+import { WRIGHT_SEATS, isTestSignup } from "@shared/club";
 import type { Briefing, BriefingStop } from "@shared/schema";
 import { crewCost } from "@shared/cost";
 import { refAirport, isCode } from "./airportsData";
@@ -349,10 +350,16 @@ export class DatabaseStorage {
     if ((await d.select({ id: users.id }).from(users).where(eq(users.handle, u.handle)))[0]) throw Object.assign(new Error("That handle is taken"), { status: 409 });
     if (u.email && (await d.select({ id: users.id }).from(users).where(eq(users.email, u.email)))[0]) throw Object.assign(new Error("That email already has an account"), { status: 409 });
     invalidateActivity();
-    return (await d.insert(users).values({
+    const created = (await d.insert(users).values({
       handle: u.handle, email: u.email || null, displayName: u.displayName, crewRole: u.crewRole || "Pilot", homeBase: u.homeBase || "",
       anonymous: u.anonymous ? 1 : 0, passwordHash: await hashPassword(u.password), createdAt: Date.now(),
     }).returning())[0];
+    if (isTestSignup(created.handle, created.email)) return created;
+    // atomic seat counter: two simultaneous sign-ups can't get the same number, and a deleted account's seat isn't reissued
+    const seat = await d.execute(sql`UPDATE app_settings SET value = (value::int + 1)::text WHERE key = 'wright_seats_taken' AND value::int < ${WRIGHT_SEATS} RETURNING value`);
+    const no = Number((seat.rows[0] as any)?.value);
+    if (!no) return created;
+    return (await d.update(users).set({ wrightNo: no }).where(eq(users.id, created.id)).returning())[0];
   }
   /** Update profile; re-labels the member's existing posts so the anonymous preference applies everywhere. */
   async updateUser(id: number, patch: { displayName?: string; crewRole?: string; homeBase?: string; anonymous?: boolean; email?: string; aircraft?: string; bio?: string; interests?: string[] }) {
@@ -454,7 +461,7 @@ export class DatabaseStorage {
       return {
         id: u.id, handle: anon && !admin ? "" : u.handle, displayName: admin ? u.displayName : publicName(u), crewRole: u.crewRole, homeBase: u.homeBase || "",
         anonymous: anon, participation: b.participation, points: b.total, tierId: tierFor(b.total).tier.id, createdAt: u.createdAt, aircraft: u.aircraft || "",
-        bio: anon && !admin ? "" : u.bio || "", interests: anon && !admin ? [] : parseInterests(u.interests),
+        bio: anon && !admin ? "" : u.bio || "", interests: anon && !admin ? [] : parseInterests(u.interests), wrightNo: anon && !admin ? null : u.wrightNo ?? null,
         ...(admin ? { email: u.email } : {}),
       };
     }).sort((a, b) => b.points - a.points);
@@ -505,7 +512,7 @@ export class DatabaseStorage {
     return {
       id: u.id, handle: u.handle, email: u.email || "", displayName: u.displayName, crewRole: u.crewRole, homeBase: u.homeBase || "", anonymous: !!u.anonymous,
       participation: b.participation, points: b.total, tierId: tierFor(b.total).tier.id, createdAt: u.createdAt, aircraft: u.aircraft || "", breakdown: b,
-      bio: u.bio || "", interests: parseInterests(u.interests), follows: await this.followCounts(u.id),
+      bio: u.bio || "", interests: parseInterests(u.interests), follows: await this.followCounts(u.id), wrightNo: u.wrightNo ?? null,
     };
   }
   async userContributions(userId: number) {
@@ -536,6 +543,14 @@ export class DatabaseStorage {
       spots: c.spots.filter((s) => live.has(s.id)).map(({ mod: _m, ...s }) => s),
       reviews: c.reviews.filter((r) => liveAll.has(r.spotId) && r.status === "live").map(({ userId: _u, pendingEdit: _p, modNote: _n, ...r }) => r),
     };
+  }
+
+  // ---- founding club ----
+  async wrightClub() {
+    const taken = Number((await this.getSetting("wright_seats_taken")) || 0);
+    const members = (await this.publicUsers()).filter((u) => u.wrightNo).sort((a, b) => a.wrightNo! - b.wrightNo!)
+      .map((u) => ({ id: u.id, displayName: u.displayName, aircraft: u.aircraft, wrightNo: u.wrightNo, homeBase: u.homeBase }));
+    return { seats: WRIGHT_SEATS, taken, left: Math.max(0, WRIGHT_SEATS - taken), members };
   }
 
   // ---- following ----

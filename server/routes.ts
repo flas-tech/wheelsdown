@@ -169,6 +169,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
   app.get("/api/me/contributions", requireUser, async (req, res) => res.json(await storage.userContributions((req as any).user.id)));
   app.get("/api/crew", async (_req, res) => res.json(await storage.publicUsers()));
+  app.get("/api/club", async (_req, res) => res.json(await storage.wrightClub()));
   /** Full leaderboard: ?q= name or handle, ?base= home airport (any form), paged with offset/limit. */
   app.get("/api/leaderboard", async (req, res) => res.json(await storage.leaderboard({
     q: String(req.query.q || "").slice(0, 60), base: String(req.query.base || "").slice(0, 4),

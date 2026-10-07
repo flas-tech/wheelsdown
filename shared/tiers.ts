@@ -110,6 +110,7 @@ export type PublicUser = {
   id: number; handle: string; displayName: string; crewRole: string; homeBase: string; anonymous: boolean; participation: number;
   points: number; tierId: TierId; createdAt: number; aircraft: string;
   bio: string; interests: string[]; // empty for anonymous members
+  wrightNo: number | null; // founding club seat; hidden for anonymous members
 };
 export type Me = PublicUser & { breakdown: PointsBreakdown; email?: string; follows?: { followers: number; following: number } };
 

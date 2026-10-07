@@ -88,6 +88,7 @@ ALTER TABLE reviews ADD COLUMN IF NOT EXISTS cost_level integer;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS aircraft text NOT NULL DEFAULT '';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS bio text NOT NULL DEFAULT '';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS interests text NOT NULL DEFAULT '[]';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS wright_no integer;
 ALTER TABLE spots ADD COLUMN IF NOT EXISTS mod_state text NOT NULL DEFAULT '';
 ALTER TABLE spots ADD COLUMN IF NOT EXISTS mod_note text NOT NULL DEFAULT '';
 ALTER TABLE spots ADD COLUMN IF NOT EXISTS mod_attempts integer NOT NULL DEFAULT 0;
@@ -113,6 +114,7 @@ CREATE TABLE IF NOT EXISTS follows (follower_id integer NOT NULL, followee_id in
 CREATE UNIQUE INDEX IF NOT EXISTS follows_pair_idx ON follows(follower_id, followee_id);
 CREATE INDEX IF NOT EXISTS follows_followee_idx ON follows(followee_id);
 CREATE TABLE IF NOT EXISTS app_settings (key text PRIMARY KEY, value text NOT NULL DEFAULT '');
+INSERT INTO app_settings (key, value) VALUES ('wright_seats_taken', '0') ON CONFLICT (key) DO NOTHING;
 `;
 
 async function migrate(d: DB) {

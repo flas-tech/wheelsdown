@@ -227,6 +227,7 @@ export const users = pgTable("users", {
   aircraft: text("aircraft").notNull().default(""), // profile icon, see shared/aircraft.ts
   bio: text("bio").notNull().default(""), // short public "about me"
   interests: text("interests").notNull().default("[]"), // JSON ids from shared/interests.ts
+  wrightNo: integer("wright_no"), // seat number in the founding Orville & Wilbur Wright Club (1-10), null for everyone else
   createdAt: bigint("created_at", { mode: "number" }).notNull().default(0),
 });
 export type User = typeof users.$inferSelect;
