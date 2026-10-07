@@ -76,7 +76,8 @@ export const reviews = pgTable("reviews", {
   costLevel: integer("cost_level"), // optional price vote: 0 free … 4 $$$$
 }, (t) => [index("reviews_spot_idx").on(t.spotId), index("reviews_user_idx").on(t.userId)]);
 export const insertReviewSchema = createInsertSchema(reviews, {
-  rating: z.coerce.number().int().min(1).max(5),
+  // 1-5 stars, or 0 = "Go around" (crew says avoid this place)
+  rating: z.coerce.number().int().min(0, "Pick a rating").max(5),
   comment: z.string().max(1500),
   costLevel: z.number().int().min(0).max(4).nullable().optional(),
 }).omit({ id: true, createdAt: true });
@@ -104,7 +105,20 @@ export type SpotWithStats = Spot & {
   avgRating: number | null; reviewCount: number; airport?: Airport; vet: VetInfo;
   /** crew price: median of the submitter's price and every rating's price vote (null = not priced yet) */
   cost: number | null; costVotes: number;
+  /** ratings of 0 ("Go around": avoid this place) */
+  goArounds: number;
 };
+
+/** A rating of 0 means "Go around": the crew member says avoid this place. */
+export const GO_AROUND = 0;
+
+// ---- Favorites (per crew member; always included in their trip briefings) ----
+export const favorites = pgTable("favorites", {
+  userId: integer("user_id").notNull(),
+  spotId: integer("spot_id").notNull(),
+  createdAt: bigint("created_at", { mode: "number" }).notNull().default(0),
+}, (t) => [uniqueIndex("favorites_user_spot_idx").on(t.userId, t.spotId), index("favorites_spot_idx").on(t.spotId)]);
+export type Favorite = typeof favorites.$inferSelect;
 
 // ---- Trip briefings (saved layover plans) ----
 export const briefings = pgTable("briefings", {

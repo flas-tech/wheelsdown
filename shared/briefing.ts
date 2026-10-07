@@ -17,7 +17,8 @@ export function pickScore(s: SpotWithStats) {
 /** Suggested picks (spot ids) for a stop. */
 export function suggestPicks(all: SpotWithStats[], layover: LayoverId): number[] {
   const plan = LAYOVER_PLAN[layover];
-  const ok = all.filter((s) => s.status === "live" && s.vet.level !== "needs_check");
+  // skip anything crews flag: failing vetting, or mostly "Go around" ratings
+  const ok = all.filter((s) => s.status === "live" && s.vet.level !== "needs_check" && !((s.goArounds ?? 0) > 0 && (s.goArounds ?? 0) * 2 >= s.reviewCount));
   const take = (cat: string, n: number, extra: (s: SpotWithStats) => boolean = () => true) =>
     ok.filter((s) => s.category === cat && extra(s)).sort((a, b) => pickScore(b) - pickScore(a)).slice(0, n);
   const near = (s: SpotWithStats) => (s.milesFromField ?? 0) <= plan.maxMiles;

@@ -5,7 +5,7 @@ import type { Review, SpotWithStats } from "@shared/schema";
 import type { PublicUser } from "@shared/tiers";
 import { COST_LABELS } from "@shared/cost";
 import { useAuth } from "@/lib/auth";
-import { Stars } from "@/lib/ui";
+import { Stars, GoAroundBadge } from "@/lib/ui";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TierCard } from "./profile";
 import { SpotCard } from "./home";
@@ -58,7 +58,7 @@ export default function CrewProfilePage() {
                   <p className="text-sm font-semibold truncate">{r.spotName}</p>
                   <span className="flex items-center gap-2 shrink-0">
                     {r.costLevel != null && <span className="font-code text-xs font-bold text-primary">{COST_LABELS[r.costLevel]}</span>}
-                    <Stars value={r.rating} size={12} />
+                    {r.rating === 0 ? <GoAroundBadge /> : <Stars value={r.rating} size={12} />}
                   </span>
                 </div>
                 {r.comment && <p className="mt-1.5 text-sm text-muted-foreground whitespace-pre-line line-clamp-4">{r.comment}</p>}

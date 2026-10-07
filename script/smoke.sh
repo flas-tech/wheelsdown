@@ -35,6 +35,17 @@ SID=$(echo "$S" | jget "d.get('id','')" 2>/dev/null)
 check "vote up"           '"ok":true'      "$(curl -s -XPOST $BASE/api/spots/$SID/vote -H "$A" -H "$J" -d '{"value":1}')"
 check "rate + comment"    '"rating":5'     "$(curl -s -XPOST $BASE/api/spots/$SID/reviews -H "$A" -H "$J" -d '{"rating":5,"comment":"Smoke test review with enough characters to count as detailed."}')"
 check "spot detail"       'Smoke Test Cafe' "$(curl -s $BASE/api/spots/$SID -H "$A")"
+check "digit airport code" '"icao":"X51"'  "$(curl -s $BASE/api/airports/lookup/X51)"
+check "favorite on"        '"on":true'      "$(curl -s -XPUT $BASE/api/spots/$SID/favorite -H "$A" -H "$J" -d '{"on":true}')"
+check "favorites list"     "\"id\":$SID"    "$(curl -s $BASE/api/me/favorites -H "$A")"
+check "favorite needs login" 'Sign in'      "$(curl -s -XPUT $BASE/api/spots/$SID/favorite -H "$J" -d '{"on":true}')"
+check "edit own listing"   'Smoke Test Cafe (edited)' "$(curl -s -XPATCH $BASE/api/spots/$SID -H "$A" -H "$J" -d '{"name":"Smoke Test Cafe (edited)"}')"
+RID=$(curl -s $BASE/api/spots/$SID -H "$A" | jget "[r['id'] for r in d['reviews']][0]" 2>/dev/null)
+check "go around needs why" 'go around'     "$(curl -s -XPATCH $BASE/api/reviews/$RID -H "$A" -H "$J" -d '{"rating":0,"comment":"no"}')"
+check "edit own rating"    '"rating":0'     "$(curl -s -XPATCH $BASE/api/reviews/$RID -H "$A" -H "$J" -d '{"rating":0,"comment":"Smoke test: go around this one, it has enough detail to count."}')"
+check "go-around counted"  '"goArounds":1'  "$(curl -s $BASE/api/spots/$SID -H "$A")"
+check "leaderboard"        '"crewTotal"'    "$(curl -s "$BASE/api/leaderboard?q=$H")"
+check "leaderboard bases"  '['              "$(curl -s $BASE/api/leaderboard/bases)"
 check "go anonymous"      '"anonymous":true' "$(curl -s -XPATCH $BASE/api/me -H "$A" -H "$J" -d '{"anonymous":true}')"
 check "author relabeled"  'Anonymous pilot' "$(curl -s $BASE/api/spots/$SID)"
 P=$(curl -s $BASE/api/me -H "$A" | jget "d['points']")

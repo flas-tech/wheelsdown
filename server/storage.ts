@@ -1,7 +1,7 @@
-import { airports, spots, reviews, ads, votes, users, sessions, passwordResets, briefings } from "@shared/schema";
+import { airports, spots, reviews, ads, votes, users, sessions, passwordResets, briefings, favorites } from "@shared/schema";
 import type { Briefing, BriefingStop } from "@shared/schema";
 import { crewCost } from "@shared/cost";
-import { refAirport } from "./airportsData";
+import { refAirport, isCode } from "./airportsData";
 import type { User, Vote, ReviewWithVotes, Airport, InsertAirport, Spot, InsertSpot, Review, InsertReview, Ad, InsertAd, SpotWithStats } from "@shared/schema";
 import { computePoints, recentActivity, publicName, tierFor, SEED_USERS, SEED_PASSWORD, type PublicUser, type Me } from "@shared/tiers";
 import { computeVet, seedVotesFor, shouldAutoHold } from "@shared/vetting";
@@ -77,7 +77,7 @@ async function withStats(rows: Spot[], voter = ""): Promise<SpotWithStats[]> {
   if (!rows.length) return [];
   const d = db();
   const ids = rows.map((r) => r.id);
-  const agg = await d.select({ spotId: reviews.spotId, avg: sql<number>`AVG(${reviews.rating})::float`, n: sql<number>`COUNT(*)::int`,
+  const agg = await d.select({ spotId: reviews.spotId, avg: sql<number>`AVG(${reviews.rating})::float`, n: sql<number>`COUNT(*)::int`, go: sql<number>`(COUNT(*) FILTER (WHERE ${reviews.rating} = 0))::int`,
     costs: sql<(number | null)[]>`array_agg(${reviews.costLevel})` })
     .from(reviews).where(inArray(reviews.spotId, ids)).groupBy(reviews.spotId);
   const m = new Map(agg.map((a) => [a.spotId, a]));
@@ -87,6 +87,7 @@ async function withStats(rows: Spot[], voter = ""): Promise<SpotWithStats[]> {
   vs.forEach((v) => byId.set(v.targetId, [...(byId.get(v.targetId) || []), v]));
   return rows.map((r) => ({
     ...r, avgRating: m.get(r.id)?.avg ?? null, reviewCount: m.get(r.id)?.n ?? 0, airport: aps.get(r.icao), vet: computeVet(byId.get(r.id) || [], voter),
+    goArounds: m.get(r.id)?.go ?? 0,
     ...crewCost(r.category, r.costLevel, m.get(r.id)?.costs || []),
   }));
 }
@@ -96,7 +97,28 @@ let actCache: { at: number; data: Awaited<ReturnType<DatabaseStorage["loadActivi
 const invalidateActivity = () => { actCache = null; };
 
 export class DatabaseStorage {
-  async init() { await initDb(); await seedIfEmpty(); await this.backfillAirportCoords(); }
+  async init() { await initDb(); await seedIfEmpty(); await this.fixLegacyCodes(); await this.backfillAirportCoords(); }
+  /**
+   * Airports created before digit codes were supported were stored as "K" + code (K1B9 for 1B9).
+   * Move them, with their listings, to the published code. Listings, ratings and points are untouched apart from the airport code.
+   */
+  async fixLegacyCodes() {
+    const d = db();
+    for (const a of await d.select().from(airports)) {
+      const ref = refAirport(a.icao);
+      // only the K-prefixed digit codes (K1B9 -> 1B9); renamed airports (e.g. KPBI listed as KDJT) keep the code crews already use
+      if (!ref || ref.icao === a.icao || !/^K[0-9A-Z]{3}$/.test(a.icao) || ref.icao !== a.icao.slice(1) || !/[0-9]/.test(ref.icao)) continue;
+      if ((await d.select({ icao: airports.icao }).from(airports).where(eq(airports.icao, ref.icao)))[0]) continue; // both exist: leave for the admin
+      await d.transaction(async (tx) => {
+        await tx.insert(airports).values({ icao: ref.icao, iata: ref.iata || (/^[A-Z]{3}$/.test(a.iata || "") && a.iata !== ref.icao ? a.iata : null), name: ref.name, city: ref.city || a.city, region: ref.region || a.region, country: ref.country || a.country, lat: ref.lat, lon: ref.lon });
+        await tx.update(spots).set({ icao: ref.icao }).where(eq(spots.icao, a.icao));
+        await tx.update(ads).set({ targetIcao: ref.icao }).where(eq(ads.targetIcao, a.icao));
+        await tx.execute(sql`UPDATE briefings SET stops = REPLACE(stops, ${'"icao":"' + a.icao + '"'}, ${'"icao":"' + ref.icao + '"'}) WHERE stops LIKE ${'%"icao":"' + a.icao + '"%'}`);
+        await tx.delete(airports).where(eq(airports.icao, a.icao));
+      });
+      console.log(`[airports] ${a.icao} is now ${ref.icao}`);
+    }
+  }
   /** Fill in airport coordinates from the reference dataset (only where missing). */
   async backfillAirportCoords() {
     const d = db();
@@ -125,12 +147,28 @@ export class DatabaseStorage {
 
   // ---- airports ----
   listAirports() { return db().select().from(airports).orderBy(airports.icao); }
+  /** Saved airport for what a pilot typed: KOPF, OPF, X51, KX51, 06FA. */
   async resolveCode(code: string): Promise<Airport | undefined> {
     const c = code.trim().toUpperCase();
-    if (c.length === 4) return (await db().select().from(airports).where(eq(airports.icao, c)))[0];
-    if (c.length === 3) {
-      return (await db().select().from(airports).where(eq(airports.iata, c)))[0] || (await db().select().from(airports).where(eq(airports.icao, "K" + c)))[0];
+    if (!isCode(c)) return undefined;
+    const d = db();
+    const exact = (await d.select().from(airports).where(eq(airports.icao, c)))[0];
+    if (exact) return exact;
+    if (/^[A-Z]{3}$/.test(c)) {
+      const byIata = (await d.select().from(airports).where(eq(airports.iata, c)))[0];
+      if (byIata) return byIata;
     }
+    const ref = refAirport(c);
+    if (ref) {
+      // the same field may be stored under its published code or a former one (KDJT / KPBI)
+      const codes = Array.from(new Set([ref.icao, ...ref.aliases.filter(isCode)])).filter((x) => x !== c);
+      if (codes.length) {
+        const hits = await d.select().from(airports).where(inArray(airports.icao, codes));
+        const hit = hits.find((h) => h.icao === ref.icao) || hits[0];
+        if (hit) return hit;
+      }
+    }
+    if (c.length === 3) return (await d.select().from(airports).where(eq(airports.icao, "K" + c)))[0];
     return undefined;
   }
   /** Known airport, or one created from the reference dataset (name, city, coordinates). */
@@ -167,6 +205,7 @@ export class DatabaseStorage {
     if (revIds.length) await d.delete(votes).where(and(eq(votes.targetType, "review"), inArray(votes.targetId, revIds)));
     await d.delete(reviews).where(inArray(reviews.spotId, ids));
     await d.delete(votes).where(and(eq(votes.targetType, "spot"), inArray(votes.targetId, ids)));
+    await d.delete(favorites).where(inArray(favorites.spotId, ids));
     return (await d.delete(spots).where(inArray(spots.id, ids)).returning({ id: spots.id })).length;
   }
 
@@ -201,6 +240,11 @@ export class DatabaseStorage {
       const mine = vs.filter((v) => v.targetId === r.id);
       return { ...r, authorId: r.userId != null && named.has(r.userId) ? r.userId : null, up: mine.filter((v) => v.value > 0).length, down: mine.filter((v) => v.value < 0).length, myVote: mine.find((v) => v.voter === voter)?.value ?? 0 };
     });
+  }
+  async getReview(id: number) { return Number.isFinite(id) ? (await db().select().from(reviews).where(eq(reviews.id, id)))[0] : undefined; }
+  async updateReview(id: number, patch: { rating?: number; comment?: string; costLevel?: number | null }) {
+    invalidateActivity();
+    return (await db().update(reviews).set(patch).where(eq(reviews.id, id)).returning())[0];
   }
   async createReview(r: InsertReview) { invalidateActivity(); return (await db().insert(reviews).values({ ...r, createdAt: Date.now() }).returning())[0]; }
   async deleteReview(id: number) {
@@ -259,6 +303,7 @@ export class DatabaseStorage {
     await d.delete(votes).where(eq(votes.voter, `u:${id}`));
     await d.update(spots).set({ userId: null, submittedBy: "Former crew member" }).where(eq(spots.userId, id));
     await d.delete(briefings).where(eq(briefings.userId, id));
+    await d.delete(favorites).where(eq(favorites.userId, id));
     await d.delete(sessions).where(eq(sessions.userId, id));
     await d.delete(passwordResets).where(eq(passwordResets.userId, id));
     await d.delete(users).where(eq(users.id, id));
@@ -331,6 +376,46 @@ export class DatabaseStorage {
       };
     }).sort((a, b) => b.points - a.points);
   }
+  /**
+   * Full leaderboard with search. Rank is the overall position (ties share a rank), so a filtered
+   * list still shows where each person stands. q matches name or handle; base matches the home
+   * airport however it was typed (OPF, KOPF).
+   */
+  async leaderboard(opts: { q?: string; base?: string; offset?: number; limit?: number }) {
+    const all = await this.publicUsers();
+    let rank = 0, prev = -1;
+    const ranked = all.map((u, i) => { if (u.points !== prev) { rank = i + 1; prev = u.points; } return { ...u, rank }; });
+    const q = (opts.q || "").trim().toLowerCase();
+    const canon = (b: string) => { const c = b.trim().toUpperCase(); return refAirport(c)?.icao || c; };
+    const base = (opts.base || "").trim() ? canon(opts.base!) : "";
+    const rows = ranked.filter((u) =>
+      (!q || u.displayName.toLowerCase().includes(q) || (!!u.handle && u.handle.toLowerCase().includes(q.replace(/^@/, "")))) &&
+      (!base || (!!u.homeBase && canon(u.homeBase) === base)));
+    const offset = Math.max(0, opts.offset || 0), limit = Math.min(1000, Math.max(1, opts.limit || 50));
+    return { total: rows.length, crewTotal: all.length, base: base || null, rows: rows.slice(offset, offset + limit), offset, limit };
+  }
+  /** Home bases people have set, most common first (used for type-ahead, not as preset filters). */
+  async homeBases() {
+    const counts = new Map<string, number>();
+    for (const u of await this.publicUsers()) if (u.homeBase) { const c = refAirport(u.homeBase)?.icao || u.homeBase.toUpperCase(); counts.set(c, (counts.get(c) || 0) + 1); }
+    return Array.from(counts, ([code, n]) => ({ code, n })).sort((a, b) => b.n - a.n);
+  }
+
+  // ---- favorites (no points; private to the crew member) ----
+  async favoriteIds(userId: number) { return (await db().select({ id: favorites.spotId }).from(favorites).where(eq(favorites.userId, userId))).map((f) => f.id); }
+  async setFavorite(userId: number, spotId: number, on: boolean) {
+    const d = db();
+    if (on) await d.insert(favorites).values({ userId, spotId, createdAt: Date.now() }).onConflictDoNothing();
+    else await d.delete(favorites).where(and(eq(favorites.userId, userId), eq(favorites.spotId, spotId)));
+  }
+  async favoriteSpots(userId: number) {
+    const rows = await db().select({ spotId: favorites.spotId, at: favorites.createdAt }).from(favorites).where(eq(favorites.userId, userId)).orderBy(desc(favorites.createdAt));
+    if (!rows.length) return [];
+    const list = await withStats(await db().select().from(spots).where(and(inArray(spots.id, rows.map((r) => r.spotId)), eq(spots.status, "live"))));
+    const order = new Map(rows.map((r, i) => [r.spotId, i]));
+    return list.sort((a, b) => order.get(a.id)! - order.get(b.id)!);
+  }
+
   async me(u: User): Promise<Me & { email: string }> {
     invalidateActivity();
     const b = computePoints(await this.activity(), u.id, u.bonusPoints);

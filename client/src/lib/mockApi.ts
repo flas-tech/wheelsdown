@@ -16,7 +16,7 @@ const STORE_KEY = "wheelsdown-demo-v4";
 
 type DemoUser = { id: number; handle: string; displayName: string; crewRole: string; homeBase: string; anonymous: boolean; email?: string; pw: string; bonusPoints: number; createdAt: number };
 type DemoBriefing = { id: number; userId: number; title: string; stops: BriefingStop[]; shareToken: string; createdAt: number; updatedAt: number };
-type DB = { airports: Airport[]; spots: Spot[]; reviews: Review[]; ads: Ad[]; votes: Vote[]; users: DemoUser[]; sessions: Record<string, number>; briefings?: DemoBriefing[];
+type DB = { airports: Airport[]; spots: Spot[]; reviews: Review[]; ads: Ad[]; votes: Vote[]; users: DemoUser[]; sessions: Record<string, number>; briefings?: DemoBriefing[]; favorites?: { userId: number; spotId: number; at: number }[];
   seq: { spot: number; review: number; ad: number; vote: number; user: number } };
 // Demo only: not a secure hash. The server build uses scrypt.
 const demoHash = (pw: string) => { let h = 5381; for (let i = 0; i < pw.length; i++) h = ((h << 5) + h + pw.charCodeAt(i)) | 0; return "demo:" + (h >>> 0).toString(36); };
@@ -67,14 +67,15 @@ const CATS = ["eat", "do", "stay", "fbo"];
 const parseRoute = (r: string) => r.toUpperCase().split(/[^A-Z0-9]+/).filter((c) => c.length === 3 || c.length === 4);
 function resolve(code: string) {
   const c = code.trim().toUpperCase();
-  if (c.length === 4) return db.airports.find((a) => a.icao === c);
-  if (c.length === 3) return db.airports.find((a) => a.iata === c) || db.airports.find((a) => a.icao === "K" + c);
+  if (!/^[A-Z0-9]{3,4}$/.test(c)) return undefined;
+  return db.airports.find((a) => a.icao === c) || (/^[A-Z]{3}$/.test(c) ? db.airports.find((a) => a.iata === c) || db.airports.find((a) => a.icao === "K" + c) : undefined)
+    || (c.length === 4 && c[0] === "K" ? db.airports.find((a) => a.icao === c.slice(1)) : undefined);
 }
 function ensureAirport(code: string, city?: string, name?: string) {
   const f = resolve(code);
   if (f) return f.icao;
-  const icao = code.length === 3 ? "K" + code : code;
-  db.airports.push({ icao, iata: code.length === 3 ? code : null, name: name || icao, city: city || "Unknown", region: "", country: "", lat: null, lon: null });
+  const icao = /^[A-Z]{3}$/.test(code) ? "K" + code : code;
+  db.airports.push({ icao, iata: /^[A-Z]{3}$/.test(code) ? code : null, name: name || icao, city: city || "Unknown", region: "", country: "", lat: null, lon: null });
   return icao;
 }
 function withStats(rows: Spot[], voter = "") {
@@ -82,7 +83,7 @@ function withStats(rows: Spot[], voter = "") {
     const rs = db.reviews.filter((r) => r.spotId === s.id);
     const vs = db.votes.filter((v) => v.targetType === "spot" && v.targetId === s.id);
     const base = { ...({ pace: null, lat: null, lng: null, placeRef: null } as Pick<Spot, "pace" | "lat" | "lng" | "placeRef">), ...s };
-    return { ...base, avgRating: rs.length ? rs.reduce((a, r) => a + r.rating, 0) / rs.length : null, reviewCount: rs.length, airport: db.airports.find((a) => a.icao === s.icao), vet: computeVet(vs, voter),
+    return { ...base, goArounds: rs.filter((r) => r.rating === 0).length, avgRating: rs.length ? rs.reduce((a, r) => a + r.rating, 0) / rs.length : null, reviewCount: rs.length, airport: db.airports.find((a) => a.icao === s.icao), vet: computeVet(vs, voter),
       ...crewCost(s.category, s.costLevel, rs.map((r) => r.costLevel)) };
   });
 }
@@ -217,6 +218,38 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
     };
   }
   if (method === "GET" && path === "/api/crew") return publicUsers();
+  if (method === "GET" && path === "/api/leaderboard") {
+    const all = publicUsers();
+    let rank = 0, prev = -1;
+    const ranked = all.map((u, i) => { if (u.points !== prev) { rank = i + 1; prev = u.points; } return { ...u, rank }; });
+    const q = String(query.get("q") || "").trim().toLowerCase().replace(/^@/, "");
+    const canon = (b: string) => resolve(b)?.icao || b.trim().toUpperCase();
+    const base = String(query.get("base") || "").trim() ? canon(String(query.get("base"))) : "";
+    const rows = ranked.filter((u) => (!q || u.displayName.toLowerCase().includes(q) || (!!u.handle && u.handle.toLowerCase().includes(q))) && (!base || (!!u.homeBase && canon(u.homeBase) === base)));
+    const offset = Number(query.get("offset")) || 0, limit = Math.min(1000, Number(query.get("limit")) || 50);
+    return { total: rows.length, crewTotal: all.length, base: base || null, rows: rows.slice(offset, offset + limit), offset, limit };
+  }
+  if (method === "GET" && path === "/api/leaderboard/bases") {
+    const c = new Map<string, number>();
+    for (const u of publicUsers()) if (u.homeBase) { const k = resolve(u.homeBase)?.icao || u.homeBase.toUpperCase(); c.set(k, (c.get(k) || 0) + 1); }
+    return Array.from(c, ([code, n]) => ({ code, n })).sort((a, b) => b.n - a.n);
+  }
+  // ---- favorites ----
+  const favs = () => (db.favorites ||= []);
+  if (method === "GET" && path === "/api/me/favorites/ids") { const u = needUser(); return favs().filter((f) => f.userId === u.id).map((f) => f.spotId); }
+  if (method === "GET" && path === "/api/me/favorites") {
+    const u = needUser();
+    const mine = favs().filter((f) => f.userId === u.id).sort((a, b) => b.at - a.at);
+    return withStats(mine.map((f) => db.spots.find((s) => s.id === f.spotId && s.status === "live")).filter(Boolean) as Spot[]);
+  }
+  if (method === "PUT" && (m = path.match(/^\/api\/spots\/(\d+)\/favorite$/))) {
+    const u = needUser(); const sid = Number(m[1]);
+    if (!db.spots.find((s) => s.id === sid)) throw new HttpError(404, "Not found");
+    const on = body.on !== false;
+    db.favorites = favs().filter((f) => !(f.userId === u.id && f.spotId === sid));
+    if (on) db.favorites.push({ userId: u.id, spotId: sid, at: Date.now() });
+    save(); return { ok: true, on };
+  }
 
   if (method === "GET" && path === "/api/airports") return [...db.airports].sort((a, b) => a.icao.localeCompare(b.icao));
   if (method === "GET" && path === "/api/highlights") {
@@ -264,17 +297,57 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
     if (data.category === "stay") data.minutesNeeded = 720;
     if (data.category === "fbo") data.minutesNeeded = 30;
     const ap = resolve(icao);
-    if (data.lat != null && data.lng != null && ap?.lat != null && ap?.lon != null && !data.milesFromField)
+    if (data.lat != null && data.lng != null && ap?.lat != null && ap?.lon != null)
       data.milesFromField = Math.round(milesBetween({ lat: ap.lat, lon: ap.lon }, { lat: data.lat, lon: data.lng }) * 10) / 10;
     const spot: Spot = { id: ++db.seq.spot, description: "", address: "", website: "", costLevel: 1, minutesNeeded: 60, milesFromField: 0, crewTip: "", pace: null, lat: null, lng: null, placeRef: null, ...data, submittedBy: publicName(u), userId: u.id, status: "live", createdAt: Date.now() };
     db.spots.push(spot); save(); return spot;
+  }
+  if (method === "PATCH" && (m = path.match(/^\/api\/spots\/(\d+)$/))) {
+    const u = needUser();
+    const sp = db.spots.find((s) => s.id === Number(m![1]));
+    if (!sp) throw new HttpError(404, "Not found");
+    if (sp.userId !== u.id) throw new HttpError(403, "Only the crew member who posted this can edit it");
+    const code = String(body.icao || sp.icao).trim().toUpperCase();
+    if (!resolve(code) && !body.airportCity) throw new HttpError(400, `We don't know ${code} yet — add the city so we can create it.`);
+    const icao = ensureAirport(code, body.airportCity);
+    const tags = body.tags === undefined ? undefined : JSON.stringify((Array.isArray(body.tags) ? body.tags : String(body.tags || "").split(",").map((t: string) => t.trim()).filter(Boolean)).slice(0, 8));
+    const data = cleanSpot({ ...sp, ...body, icao, ...(tags ? { tags } : {}) });
+    if (data.category === "fbo") data.costLevel = 0;
+    else if (!isValidCost(data.category, data.costLevel)) throw new HttpError(400, data.category === "do" ? "Pick a price" : "Pick a price from $ to $$$$");
+    if (data.category === "eat") {
+      if (data.pace !== "grab" && data.pace !== "sit") throw new HttpError(400, "Pick Grab & go or Sit-down");
+      data.minutesNeeded = data.pace === "grab" ? 30 : 90;
+    } else data.pace = null;
+    if (data.category === "stay") data.minutesNeeded = 720;
+    if (data.category === "fbo") data.minutesNeeded = 30;
+    const ap = resolve(icao);
+    if (data.lat != null && data.lng != null && ap?.lat != null && ap?.lon != null)
+      data.milesFromField = Math.round(milesBetween({ lat: ap.lat, lon: ap.lon }, { lat: data.lat, lon: data.lng }) * 10) / 10;
+    const { submittedBy: _s, status: _st, ...safe } = data;
+    Object.assign(sp, safe, { lat: body.lat === null ? null : sp.lat, lng: body.lng === null ? null : sp.lng }, data.lat != null ? { lat: data.lat, lng: data.lng } : {});
+    save(); return sp;
+  }
+  if (method === "PATCH" && (m = path.match(/^\/api\/reviews\/(\d+)$/))) {
+    const u = needUser();
+    const r = db.reviews.find((x) => x.id === Number(m![1]));
+    if (!r) throw new HttpError(404, "Not found");
+    if (r.userId !== u.id) throw new HttpError(403, "Only the author can edit this rating");
+    const sp = db.spots.find((s) => s.id === r.spotId)!;
+    const rating = body.rating === undefined ? r.rating : Number(body.rating);
+    if (!(rating >= 0 && rating <= 5)) throw new HttpError(400, "Pick a rating");
+    const comment = body.comment === undefined ? r.comment : String(body.comment).slice(0, 1500);
+    if (rating === 0 && comment.trim().length < 10) throw new HttpError(400, "Tell crews why to go around (a sentence is enough)");
+    const cv = body.costLevel === undefined ? r.costLevel : body.costLevel == null || body.costLevel === "" ? null : Number(body.costLevel);
+    Object.assign(r, { rating, comment, costLevel: cv != null && costOptions(sp.category).includes(cv) ? cv : null });
+    save(); return r;
   }
   if (method === "POST" && (m = path.match(/^\/api\/spots\/(\d+)\/reviews$/))) {
     const u = needUser();
     const spotId = Number(m[1]); const rating = Number(body.rating);
     const sp = db.spots.find((s) => s.id === spotId);
     if (!sp) throw new HttpError(404, "Not found");
-    if (!(rating >= 1 && rating <= 5)) throw new HttpError(400, "Rating 1–5 required");
+    if (!(rating >= 0 && rating <= 5) || body.rating === undefined || body.rating === null || body.rating === "") throw new HttpError(400, "Pick a rating");
+    if (rating === 0 && String(body.comment || "").trim().length < 10) throw new HttpError(400, "Tell crews why to go around (a sentence is enough)");
     const cv = body.costLevel == null || body.costLevel === "" ? null : Number(body.costLevel);
     const costLevel = cv != null && costOptions(sp.category).includes(cv) ? cv : null;
     const r: Review = { id: ++db.seq.review, spotId, rating, comment: String(body.comment || "").slice(0, 1500), author: publicName(u), crewRole: u.crewRole, userId: u.id, createdAt: Date.now(), costLevel };
@@ -316,12 +389,16 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
     const ad = act.find((a) => a.targetIcao === icao) || act.find((a) => !a.targetIcao);
     return ad ? { id: ad.id, advertiser: ad.advertiser, headline: ad.headline, url: ad.url } : null;
   };
+  const favSet = (uid: number) => new Set((db.favorites || []).filter((f) => f.userId === uid).map((f) => f.spotId));
   const expand = (b: DemoBriefing, withCandidates: boolean) => ({
     id: b.id, title: b.title, shareToken: b.shareToken, createdAt: b.createdAt, updatedAt: b.updatedAt,
     stops: b.stops.map((st) => {
       const airport = resolve(st.icao) || null;
       const all = withStats(db.spots.filter((s) => s.status === "live" && s.icao === airport?.icao));
-      return { icao: airport?.icao || st.icao, layover: st.layover, nights: st.nights, airport, picks: st.picks.map((i) => all.find((s) => s.id === i)).filter(Boolean),
+      const fv = favSet(b.userId);
+      const favHere = all.filter((s) => fv.has(s.id)).map((s) => s.id);
+      const ids = [...favHere.filter((i) => !st.picks.includes(i)), ...st.picks];
+      return { icao: airport?.icao || st.icao, layover: st.layover, nights: st.nights, airport, favoriteIds: favHere, picks: ids.map((i) => all.find((s) => s.id === i)).filter(Boolean),
         candidates: withCandidates ? all : undefined, sponsor: sponsorFor(airport?.icao || st.icao) };
     }),
   });
@@ -337,8 +414,9 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
     });
   };
   if (method === "POST" && path === "/api/briefings/suggest") {
-    needUser();
-    const stops = cleanStops(body.stops).map((st) => ({ ...st, picks: suggestPicks(withStats(db.spots.filter((s) => s.status === "live" && s.icao === st.icao)), st.layover) }));
+    const u = needUser();
+    const fv = favSet(u.id);
+    const stops = cleanStops(body.stops).map((st) => ({ ...st, picks: suggestPicks(withStats(db.spots.filter((s) => s.status === "live" && s.icao === st.icao)), st.layover).filter((i) => !fv.has(i)) }));
     return { title: String(body.title || ""), stops };
   }
   if (method === "GET" && path === "/api/briefings") {

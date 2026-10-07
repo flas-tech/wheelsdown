@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useRoute } from "wouter";
-import { ArrowLeft, MapPin, Clock, Globe, Lightbulb, User, AlertTriangle } from "lucide-react";
+import { ArrowLeft, MapPin, Clock, Globe, Lightbulb, User, AlertTriangle, Pencil } from "lucide-react";
 import { DOWN_REASONS, type Category, type ReviewWithVotes, type SpotWithStats } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { CAT_META, fmtMinutes, totalMinutes, parseTags, Stars, AdBanner, Chip, VetBadge, VoteButtons, timeAgo } from "@/lib/ui";
+import { CAT_META, fmtMinutes, totalMinutes, parseTags, Stars, AdBanner, Chip, VetBadge, VoteButtons, timeAgo, GoAroundBadge, GoAroundIcon } from "@/lib/ui";
+import { FavoriteButton } from "@/lib/favorites";
 import { COST_LABELS, costOptions, hasCost, paceLabel, paceOf } from "@shared/cost";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
@@ -17,6 +18,8 @@ export default function SpotPage() {
   const [, params] = useRoute("/spot/:id");
   const id = params?.id;
   const crew = useCrewIndex();
+  const { me } = useAuth();
+  const [editing, setEditing] = useState<number | null>(null);
   const { data, isLoading, isError } = useQuery<{ spot: SpotWithStats; reviews: ReviewWithVotes[] }>({ queryKey: ["/api/spots", id] });
 
   if (isLoading) return <div className="space-y-4"><Skeleton className="h-8 w-40" /><Skeleton className="h-40 rounded-2xl" /><Skeleton className="h-24 rounded-2xl" /></div>;
@@ -25,7 +28,8 @@ export default function SpotPage() {
   const { spot, reviews } = data;
   const M = CAT_META[spot.category as Category];
   const tags = parseTags(spot.tags);
-  const dist = Object.fromEntries([5, 4, 3, 2, 1].map((n) => [n, reviews.filter((r) => r.rating === n).length]));
+  const dist = Object.fromEntries([5, 4, 3, 2, 1, 0].map((n) => [n, reviews.filter((r) => r.rating === n).length]));
+  const mine = !!me && spot.userId === me.id;
 
   return (
     <div className="space-y-5">
@@ -40,13 +44,22 @@ export default function SpotPage() {
           <span className="text-muted-foreground">·</span>
           <span className="inline-flex items-center gap-1 text-muted-foreground"><M.icon className="h-3.5 w-3.5" />{M.label}</span>
         </div>
-        <h1 className="mt-2 text-xl font-semibold leading-tight" data-testid="text-spot-name">{spot.name}</h1>
-        <div className="mt-2 flex items-center gap-2">
+        <div className="mt-2 flex items-start justify-between gap-3">
+          <h1 className="text-xl font-semibold leading-tight" data-testid="text-spot-name">{spot.name}</h1>
+          <FavoriteButton spotId={spot.id} name={spot.name} />
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
           <Stars value={spot.avgRating ?? 0} size={16} />
           <span className="text-sm text-muted-foreground tabular" data-testid="text-rating">
             {spot.reviewCount ? `${spot.avgRating?.toFixed(1)} from ${spot.reviewCount} crew` : "No ratings yet"}
           </span>
+          {spot.goArounds > 0 && <GoAroundBadge count={spot.goArounds} />}
         </div>
+        {mine && (
+          <Link href={`/spot/${spot.id}/edit`} className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-border px-3 h-8 text-xs font-medium hover-elevate" data-testid="link-edit-spot">
+            <Pencil className="h-3.5 w-3.5" /> Edit your listing
+          </Link>
+        )}
       </header>
 
       <ReviewForm spotId={spot.id} category={spot.category} />
@@ -93,16 +106,17 @@ export default function SpotPage() {
             <p className="font-code text-2xl font-bold tabular mt-1">{spot.avgRating ? spot.avgRating.toFixed(1) : "–"}<span className="text-sm text-muted-foreground font-normal"> / 5</span></p>
           </div>
           <div className="w-40 space-y-1">
-            {[5, 4, 3, 2, 1].map((n) => (
+            {[5, 4, 3, 2, 1, 0].map((n) => (
               <div key={n} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <span className="w-2 tabular">{n}</span>
-                <div className="h-1.5 flex-1 rounded-full bg-muted overflow-hidden"><div className="h-full bg-primary" style={{ width: `${reviews.length ? (dist[n] / reviews.length) * 100 : 0}%` }} /></div>
+                <span className="w-3 tabular" title={n === 0 ? "Go around" : undefined}>{n === 0 ? <GoAroundIcon className="h-3 w-3 text-orange-600 dark:text-orange-400" /> : n}</span>
+                <div className="h-1.5 flex-1 rounded-full bg-muted overflow-hidden"><div className={cn("h-full", n === 0 ? "bg-orange-500" : "bg-primary")} style={{ width: `${reviews.length ? (dist[n] / reviews.length) * 100 : 0}%` }} /></div>
               </div>
             ))}
           </div>
         </div>
         {reviews.length === 0 && <p className="text-sm text-muted-foreground">No reviews yet. Be the first: tap the stars at the top of the page.</p>}
         {[...reviews].sort((a, b) => (b.up - b.down) - (a.up - a.down) || b.createdAt - a.createdAt).map((r) => (
+          editing === r.id ? <ReviewForm key={r.id} spotId={spot.id} category={spot.category} edit={r} onDone={() => setEditing(null)} /> :
           <article key={r.id} className="rounded-2xl border border-card-border bg-card p-4" data-testid={`review-${r.id}`}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm">
@@ -112,12 +126,13 @@ export default function SpotPage() {
               </div>
               <span className="flex items-center gap-2">
                 {r.costLevel != null && hasCost(spot.category) && <span className="font-code text-xs font-bold text-primary" title="Price this crew member paid">{COST_LABELS[r.costLevel]}</span>}
-                <Stars value={r.rating} size={12} />
+                {r.rating === 0 ? <GoAroundBadge /> : <Stars value={r.rating} size={12} />}
               </span>
             </div>
             {r.comment && <p className="mt-2 text-sm leading-relaxed">{r.comment}</p>}
             <div className="mt-2.5 flex items-center justify-between gap-2">
-              <p className="text-[11px] text-muted-foreground">{new Date(r.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</p>
+              <p className="text-[11px] text-muted-foreground flex items-center gap-2">{new Date(r.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                {me && r.userId === me.id && <button type="button" onClick={() => setEditing(r.id)} className="inline-flex items-center gap-1 text-primary font-medium" data-testid={`button-edit-review-${r.id}`}><Pencil className="h-3 w-3" />Edit</button>}</p>
               <ReviewVote review={r} spotId={spot.id} />
             </div>
           </article>
@@ -136,42 +151,53 @@ function Fact({ label, value, mono, testId }: { label: string; value: string; mo
   );
 }
 
-function ReviewForm({ spotId, category }: { spotId: number; category: string }) {
+/** New rating, or (with `edit`) the author's fix to their own rating. rating 0 = Go around. */
+function ReviewForm({ spotId, category, edit, onDone }: { spotId: number; category: string; edit?: ReviewWithVotes; onDone?: () => void }) {
   const { toast } = useToast();
-  const [open, setOpen] = useState(false);
-  const [rating, setRating] = useState(0);
-  const [comment, setComment] = useState("");
-  const [paid, setPaid] = useState<number | null>(null);
+  const [open, setOpen] = useState(!!edit);
+  const [rating, setRating] = useState<number | null>(edit ? edit.rating : null);
+  const [comment, setComment] = useState(edit?.comment || "");
+  const [paid, setPaid] = useState<number | null>(edit?.costLevel ?? null);
   const { me, requireAuth } = useAuth();
+  const goAround = rating === 0;
   const m = useMutation({
-    mutationFn: async () => (await apiRequest("POST", `/api/spots/${spotId}/reviews`, { rating, comment, costLevel: paid })).json(),
+    mutationFn: async () => (edit
+      ? await apiRequest("PATCH", `/api/reviews/${edit.id}`, { rating, comment, costLevel: paid })
+      : await apiRequest("POST", `/api/spots/${spotId}/reviews`, { rating, comment, costLevel: paid })).json(),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/spots", String(spotId)] });
-      queryClient.invalidateQueries({ queryKey: ["/api/search"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/me"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/crew"] });
-      setOpen(false); setRating(0); setComment(""); setPaid(null);
+      for (const k of [["/api/spots", String(spotId)], ["/api/search"], ["/api/me"], ["/api/crew"], ["/api/leaderboard"], ["/api/highlights"], ["/api/me/favorites"]]) queryClient.invalidateQueries({ queryKey: k });
+      if (edit) { toast({ title: "Rating updated" }); onDone?.(); return; }
+      setOpen(false); setRating(null); setComment(""); setPaid(null);
     },
-    onError: (e: Error) => toast({ title: "Couldn't post review", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => toast({ title: edit ? "Couldn't update rating" : "Couldn't post review", description: e.message.replace(/^\d+: /, "").replace(/^\{"message":"|"\}$/g, ""), variant: "destructive" }),
   });
 
-  const LABELS = ["", "Skip it", "Meh", "Decent", "Good", "Great"];
+  const LABELS = ["Go around: crews should avoid this place", "Skip it", "Meh", "Decent", "Good", "Great"];
   const pick = (n: number) => requireAuth(() => { setRating(n); setOpen(true); }, `Sign in to rate this spot and earn ${POINTS.review}+ points.`);
-  const cancel = () => { setOpen(false); setRating(0); setComment(""); setPaid(null); };
+  const cancel = () => { if (edit) return onDone?.(); setOpen(false); setRating(null); setComment(""); setPaid(null); };
+  const needWhy = goAround && comment.trim().length < 10;
 
   return (
     <form
-      id="rate"
-      onSubmit={(e) => { e.preventDefault(); if (rating) m.mutate(); }}
-      className={cn("rounded-2xl border bg-card p-4", open ? "border-primary/60" : "border-card-border")}
-      data-testid="form-review"
+      id={edit ? undefined : "rate"}
+      onSubmit={(e) => { e.preventDefault(); if (rating != null && !needWhy) m.mutate(); }}
+      className={cn("rounded-2xl border bg-card p-4", open ? (goAround ? "border-orange-500/60" : "border-primary/60") : "border-card-border")}
+      data-testid={edit ? `form-edit-review-${edit.id}` : "form-review"}
     >
       <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold">{open ? "Your rating" : "Been here? Rate it"}</p>
-          <p className="text-xs text-muted-foreground" data-testid="text-rating-label">{rating ? LABELS[rating] : `Tap a star · +${POINTS.review} pts`}</p>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold">{edit ? "Edit your rating" : open ? "Your rating" : "Been here? Rate it"}</p>
+          <p className={cn("text-xs", goAround ? "text-orange-700 dark:text-orange-300 font-medium" : "text-muted-foreground")} data-testid="text-rating-label">{rating != null ? LABELS[rating] : `Tap a star · +${POINTS.review} pts`}</p>
         </div>
-        <Stars value={rating} size={30} onChange={pick} />
+        <Stars value={rating ?? 0} size={30} onChange={pick} />
+      </div>
+      <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-border/60 pt-2.5">
+        <p className="text-[11px] text-muted-foreground">Somewhere crews should avoid?</p>
+        <button type="button" onClick={() => pick(0)} aria-pressed={goAround} data-testid="button-go-around"
+          className={cn("inline-flex items-center gap-1.5 rounded-full border px-3 h-8 text-xs font-semibold hover-elevate",
+            goAround ? "border-orange-500 bg-orange-500 text-white" : "border-orange-500/50 text-orange-700 dark:text-orange-300")}>
+          <GoAroundIcon className="h-4 w-4" /> Go around
+        </button>
       </div>
       {open && (
         <div className="mt-3 space-y-3">
@@ -188,16 +214,17 @@ function ReviewForm({ spotId, category }: { spotId: number; category: string }) 
           <textarea
             value={comment}
             onChange={(e) => setComment(e.target.value)}
-            placeholder="Add a comment (optional): wait times, crew discounts, anything the next crew should know"
+            placeholder={goAround ? "Why should crews go around? (required) Service, safety, hygiene, closed, not crew-friendly…" : "Add a comment (optional): wait times, crew discounts, anything the next crew should know"}
             rows={3}
             autoFocus
             data-testid="input-review-comment"
             className="w-full rounded-xl border border-input bg-background p-3 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           />
+          {goAround && <p className="text-[11px] text-muted-foreground">A go-around counts as 0 stars in the average and keeps this place out of suggested trip briefings when most crews say go around.</p>}
           <p className="text-xs text-muted-foreground">Posting as <b className="text-foreground" data-testid="text-posting-as">{me ? publicName(me) : ""}</b> (<Link href="/me" className="underline">change</Link>) · +{POINTS.reviewDetail} more pts for a comment of 40+ characters</p>
           <div className="flex gap-2">
-            <button type="submit" disabled={!rating || m.isPending} data-testid="button-submit-review" className="flex-1 h-10 rounded-full taxi-sign text-sm font-semibold disabled:opacity-50 hover-elevate">
-              {m.isPending ? "Posting…" : comment.trim() ? "Post rating & comment" : "Post rating"}
+            <button type="submit" disabled={rating == null || needWhy || m.isPending} data-testid="button-submit-review" className="flex-1 h-10 rounded-full taxi-sign text-sm font-semibold disabled:opacity-50 hover-elevate">
+              {m.isPending ? (edit ? "Saving…" : "Posting…") : edit ? "Save changes" : needWhy ? "Add a reason to go around" : goAround ? "Post go-around" : comment.trim() ? "Post rating & comment" : "Post rating"}
             </button>
             <button type="button" onClick={cancel} data-testid="button-cancel-review" className="h-10 px-4 rounded-full border border-border text-sm hover-elevate">Cancel</button>
           </div>

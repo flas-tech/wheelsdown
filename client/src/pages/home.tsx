@@ -5,7 +5,8 @@ import { ArrowRight, MapPin, Clock, Search, Plus, X, ChevronRight, Lightbulb, Sh
 import type { Highlights } from "@shared/highlights";
 import { TIME_BUCKETS, type Category, type SpotWithStats, type Airport } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
-import { CAT_META, fmtMinutes, totalMinutes, parseTags, Stars, AdBanner, Chip, VetBadge } from "@/lib/ui";
+import { CAT_META, fmtMinutes, totalMinutes, parseTags, Stars, AdBanner, Chip, VetBadge, GoAroundBadge } from "@/lib/ui";
+import { FavoriteButton } from "@/lib/favorites";
 import { COST_LABELS, PACES, costOptions, costText, paceLabel, paceOf, type PaceId } from "@shared/cost";
 import { getPosition, type NearAirport } from "@/lib/geo";
 import { useToast } from "@/hooks/use-toast";
@@ -468,15 +469,18 @@ export function SpotCard({ spot }: { spot: SpotWithStats }) {
           </div>
           <h3 className="mt-1 text-base font-semibold leading-snug">{spot.name}</h3>
         </div>
-        {spot.category !== "fbo" && (
-          <span className="shrink-0 text-right" data-testid={`text-cost-${spot.id}`}>
-            <span className={cn("font-code text-sm font-bold", spot.cost == null ? "text-muted-foreground" : "text-primary")}>{costText(spot)}</span>
-            {spot.costVotes > 1 && <span className="block text-[10px] text-muted-foreground leading-tight">{spot.costVotes} crew</span>}
-          </span>
-        )}
+        <div className="shrink-0 flex items-start gap-2">
+          {spot.category !== "fbo" && (
+            <span className="text-right pt-1" data-testid={`text-cost-${spot.id}`}>
+              <span className={cn("font-code text-sm font-bold", spot.cost == null ? "text-muted-foreground" : "text-primary")}>{costText(spot)}</span>
+              {spot.costVotes > 1 && <span className="block text-[10px] text-muted-foreground leading-tight">{spot.costVotes} crew</span>}
+            </span>
+          )}
+          <FavoriteButton spotId={spot.id} name={spot.name} size="sm" />
+        </div>
       </div>
       <p className="mt-1.5 text-sm text-muted-foreground line-clamp-2">{spot.description}</p>
-      <div className="mt-2.5"><VetBadge vet={spot.vet} /></div>
+      <div className="mt-2.5 flex flex-wrap items-center gap-2"><VetBadge vet={spot.vet} />{spot.goArounds > 0 && <GoAroundBadge count={spot.goArounds} />}</div>
       <div className="mt-2.5 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           {spot.reviewCount > 0 ? (

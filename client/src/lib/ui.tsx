@@ -71,6 +71,22 @@ export function Stars({ value, size = 14, onChange }: { value: number; size?: nu
   );
 }
 
+/** "Go around" = a 0 rating: the crew member says avoid this place. Drawn as a climb-out arrow. */
+export function GoAroundIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+      <path d="M3 19h9" /><path d="M5 15c3-1 6-4 8-9" /><path d="M9 6h4v4" />
+    </svg>
+  );
+}
+export function GoAroundBadge({ count, className }: { count?: number; className?: string }) {
+  return (
+    <span className={cn("inline-flex items-center gap-1 rounded-full bg-orange-500/15 px-2 py-0.5 text-[11px] font-semibold text-orange-700 dark:text-orange-300", className)} data-testid="badge-go-around">
+      <GoAroundIcon className="h-3.5 w-3.5" />{count && count > 1 ? `${count} go-arounds` : count === 1 ? "1 go-around" : "Go around"}
+    </span>
+  );
+}
+
 // ---------- Theme ----------
 const ThemeCtx = createContext<{ dark: boolean; toggle: () => void }>({ dark: true, toggle: () => {} });
 export function ThemeProvider({ children }: { children: React.ReactNode }) {

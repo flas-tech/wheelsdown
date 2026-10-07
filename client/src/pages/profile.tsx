@@ -145,7 +145,7 @@ export default function ProfilePage() {
           <h2 className="text-sm font-semibold">Your reviews</h2>
           {contrib.reviews.map((r) => (
             <Link key={r.id} href={`/spot/${r.spotId}`} className="block rounded-xl border border-card-border bg-card px-3 py-2.5 hover-elevate">
-              <p className="text-sm font-medium">{r.spotName} <span className="text-primary">{"★".repeat(r.rating)}</span></p>
+              <p className="text-sm font-medium">{r.spotName} {r.rating === 0 ? <span className="text-orange-600 dark:text-orange-400 text-xs font-semibold">Go around</span> : <span className="text-primary">{"★".repeat(r.rating)}</span>}</p>
               {r.comment && <p className="text-xs text-muted-foreground line-clamp-1">{r.comment}</p>}
             </Link>
           ))}

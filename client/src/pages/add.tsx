@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLocation, useRoute } from "wouter";
-import { Check, ChevronDown, LocateFixed, Loader2, MapPin, Search } from "lucide-react";
-import { TIME_BUCKETS, type Airport, type Category } from "@shared/schema";
-import { COST_LABELS, PACES, costOptions, type PaceId } from "@shared/cost";
+import { ArrowLeft, Check, ChevronDown, LocateFixed, Loader2, MapPin, Search, AlertTriangle, PlaneLanding } from "lucide-react";
+import { Link } from "wouter";
+import { TIME_BUCKETS, type Airport, type Category, type SpotWithStats, type ReviewWithVotes } from "@shared/schema";
+import { COST_LABELS, PACES, costOptions, paceOf, type PaceId } from "@shared/cost";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { CAT_META, Chip } from "@/lib/ui";
 import { useToast } from "@/hooks/use-toast";
@@ -14,6 +15,8 @@ import { POINTS } from "@shared/tiers";
 import { getPosition, milesBetween, type LatLng, type NearAirport, type PlaceHit } from "@/lib/geo";
 
 const TIME_PRESETS: Record<string, number> = { quick: 30, short: 120, half: 300, day: 600, multi: 1440 };
+const bucketFor = (min: number) => TIME_BUCKETS.find((b) => min <= b.max)?.id || "multi";
+const FAR_MILES = 30; // a pick this far from the field probably belongs to another airport
 const inputCls = "w-full h-11 rounded-xl border border-input bg-card px-3 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-ring";
 export const errText = (e: unknown) => String((e as Error)?.message || e).replace(/^\d+: /, "").replace(/^\{"message":"|"\}$/g, "");
 
@@ -26,7 +29,11 @@ export default function AddPage() {
   const [, navigate] = useLocation();
   const [search] = useSearch();
   const [, params] = useRoute("/add/:icao");
+  const [isEdit, editParams] = useRoute("/spot/:id/edit");
+  const editId = isEdit ? editParams!.id : undefined;
   const initialIcao = (params?.icao || "").toUpperCase();
+  const { data: editData } = useQuery<{ spot: SpotWithStats; reviews: ReviewWithVotes[] }>({ queryKey: ["/api/spots", editId], enabled: !!editId });
+  const [loaded, setLoaded] = useState(false);
 
   const [category, setCategory] = useState<Category>(search.category || "eat");
   const [code, setCode] = useState(initialIcao);
@@ -48,6 +55,21 @@ export default function AddPage() {
   const [nearMsg, setNearMsg] = useState("");
   const { me, requireAuth } = useAuth();
 
+  // edit mode: load the listing once
+  useEffect(() => {
+    const s = editData?.spot;
+    if (!s || loaded) return;
+    setCategory(s.category as Category); setCode(s.icao); setName(s.name); setDescription(s.description || "");
+    setCost(s.category === "fbo" ? null : s.costLevel); setPace((s.pace as PaceId) || (s.category === "eat" ? paceOf(s) : null));
+    setTime(s.category === "do" ? bucketFor(s.minutesNeeded) : null); setMiles(s.milesFromField ? String(s.milesFromField) : "");
+    setCrewTip(s.crewTip || ""); setAddress(s.address || ""); setWebsite(s.website || "");
+    try { setTags((JSON.parse(s.tags || "[]") as string[]).join(", ")); } catch { /* ignore */ }
+    if (s.lat != null && s.lng != null) setPlace({ ref: s.placeRef || `saved:${s.id}`, name: s.name, address: s.address || "", lat: s.lat, lng: s.lng, kind: "", city: "" } as PlaceHit);
+    if (s.address || s.website || s.tags !== "[]") setMore(true);
+    setLoaded(true);
+  }, [editData, loaded]);
+  const notOwner = !!editData && !!me && editData.spot.userId !== me.id;
+
   // reset price when switching to a category where it isn't valid (e.g. Free for restaurants)
   useEffect(() => { if (costLevel != null && !costOptions(category).includes(costLevel)) setCost(null); }, [category]); // eslint-disable-line
 
@@ -59,14 +81,15 @@ export default function AddPage() {
   });
   const resolved = c.length >= 3 && airport && !apUnknown ? airport : undefined;
   const unknown = c.length >= 3 && !apLoading && apUnknown;
-  const anchor = useMemo(() => here ?? (resolved?.lat != null && resolved?.lon != null ? { lat: resolved.lat, lng: resolved.lon } : null), [here, resolved]);
+  // Suggestions are centered on the selected airport (not on the poster), so a spot added after leaving town still lands in the right place.
+  const field = useMemo(() => (resolved?.lat != null && resolved?.lon != null ? { lat: resolved.lat, lng: resolved.lon } : null), [resolved?.lat, resolved?.lon]);
+  const anchor = field ?? here;
+  const hereNearField = !!here && !!field && milesBetween({ lat: here.lat, lon: here.lng }, { lat: field.lat, lon: field.lng }) <= FAR_MILES;
 
-  // miles from field auto-filled from the chosen place
-  useEffect(() => {
-    if (place && resolved?.lat != null && resolved?.lon != null) {
-      setMiles(String(Math.round(milesBetween({ lat: resolved.lat, lon: resolved.lon }, { lat: place.lat, lon: place.lng }) * 10) / 10));
-    }
-  }, [place, resolved?.lat, resolved?.lon]);
+  // miles from field: always measured from the selected airport
+  const placeMiles = place && field ? Math.round(milesBetween({ lat: field.lat, lon: field.lng }, { lat: place.lat, lon: place.lng }) * 10) / 10 : null;
+  useEffect(() => { if (placeMiles != null) setMiles(String(placeMiles)); }, [placeMiles]);
+  const tooFar = placeMiles != null && placeMiles > FAR_MILES;
 
   async function useMyLocation() {
     setLocating(true); setNearMsg("");
@@ -93,7 +116,7 @@ export default function AddPage() {
   const m = useMutation({
     mutationFn: async () =>
       (
-        await apiRequest("POST", "/api/spots", {
+        await apiRequest(editId ? "PATCH" : "POST", editId ? `/api/spots/${editId}` : "/api/spots", {
           icao: c,
           airportCity: unknown ? city : undefined,
           category,
@@ -108,11 +131,12 @@ export default function AddPage() {
         })
       ).json(),
     onSuccess: (spot: { id: number; status: string }) => {
-      for (const k of ["/api/search", "/api/airports", "/api/me", "/api/crew", "/api/highlights"]) queryClient.invalidateQueries({ queryKey: [k] });
+      for (const k of ["/api/search", "/api/airports", "/api/me", "/api/crew", "/api/highlights", "/api/spots", "/api/me/favorites", "/api/briefings"]) queryClient.invalidateQueries({ queryKey: [k] });
+      if (editId) { toast({ title: "Listing updated" }); navigate(`/spot/${spot.id}`); return; }
       toast({ title: spot.status === "pending" ? "Submitted for review" : "Spot added — thanks for helping the next crew" });
       navigate(spot.status === "pending" ? "/" : `/spot/${spot.id}`);
     },
-    onError: (e: Error) => toast({ title: "Couldn't add spot", description: errText(e), variant: "destructive" }),
+    onError: (e: Error) => toast({ title: editId ? "Couldn't save changes" : "Couldn't add spot", description: errText(e), variant: "destructive" }),
   });
 
   const needsCost = category !== "fbo";
@@ -124,16 +148,21 @@ export default function AddPage() {
     category === "eat" && !pace && "Grab & go or Sit-down",
     category === "do" && !time && "time needed",
   ].filter(Boolean) as string[];
-  const canSubmit = missing.length === 0;
+  const canSubmit = missing.length === 0 && !notOwner && (!editId || loaded);
+
+  if (editId && notOwner) return <p className="text-sm text-muted-foreground">Only the crew member who posted this listing can edit it. <Link href={`/spot/${editId}`} className="text-primary underline">Back to the listing</Link></p>;
 
   return (
-    <form onSubmit={(e) => { e.preventDefault(); if (canSubmit) requireAuth(() => m.mutate(), `Sign in to add this spot and earn ${POINTS.listing} points.`); }} className="space-y-6" data-testid="form-add">
+    <form onSubmit={(e) => { e.preventDefault(); if (canSubmit) requireAuth(() => m.mutate(), editId ? "Sign in to edit your listing." : `Sign in to add this spot and earn ${POINTS.listing} points.`); }} className="space-y-6" data-testid="form-add">
       <header>
-        <h1 className="text-xl font-semibold">Add a spot</h1>
-        <p className="text-sm text-muted-foreground mt-1">Start typing the name and pick it from the list — we fill in the address and distance.</p>
-        <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium" data-testid="text-add-points">
-          +{POINTS.listing} pts · +{POINTS.listingVetted} more when crews vet it{me ? "" : " · sign-in required"}
-        </p>
+        {editId && <Link href={`/spot/${editId}`} className="mb-3 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground" data-testid="link-back-spot"><ArrowLeft className="h-4 w-4" /> Listing</Link>}
+        <h1 className="text-xl font-semibold">{editId ? "Edit your listing" : "Add a spot"}</h1>
+        <p className="text-sm text-muted-foreground mt-1">{editId ? "Fix anything that's wrong. Ratings, votes and points stay as they are." : "Start typing the name and pick it from the list — we fill in the address and distance."}</p>
+        {!editId && (
+          <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium" data-testid="text-add-points">
+            +{POINTS.listing} pts · +{POINTS.listingVetted} more when crews vet it{me ? "" : " · sign-in required"}
+          </p>
+        )}
       </header>
 
       <Field n={1} label="What kind of spot?">
@@ -152,7 +181,7 @@ export default function AddPage() {
         {category === "fbo" && <p className="mt-2 text-xs text-muted-foreground">FBO is for the FBO itself. A restaurant on the field goes under Eat.</p>}
       </Field>
 
-      <Field n={2} label="Airport" hint="IATA or ICAO — MIA or KMIA">
+      <Field n={2} label="Airport" hint="MIA, KMIA, X51 or 06FA">
         <div className="flex gap-2">
           <div className="relative flex-1 min-w-0">
             <input value={code} onChange={(e) => { setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4)); setNearMsg(""); }} placeholder="KOPF" autoCapitalize="characters" autoCorrect="off" data-testid="input-add-icao"
@@ -166,6 +195,8 @@ export default function AddPage() {
           </button>
         </div>
         {nearMsg && <p className="mt-1.5 text-xs text-muted-foreground" data-testid="text-add-near">{nearMsg}</p>}
+        {resolved && !nearMsg && <p className="mt-1.5 text-xs text-muted-foreground" data-testid="text-add-airport">{resolved.name}{resolved.city ? ` · ${resolved.city}` : ""}</p>}
+        <p className="mt-1 text-[11px] text-muted-foreground">Posting after you've left? Enter the airport you were at. Distances are measured from that field, not from where you are now.</p>
         {unknown && (
           <div className="mt-2">
             <p className="text-xs text-muted-foreground mb-1">We couldn't find {c}. What city is it in?</p>
@@ -176,12 +207,18 @@ export default function AddPage() {
 
       <Field n={3} label="Name">
         <PlaceAutocomplete value={name} onChange={(v) => { setName(v); if (place && v !== place.name) setPlace(null); }} onPick={choosePlace}
-          anchor={anchor} category={category} here={here}
+          anchor={anchor} category={category} here={hereNearField ? here : null} field={field} code={resolved?.icao || c}
           placeholder={category === "fbo" ? "e.g. Signature Aviation OPF" : category === "stay" ? "e.g. Hampton Inn Miami Lakes" : "e.g. Versailles Restaurant"} />
         {place && (
           <p className="mt-1.5 text-xs text-muted-foreground inline-flex items-start gap-1" data-testid="text-add-place">
             <MapPin className="h-3.5 w-3.5 mt-0.5 shrink-0 text-primary" />
-            <span>{place.address || "Location set"}{miles ? ` · ${miles} mi from ${c}` : ""}</span>
+            <span>{place.address || "Location set"}{placeMiles != null ? ` · ${placeMiles} mi from ${resolved?.icao || c}` : ""}</span>
+          </p>
+        )}
+        {tooFar && (
+          <p className="mt-1.5 flex items-start gap-1.5 rounded-lg bg-orange-500/10 p-2 text-xs" data-testid="text-add-far">
+            <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-orange-600 dark:text-orange-400" />
+            <span>That's {placeMiles} mi from {resolved?.icao || c}. If it's near a different airport, change the airport above.</span>
           </p>
         )}
       </Field>
@@ -214,8 +251,8 @@ export default function AddPage() {
           placeholder={category === "fbo" ? "Lounge, snooze rooms, crew car, fees, service — the real story." : "Why it's worth it, what to order, what to skip."}
           className="w-full rounded-xl border border-input bg-background p-3 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
         <div>
-          <p className="text-xs font-medium text-muted-foreground mb-1.5">Miles from field {place ? "(from the map)" : ""}</p>
-          <input inputMode="decimal" value={miles} onChange={(e) => setMiles(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="0 = on field" data-testid="input-add-miles" className={inputCls} />
+          <p className="text-xs font-medium text-muted-foreground mb-1.5">Miles from {resolved?.icao || "the field"} {placeMiles != null ? "(measured from the airport)" : ""}</p>
+          <input inputMode="decimal" value={miles} readOnly={placeMiles != null} onChange={(e) => setMiles(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="0 = on field" data-testid="input-add-miles" className={cn(inputCls, placeMiles != null && "bg-muted/50 text-muted-foreground")} />
         </div>
         <div>
           <p className="text-xs font-medium text-muted-foreground mb-1.5">Crew tip</p>
@@ -238,7 +275,7 @@ export default function AddPage() {
         {!canSubmit && (name || code) && <p className="mb-2 text-center text-xs text-muted-foreground" data-testid="text-add-missing">Still needed: {missing.join(", ")}</p>}
         <button type="submit" disabled={!canSubmit || m.isPending} data-testid="button-submit-spot"
           className="w-full h-12 rounded-full taxi-sign text-base font-semibold shadow-lg disabled:opacity-50 hover-elevate">
-          {m.isPending ? "Adding…" : me ? `Add spot · +${POINTS.listing} pts` : "Sign in & add spot"}
+          {m.isPending ? (editId ? "Saving…" : "Adding…") : editId ? "Save changes" : me ? `Add spot · +${POINTS.listing} pts` : "Sign in & add spot"}
         </button>
       </div>
     </form>
@@ -246,9 +283,11 @@ export default function AddPage() {
 }
 
 /** Name field with OpenStreetMap suggestions near the airport (or the user's location). */
-function PlaceAutocomplete({ value, onChange, onPick, anchor, category, here, placeholder }: {
-  value: string; onChange: (v: string) => void; onPick: (p: PlaceHit) => void; anchor: LatLng | null; category: Category; here: LatLng | null; placeholder: string;
+function PlaceAutocomplete({ value, onChange, onPick, anchor, category, here, field, code, placeholder }: {
+  value: string; onChange: (v: string) => void; onPick: (p: PlaceHit) => void; anchor: LatLng | null; category: Category;
+  here: LatLng | null; field: LatLng | null; code: string; placeholder: string;
 }) {
+  const [nearLabel, setNearLabel] = useState("");
   const [open, setOpen] = useState(false);
   const [hits, setHits] = useState<PlaceHit[]>([]);
   const [busy, setBusy] = useState(false);
@@ -280,13 +319,12 @@ function PlaceAutocomplete({ value, onChange, onPick, anchor, category, here, pl
     return () => clearTimeout(t);
   }, [value, anchor?.lat, anchor?.lng, category, mode]); // eslint-disable-line
 
-  async function showNearby() {
-    if (!here) return;
-    setMode("nearby"); setOpen(true); setBusy(true); setNote("");
+  async function showNearby(at: LatLng, label: string) {
+    setMode("nearby"); setOpen(true); setBusy(true); setNote(""); setNearLabel(label);
     const my = ++seq.current;
     try {
-      const r = await getJson<PlaceHit[]>(`/api/places/nearby?lat=${here.lat}&lng=${here.lng}&cat=${category}`);
-      if (my === seq.current) { setHits(r); if (!r.length) setNote("Nothing mapped right around you. Type the name instead."); }
+      const r = await getJson<PlaceHit[]>(`/api/places/nearby?lat=${at.lat}&lng=${at.lng}&cat=${category}`);
+      if (my === seq.current) { setHits(r); if (!r.length) setNote("Nothing mapped right there. Type the name instead."); }
     } catch (e) { if (my === seq.current) { setHits([]); setNote(errText(e)); } }
     finally { if (my === seq.current) setBusy(false); }
   }
@@ -299,15 +337,24 @@ function PlaceAutocomplete({ value, onChange, onPick, anchor, category, here, pl
           placeholder={placeholder} autoComplete="off" data-testid="input-add-name" className={cn(inputCls, "pl-9 pr-9")} />
         {busy && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />}
       </div>
-      {here && (
-        <button type="button" onClick={showNearby} data-testid="button-add-nearby" className="mt-1.5 text-xs font-medium text-primary inline-flex items-center gap-1">
-          <LocateFixed className="h-3.5 w-3.5" /> Show {category === "stay" ? "hotels" : category === "eat" ? "food" : category === "fbo" ? "places" : "things"} near me
-        </button>
+      {(field || here) && (
+        <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1">
+          {field && (
+            <button type="button" onClick={() => showNearby(field, `Near ${code}`)} data-testid="button-add-near-field" className="text-xs font-medium text-primary inline-flex items-center gap-1">
+              <PlaneLanding className="h-3.5 w-3.5" /> {category === "stay" ? "Hotels" : category === "eat" ? "Food" : category === "fbo" ? "Places" : "Things to do"} near {code}
+            </button>
+          )}
+          {here && (
+            <button type="button" onClick={() => showNearby(here, "Closest to you")} data-testid="button-add-nearby" className="text-xs font-medium text-primary inline-flex items-center gap-1">
+              <LocateFixed className="h-3.5 w-3.5" /> Near me
+            </button>
+          )}
+        </div>
       )}
       {!anchor && <p className="mt-1.5 text-[11px] text-muted-foreground">Enter the airport (or use your location) to get name suggestions.</p>}
       {open && (hits.length > 0 || note) && (
         <div className="absolute z-30 mt-1 w-full rounded-xl border border-border bg-popover shadow-xl overflow-hidden" data-testid="list-place-hits">
-          {mode === "nearby" && <p className="px-3 pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Closest to you</p>}
+          {mode === "nearby" && <p className="px-3 pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{nearLabel}</p>}
           {hits.map((h) => (
             <button type="button" key={h.ref} onClick={() => { onPick(h); setOpen(false); }} data-testid={`button-place-${h.ref}`}
               className="w-full text-left px-3 py-2.5 hover-elevate border-b border-border/60 last:border-0">

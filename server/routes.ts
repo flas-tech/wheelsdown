@@ -12,7 +12,7 @@ import { buildHighlights } from "@shared/highlights";
 import { briefingSchema, type BriefingStop, type Briefing, type SpotWithStats } from "@shared/schema";
 import { isValidCost, costOptions, milesBetween } from "@shared/cost";
 import { suggestPicks } from "@shared/briefing";
-import { refAirport, nearestAirports } from "./airportsData";
+import { refAirport, nearestAirports, isCode } from "./airportsData";
 import { searchPlaces, nearbyPlaces } from "./places";
 import { z } from "zod";
 
@@ -83,8 +83,9 @@ function parseCsv(text: string): string[][] {
 async function ensureAirport(code: string, city?: string, name?: string) {
   const found = await storage.resolveOrCreate(code);
   if (found) return found.icao;
-  const icao = code.length === 3 ? "K" + code : code;
-  await storage.upsertAirport({ icao, iata: code.length === 3 ? code : null, name: name || icao, city: city || "Unknown", region: "", country: "" });
+  // Not in the published list: keep the code as typed (K prefix only for 3-letter US-style codes)
+  const icao = /^[A-Z]{3}$/.test(code) ? "K" + code : code;
+  await storage.upsertAirport({ icao, iata: /^[A-Z]{3}$/.test(code) ? code : null, name: name || icao, city: city || "Unknown", region: "", country: "" });
   return icao;
 }
 
@@ -156,6 +157,24 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
   app.get("/api/me/contributions", requireUser, async (req, res) => res.json(await storage.userContributions((req as any).user.id)));
   app.get("/api/crew", async (_req, res) => res.json(await storage.publicUsers()));
+  /** Full leaderboard: ?q= name or handle, ?base= home airport (any form), paged with offset/limit. */
+  app.get("/api/leaderboard", async (req, res) => res.json(await storage.leaderboard({
+    q: String(req.query.q || "").slice(0, 60), base: String(req.query.base || "").slice(0, 4),
+    offset: Number(req.query.offset) || 0, limit: Number(req.query.limit) || 50,
+  })));
+  app.get("/api/leaderboard/bases", async (_req, res) => res.json(await storage.homeBases()));
+
+  // ---------- favorites (private, no points) ----------
+  app.get("/api/me/favorites", requireUser, async (req, res) => res.json(await storage.favoriteSpots((req as any).user.id)));
+  app.get("/api/me/favorites/ids", requireUser, async (req, res) => res.json(await storage.favoriteIds((req as any).user.id)));
+  app.put("/api/spots/:id/favorite", requireUser, writeLimit, async (req, res) => {
+    const s = await storage.getSpot(id(req));
+    if (!s || s.status === "hidden") return res.status(404).json({ message: "Not found" });
+    const on = req.body?.on !== false;
+    if (on && (await storage.favoriteIds((req as any).user.id)).length >= 500) return res.status(400).json({ message: "You have 500 favorites. Remove a few first." });
+    await storage.setFavorite((req as any).user.id, s.id, on);
+    res.json({ ok: true, on });
+  });
 
   // ---------- public ----------
   app.get("/api/airports", async (_req, res) => res.json(await storage.listAirports()));
@@ -203,6 +222,28 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     tags: z.union([z.string(), z.array(z.string())]).optional(),
     website: z.union([z.literal(""), z.string().url("Website should start with https://")]).optional(),
   });
+  /** Category rules shared by new listings and edits. Returns an error message, or null. */
+  function applyCategoryRules(rest: { category: string; costLevel?: number | null; pace?: string | null; minutesNeeded?: number }) {
+    if (rest.category === "fbo") rest.costLevel = 0;
+    else if (!isValidCost(rest.category as any, rest.costLevel)) return rest.category === "do" ? "Pick a price" : "Pick a price from $ to $$$$";
+    if (rest.category === "eat") {
+      if (rest.pace !== "grab" && rest.pace !== "sit") return "Pick Grab & go or Sit-down";
+      rest.minutesNeeded = rest.pace === "grab" ? 30 : 90;
+    } else rest.pace = null;
+    if (rest.category === "stay") rest.minutesNeeded = 720;
+    if (rest.category === "fbo") rest.minutesNeeded = 30;
+    return null;
+  }
+  /** Distance is always measured from the listing's airport, never from where the poster is standing. */
+  function milesFromAirport(ap: { lat: number | null; lon: number | null } | undefined, lat?: number | null, lng?: number | null) {
+    if (lat == null || lng == null || ap?.lat == null || ap?.lon == null) return undefined;
+    return Math.round(milesBetween({ lat: ap.lat, lon: ap.lon }, { lat, lon: lng }) * 10) / 10;
+  }
+  const tagJson = (tags: unknown) => {
+    const arr = Array.isArray(tags) ? tags.map(String) : String(tags || "").split(",").map((t) => t.trim()).filter(Boolean);
+    return JSON.stringify(arr.slice(0, 8).map((t) => t.slice(0, 30)));
+  };
+
   app.post("/api/spots", requireUser, writeLimit, async (req, res) => {
     const user = (req as any).user as User;
     const p = submitSchema.safeParse(req.body);
@@ -210,24 +251,39 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const { airportCity, tags, ...rest } = p.data;
     const code = rest.icao.toUpperCase();
     if (!(await storage.resolveCode(code)) && !refAirport(code) && !airportCity) return res.status(400).json({ message: `We don't know ${code} yet — add the city so we can create it.` });
-    // price, pace and time rules per category
-    if (rest.category === "fbo") rest.costLevel = 0;
-    else if (!isValidCost(rest.category, rest.costLevel)) return res.status(400).json({ message: rest.category === "do" ? "Pick a price" : "Pick a price from $ to $$$$" });
-    if (rest.category === "eat") {
-      if (rest.pace !== "grab" && rest.pace !== "sit") return res.status(400).json({ message: "Pick Grab & go or Sit-down" });
-      rest.minutesNeeded = rest.pace === "grab" ? 30 : 90;
-    } else rest.pace = null;
-    if (rest.category === "stay") rest.minutesNeeded = 720;
-    if (rest.category === "fbo") rest.minutesNeeded = 30;
+    const err = applyCategoryRules(rest);
+    if (err) return res.status(400).json({ message: err });
     const icao = await ensureAirport(code, airportCity);
     const ap = await storage.resolveCode(icao);
-    if (rest.lat != null && rest.lng != null && ap?.lat != null && ap?.lon != null && !rest.milesFromField) {
-      rest.milesFromField = Math.round(milesBetween({ lat: ap.lat, lon: ap.lon }, { lat: rest.lat, lon: rest.lng }) * 10) / 10;
-    }
-    const tagArr = Array.isArray(tags) ? tags : String(tags || "").split(",").map((t) => t.trim()).filter(Boolean);
+    const mi = milesFromAirport(ap, rest.lat, rest.lng);
+    if (mi !== undefined) rest.milesFromField = mi;
     const trusted = tierFor((await storage.me(user)).points).index >= TIERS.findIndex((t) => t.id === "commercial");
-    const spot = await storage.createSpot({ ...rest, icao, tags: JSON.stringify(tagArr.slice(0, 8).map((t) => t.slice(0, 30))), submittedBy: publicName(user), userId: user.id, status: MODERATE && !trusted ? "pending" : "live" });
+    const spot = await storage.createSpot({ ...rest, icao, tags: tagJson(tags), submittedBy: publicName(user), userId: user.id, status: MODERATE && !trusted ? "pending" : "live" });
     res.status(201).json(spot);
+  });
+
+  /** The original poster can fix their own listing. Points, ratings and votes are unchanged. */
+  app.patch("/api/spots/:id", requireUser, writeLimit, async (req, res) => {
+    const user = (req as any).user as User;
+    const cur = await storage.getSpot(id(req));
+    if (!cur || cur.status === "hidden") return res.status(404).json({ message: "Not found" });
+    if (cur.userId !== user.id) return res.status(403).json({ message: "Only the crew member who posted this can edit it" });
+    const p = submitSchema.safeParse({ ...cur, tags: (() => { try { return JSON.parse(cur.tags); } catch { return []; } })(), ...req.body, icao: req.body?.icao ?? cur.icao });
+    if (!p.success) return res.status(400).json({ message: msg(p.error) });
+    const { airportCity, tags, ...rest } = p.data;
+    const code = rest.icao.toUpperCase();
+    if (!(await storage.resolveCode(code)) && !refAirport(code) && !airportCity) return res.status(400).json({ message: `We don't know ${code} yet — add the city so we can create it.` });
+    const err = applyCategoryRules(rest);
+    if (err) return res.status(400).json({ message: err });
+    const icao = await ensureAirport(code, airportCity);
+    const mi = milesFromAirport(await storage.resolveCode(icao), rest.lat, rest.lng);
+    if (mi !== undefined) rest.milesFromField = mi;
+    const s = await storage.updateSpot(cur.id, {
+      icao, category: rest.category, name: rest.name, description: rest.description, address: rest.address, website: rest.website,
+      costLevel: rest.costLevel, minutesNeeded: rest.minutesNeeded, pace: rest.pace ?? null, milesFromField: rest.milesFromField,
+      lat: rest.lat ?? null, lng: rest.lng ?? null, placeRef: rest.placeRef ?? null, crewTip: rest.crewTip, tags: tagJson(tags),
+    });
+    res.json(s);
   });
 
   app.post("/api/spots/:id/reviews", requireUser, writeLimit, async (req, res) => {
@@ -238,7 +294,22 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (!spot) return res.status(404).json({ message: "Not found" });
     // a price vote is optional; drop values that don't apply to this category (e.g. "Free" for a restaurant, anything for an FBO)
     const costLevel = p.data.costLevel != null && costOptions(spot.category).includes(p.data.costLevel) ? p.data.costLevel : null;
+    if (p.data.rating === 0 && p.data.comment.trim().length < 10) return res.status(400).json({ message: "Tell crews why to go around (a sentence is enough)" });
     res.status(201).json(await storage.createReview({ ...p.data, costLevel }));
+  });
+  /** The author can fix their own rating, comment or price. */
+  app.patch("/api/reviews/:id", requireUser, writeLimit, async (req, res) => {
+    const user = (req as any).user as User;
+    const r = await storage.getReview(id(req));
+    if (!r) return res.status(404).json({ message: "Not found" });
+    if (r.userId !== user.id) return res.status(403).json({ message: "Only the author can edit this rating" });
+    const spot = await storage.getSpot(r.spotId);
+    if (!spot) return res.status(404).json({ message: "Not found" });
+    const p = insertReviewSchema.pick({ rating: true, comment: true, costLevel: true }).safeParse({ rating: req.body?.rating ?? r.rating, comment: req.body?.comment ?? r.comment, costLevel: req.body?.costLevel === undefined ? r.costLevel : req.body.costLevel });
+    if (!p.success) return res.status(400).json({ message: msg(p.error) });
+    const costLevel = p.data.costLevel != null && costOptions(spot.category).includes(p.data.costLevel) ? p.data.costLevel : null;
+    if (p.data.rating === 0 && (p.data.comment || "").trim().length < 10) return res.status(400).json({ message: "Tell crews why to go around (a sentence is enough)" });
+    res.json(await storage.updateReview(r.id, { rating: p.data.rating, comment: p.data.comment ?? "", costLevel }));
   });
 
   // ---------- location & autofill ----------
@@ -274,8 +345,14 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const ad = all.find((a) => a.targetIcao === icao) || all.find((a) => !a.targetIcao);
     return ad ? { id: ad.id, advertiser: ad.advertiser, headline: ad.headline, url: ad.url } : null;
   }
+  /** The briefing owner's favorites always appear first at their airport. */
+  const withFavorites = (picks: number[], all: SpotWithStats[], favs: Set<number>) => {
+    const favHere = all.filter((s) => favs.has(s.id)).map((s) => s.id);
+    return [...favHere.filter((i) => !picks.includes(i)), ...picks];
+  };
   async function expandBriefing(b: Briefing, withCandidates: boolean) {
     const stops = JSON.parse(b.stops || "[]") as BriefingStop[];
+    const favs = new Set(await storage.favoriteIds(b.userId));
     const out = [];
     for (const st of stops) {
       const airport = (await storage.resolveCode(st.icao)) || (refAirport(st.icao) as any) || null;
@@ -283,7 +360,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const byId = new Map(all.map((s) => [s.id, s]));
       out.push({
         icao: airport?.icao || st.icao.toUpperCase(), layover: st.layover, nights: st.nights, airport,
-        picks: st.picks.map((i) => byId.get(i)).filter(Boolean) as SpotWithStats[],
+        picks: withFavorites(st.picks, all, favs).map((i) => byId.get(i)).filter(Boolean) as SpotWithStats[],
+        favoriteIds: all.filter((s) => favs.has(s.id)).map((s) => s.id),
         candidates: withCandidates ? all : undefined,
         sponsor: await sponsorFor(airport?.icao || st.icao.toUpperCase()),
       });
@@ -296,11 +374,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const p = parseBriefing(req.body);
     if (!p.success) return res.status(400).json({ message: msg(p.error) });
     const stops = [];
+    const favs = new Set(await storage.favoriteIds((req as any).user.id));
     for (const st of p.data.stops) {
       const airport = (await storage.resolveCode(st.icao)) || (refAirport(st.icao) as any) || null;
-      if (!airport) return res.status(400).json({ message: `Unknown airport ${st.icao.toUpperCase()}` });
+      if (!airport) return res.status(400).json({ message: `Unknown airport ${st.icao.toUpperCase()}. Check the code (KOPF, OPF, X51 and 06FA all work).` });
       const all = await storage.searchSpots([airport.icao]);
-      stops.push({ ...st, icao: airport.icao, picks: suggestPicks(all, st.layover) });
+      stops.push({ ...st, icao: airport.icao, picks: suggestPicks(all, st.layover).filter((i) => !favs.has(i)) });
     }
     res.json({ title: p.data.title, stops });
   });
@@ -319,7 +398,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const stops = [];
     for (const st of p.data.stops) {
       const icao = (await storage.resolveCode(st.icao))?.icao || refAirport(st.icao)?.icao;
-      if (!icao) return res.status(400).json({ message: `Unknown airport ${st.icao.toUpperCase()}` });
+      if (!icao) return res.status(400).json({ message: `Unknown airport ${st.icao.toUpperCase()}. Check the code (KOPF, OPF, X51 and 06FA all work).` });
       stops.push({ ...st, icao });
     }
     const user = (req as any).user as User;

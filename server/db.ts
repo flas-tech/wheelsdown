@@ -89,6 +89,9 @@ CREATE TABLE IF NOT EXISTS briefings (id serial PRIMARY KEY, user_id integer NOT
   share_token text NOT NULL, created_at bigint NOT NULL DEFAULT 0, updated_at bigint NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS briefings_user_idx ON briefings(user_id);
 CREATE UNIQUE INDEX IF NOT EXISTS briefings_share_idx ON briefings(share_token);
+CREATE TABLE IF NOT EXISTS favorites (user_id integer NOT NULL, spot_id integer NOT NULL, created_at bigint NOT NULL DEFAULT 0);
+CREATE UNIQUE INDEX IF NOT EXISTS favorites_user_spot_idx ON favorites(user_id, spot_id);
+CREATE INDEX IF NOT EXISTS favorites_spot_idx ON favorites(spot_id);
 CREATE TABLE IF NOT EXISTS password_resets (token_hash text PRIMARY KEY, user_id integer NOT NULL, expires_at bigint NOT NULL, used_at bigint);
 `;
 

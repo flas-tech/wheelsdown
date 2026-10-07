@@ -2,8 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useRoute } from "wouter";
 import {
-  ArrowLeft, ChevronRight, ClipboardList, FileDown, Link2, Loader2, MapPin, Plus, RefreshCw, Share2, Trash2, X, Plane, Lightbulb,
-} from "lucide-react";
+  ArrowLeft, ChevronRight, ClipboardList, FileDown, Link2, Loader2, MapPin, Plus, RefreshCw, Share2, Trash2, X, Plane, Lightbulb, Heart } from "lucide-react";
 import { LAYOVERS, type LayoverId, type SpotWithStats } from "@shared/schema";
 import { costText, paceLabel, paceOf } from "@shared/cost";
 import { LAYOVER_PLAN } from "@shared/briefing";
@@ -73,7 +72,10 @@ function RouteForm({ initial, initialTitle, busy, onSubmit, submitLabel }: {
   initial?: StopInput[]; initialTitle?: string; busy: boolean; submitLabel: string;
   onSubmit: (title: string, stops: StopInput[]) => void;
 }) {
-  const [route, setRoute] = useState(initial ? initial.map((s) => s.icao).join(" ") : "");
+  const [route, setRoute] = useState(() => {
+    if (initial) return initial.map((s) => s.icao).join(" ");
+    const pre = sessionStorage.getItem("wd-brief-prefill") || ""; sessionStorage.removeItem("wd-brief-prefill"); return pre;
+  });
   const [title, setTitle] = useState(initialTitle || "");
   const [layovers, setLayovers] = useState<Record<string, { layover: LayoverId; nights?: number }>>(
     Object.fromEntries((initial || []).map((s, i) => [`${i}:${s.icao}`, { layover: s.layover, nights: s.nights }])),
@@ -337,6 +339,7 @@ function StopSection({ stop, index, onRemovePick, onAddPick, onMove, onResuggest
   const [adding, setAdding] = useState(false);
   const { pins, numbered } = useMemo(() => stopPins(stop), [stop]);
   const picked = new Set(stop.picks.map((p) => p.id));
+  const favs = new Set(stop.favoriteIds || []);
   const others = (stop.candidates || []).filter((c) => !picked.has(c.id));
   const plan = LAYOVER_PLAN[stop.layover as LayoverId];
   const unmapped = numbered.filter((n) => !n.mapped).length;
@@ -369,7 +372,7 @@ function StopSection({ stop, index, onRemovePick, onAddPick, onMove, onResuggest
 
       <ol className="space-y-2">
         {numbered.map(({ n, spot }) => <PickRow key={spot.id} n={n} spot={spot} count={numbered.length}
-          onRemove={() => onRemovePick(spot.id)} onUp={() => onMove(spot.id, -1)} onDown={() => onMove(spot.id, 1)} busy={busy} />)}
+          favorite={favs.has(spot.id)} onRemove={() => onRemovePick(spot.id)} onUp={() => onMove(spot.id, -1)} onDown={() => onMove(spot.id, 1)} busy={busy} />)}
       </ol>
 
       {others.length > 0 && (
@@ -403,8 +406,8 @@ function StopSection({ stop, index, onRemovePick, onAddPick, onMove, onResuggest
   );
 }
 
-function PickRow({ n, spot, count, onRemove, onUp, onDown, busy, readOnly }: {
-  n: number; spot: SpotWithStats; count: number; onRemove?: () => void; onUp?: () => void; onDown?: () => void; busy?: boolean; readOnly?: boolean;
+function PickRow({ n, spot, count, onRemove, onUp, onDown, busy, readOnly, favorite }: {
+  n: number; spot: SpotWithStats; count: number; onRemove?: () => void; onUp?: () => void; onDown?: () => void; busy?: boolean; readOnly?: boolean; favorite?: boolean;
 }) {
   const M = CAT_META[spot.category as keyof typeof CAT_META];
   const extra = spot.category === "eat" ? paceLabel(paceOf(spot)) : spot.category === "do" ? fmtMinutes(totalMinutes(spot)) : "";
@@ -417,6 +420,7 @@ function PickRow({ n, spot, count, onRemove, onUp, onDown, busy, readOnly }: {
             <Link href={`/spot/${spot.id}`} className="text-sm font-semibold leading-snug hover:underline underline-offset-2">{spot.name}</Link>
             {spot.category !== "fbo" && <span className="font-code text-xs font-bold text-primary shrink-0">{costText(spot)}</span>}
           </div>
+          {favorite && <p className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-semibold text-rose-600 dark:text-rose-400" data-testid={`text-pick-favorite-${spot.id}`}><Heart className="h-3 w-3" fill="currentColor" />Favorite{readOnly ? "" : " · always included"}</p>}
           <p className="mt-0.5 text-[11px] text-muted-foreground">
             <span className="inline-flex items-center gap-1"><M.icon className="h-3 w-3" />{M.label}</span>
             {" · "}{spot.milesFromField ? `${spot.milesFromField} mi` : "On field"}{extra ? ` · ${extra}` : ""}
@@ -438,7 +442,7 @@ function PickRow({ n, spot, count, onRemove, onUp, onDown, busy, readOnly }: {
         <div className="mt-2.5 flex items-center justify-end gap-1">
           <button onClick={onUp} disabled={busy || n === 1} className="h-7 px-2 rounded-full text-[11px] border border-border hover-elevate disabled:opacity-30" aria-label="Move up" data-testid={`button-pick-up-${spot.id}`}>Up</button>
           <button onClick={onDown} disabled={busy || n === count} className="h-7 px-2 rounded-full text-[11px] border border-border hover-elevate disabled:opacity-30" aria-label="Move down" data-testid={`button-pick-down-${spot.id}`}>Down</button>
-          <button onClick={onRemove} disabled={busy} className="h-7 px-2 rounded-full text-[11px] border border-border hover-elevate disabled:opacity-30 inline-flex items-center gap-1" data-testid={`button-pick-remove-${spot.id}`}><X className="h-3 w-3" />Remove</button>
+          {!favorite && <button onClick={onRemove} disabled={busy} className="h-7 px-2 rounded-full text-[11px] border border-border hover-elevate disabled:opacity-30 inline-flex items-center gap-1" data-testid={`button-pick-remove-${spot.id}`}><X className="h-3 w-3" />Remove</button>}
         </div>
       )}
     </li>
@@ -470,7 +474,7 @@ export function SharedBriefPage() {
               <span className="text-xs text-muted-foreground truncate">{st.airport?.city}</span>
             </div>
             <MapCanvas pins={pins} />
-            <ol className="space-y-2">{numbered.map(({ n, spot }) => <PickRow key={spot.id} n={n} spot={spot} count={numbered.length} readOnly />)}</ol>
+            <ol className="space-y-2">{numbered.map(({ n, spot }) => <PickRow key={spot.id} n={n} spot={spot} count={numbered.length} readOnly favorite={(st.favoriteIds || []).includes(spot.id)} />)}</ol>
             {numbered.length === 0 && <p className="text-sm text-muted-foreground">No picks for this stop.</p>}
             {st.sponsor && (
               <a href={st.sponsor.url || "#"} target="_blank" rel="noopener noreferrer sponsored" className="block rounded-xl bg-muted/60 px-3 py-2 text-xs hover-elevate">

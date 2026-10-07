@@ -89,7 +89,7 @@ export function recentActivity(data: Data, userId: number, limit = 25): Activity
   const items: ActivityItem[] = [];
   for (const s of data.spots) if (s.userId === userId) items.push({ kind: "listing", label: `Added ${s.name}`, spotId: s.id, points: POINTS.listing, at: s.createdAt });
   for (const r of data.reviews) if (r.userId === userId)
-    items.push({ kind: "review", label: `Rated ${name(r.spotId)} ${r.rating}/5`, spotId: r.spotId, points: POINTS.review + ((r.comment || "").trim().length >= 40 ? POINTS.reviewDetail : 0), at: r.createdAt });
+    items.push({ kind: "review", label: r.rating === 0 ? `Go around: ${name(r.spotId)}` : `Rated ${name(r.spotId)} ${r.rating}/5`, spotId: r.spotId, points: POINTS.review + ((r.comment || "").trim().length >= 40 ? POINTS.reviewDetail : 0), at: r.createdAt });
   for (const v of data.votes) if (v.voter === voter) {
     if (v.targetType === "spot") items.push({ kind: v.value > 0 ? "vote_up" : "vote_down", label: `${v.value > 0 ? "Upvoted" : "Flagged"} ${name(v.targetId)}`, spotId: v.targetId, points: POINTS.vote, at: v.createdAt });
     else { const r = data.reviews.find((x) => x.id === v.targetId); if (r) items.push({ kind: "review_vote", label: `Voted on a review of ${name(r.spotId)}`, spotId: r.spotId, points: POINTS.vote, at: v.createdAt }); }

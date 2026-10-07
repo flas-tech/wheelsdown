@@ -5,7 +5,8 @@ import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { Search, PlusCircle, Shield, Trophy, BookUser, ClipboardList } from "lucide-react";
+import { Search, PlusCircle, Shield, Trophy, BookUser, ClipboardList, Heart } from "lucide-react";
+import FavoritesPage from "@/pages/favorites";
 import NotFound from "@/pages/not-found";
 import Home, { SearchProvider, useSearch } from "@/pages/home";
 import SpotPage from "@/pages/spot";
@@ -33,6 +34,7 @@ function Shell() {
   const nav = [
     { href: "/", label: "Search", icon: Search, active: loc === "/" || loc.startsWith("/spot") },
     { href: "/add", label: "Add spot", icon: PlusCircle, active: loc.startsWith("/add") },
+    { href: "/favorites", label: "Favorites", icon: Heart, active: loc.startsWith("/favorites") },
     { href: "/brief", label: "Brief", icon: ClipboardList, active: loc.startsWith("/brief") || loc.startsWith("/b/") },
     { href: "/crew", label: "Crew", icon: Trophy, active: loc.startsWith("/crew") },
     { href: "/me", label: "Logbook", icon: BookUser, active: loc.startsWith("/me") },
@@ -70,7 +72,9 @@ function Shell() {
       <main className={cn("mx-auto w-full flex-1 px-4 pt-5 pb-28 sm:pb-12", isAdmin ? "max-w-6xl" : "max-w-xl")}>
         <Switch>
           <Route path="/" component={Home} />
+          <Route path="/spot/:id/edit" component={AddPage} />
           <Route path="/spot/:id" component={SpotPage} />
+          <Route path="/favorites" component={FavoritesPage} />
           <Route path="/add" component={AddPage} />
           <Route path="/add/:icao" component={AddPage} />
           <Route path="/admin" component={AdminPage} />
@@ -107,10 +111,10 @@ function Shell() {
       {/* iOS-style tab bar */}
       {!isAdmin && (
         <nav className="sm:hidden fixed bottom-0 inset-x-0 z-30 border-t border-border bg-background/90 backdrop-blur pb-safe">
-          <div className="mx-auto max-w-xl grid grid-cols-5 px-safe">
+          <div className="mx-auto max-w-xl grid grid-cols-6 px-safe">
             {nav.map((n) => (
-              <Link key={n.href} href={n.href} data-testid={`tab-${n.label}`} className={cn("flex flex-col items-center gap-0.5 pt-2 pb-1 text-[11px] font-medium", n.active ? "text-primary" : "text-muted-foreground")}>
-                <n.icon className="h-5 w-5" />{n.label}
+              <Link key={n.href} href={n.href} data-testid={`tab-${n.label}`} className={cn("flex min-w-0 flex-col items-center gap-0.5 pt-2 pb-1 text-[10px] font-medium tracking-tight", n.active ? "text-primary" : "text-muted-foreground")}>
+                <n.icon className="h-5 w-5" /><span className="truncate max-w-full">{n.label}</span>
               </Link>
             ))}
           </div>

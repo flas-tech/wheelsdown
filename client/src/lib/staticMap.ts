@@ -96,16 +96,50 @@ export async function drawStaticMap(canvas: HTMLCanvasElement, pins: MapPin[], w
 
   // airport labels first, numbered picks on top so on-field spots stay visible
   const order = [...pts].sort((a, b) => (a.kind === "airport" ? 0 : 1) - (b.kind === "airport" ? 0 : 1));
+  // airport labels never cover each other: nudge a colliding tag to the nearest free spot and draw a leader to the field
+  const placed: { x: number; y: number; w: number; h: number }[] = [];
+  const seenAp = new Set<string>();
+  type P = (typeof pts)[number];
+  const tags: { p: P; cx: number; cy: number; tw: number; th: number }[] = [];
+  const picks: P[] = [];
+  const hits = (b: { x: number; y: number; w: number; h: number }) => placed.some((o) => b.x < o.x + o.w + 3 && b.x + b.w + 3 > o.x && b.y < o.y + o.h + 3 && b.y + b.h + 3 > o.y);
   for (const p of order) {
     if (p.kind === "airport") {
+      if (seenAp.has(p.label)) continue; // a return leg to the same field gets one tag
+      seenAp.add(p.label);
       ctx.font = "700 11px ui-monospace, Menlo, monospace";
-      const tw = ctx.measureText(p.label).width + 12;
-      roundRect(ctx, p.x - tw / 2, p.y - 11, tw, 22, 5);
+      const tw = ctx.measureText(p.label).width + 12, th = 22;
+      const tries: [number, number][] = [[0, 0]];
+      for (const d of [1, 2, 3]) tries.push([0, -26 * d], [0, 26 * d], [(tw + 6) * d, 0], [-(tw + 6) * d, 0], [(tw / 2 + 8) * d, -26 * d], [-(tw / 2 + 8) * d, 26 * d]);
+      let cx = p.x, cy = p.y;
+      for (const [dx, dy] of tries) {
+        const bx = { x: p.x + dx - tw / 2, y: p.y + dy - th / 2, w: tw, h: th };
+        if (bx.x < 2 || bx.y < 2 || bx.x + bx.w > w - 2 || bx.y + bx.h > h - 18) continue;
+        if (!hits(bx)) { cx = p.x + dx; cy = p.y + dy; break; }
+      }
+      placed.push({ x: cx - tw / 2, y: cy - th / 2, w: tw, h: th });
+      tags.push({ p, cx, cy, tw, th });
+    } else picks.push(p);
+  }
+  // leaders under every tag, then tags, then numbered picks on top
+  for (const t of tags) if (t.cx !== t.p.x || t.cy !== t.p.y) {
+    ctx.save(); ctx.strokeStyle = "#0B1222"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(t.p.x, t.p.y); ctx.lineTo(t.cx, t.cy); ctx.stroke();
+    ctx.beginPath(); ctx.arc(t.p.x, t.p.y, 4, 0, Math.PI * 2); ctx.fillStyle = "#0B1222"; ctx.fill();
+    ctx.restore();
+  }
+  for (const { p, cx, cy, tw, th } of tags) {
+    {
+      ctx.font = "700 11px ui-monospace, Menlo, monospace";
+      roundRect(ctx, cx - tw / 2, cy - th / 2, tw, th, 5);
       ctx.fillStyle = "#F5C518"; ctx.fill();
       ctx.lineWidth = 2; ctx.strokeStyle = "#0B1222"; ctx.stroke();
       ctx.fillStyle = "#0B1222"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText(p.label, p.x, p.y + 0.5);
-    } else {
+      ctx.fillText(p.label, cx, cy + 0.5);
+    }
+  }
+  for (const p of picks) {
+    {
       const r = 11;
       ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
       ctx.fillStyle = PIN_COLORS[p.kind]; ctx.fill();
