@@ -75,7 +75,7 @@ export function tierById(id: TierId) {
   return TIERS.find((t) => t.id === id)!;
 }
 
-/** Epaulet-style insignia: stripes for Private → ATP, a star for Check Airman, wings for Ancient Albatross. */
+/** Epaulet-style insignia: stripes for Private → ATP (Restricted ATP has an outlined fourth stripe), a star for Check Airman, wings for Ancient Albatross. */
 export function Insignia({ tierId, className }: { tierId: TierId; className?: string }) {
   const t = tierById(tierId);
   const bars = Array.from({ length: t.stripes });
@@ -84,7 +84,9 @@ export function Insignia({ tierId, className }: { tierId: TierId; className?: st
       <rect x="1" y="1" width="38" height="22" rx="4" fill={tierId === "ancient_albatross" ? "#111827" : "#0B1222"} stroke={t.color} strokeOpacity="0.6" />
       {tierId === "student" && <path d="M14 12h12" stroke={t.color} strokeWidth="2" strokeLinecap="round" strokeDasharray="2 3" />}
       {tierId !== "student" && tierId !== "ancient_albatross" &&
-        bars.map((_, i) => <rect key={i} x="5" y={4 + i * 4.2} width="30" height="2.6" rx="0.6" fill={t.color} />)}
+        bars.map((_, i) => tierId === "restricted_atp" && i === bars.length - 1
+          ? <rect key={i} x="5" y={4 + i * 4.2} width="30" height="2.6" rx="0.6" fill="none" stroke={t.color} strokeWidth="0.9" /> // 4th stripe outlined: not quite full ATP
+          : <rect key={i} x="5" y={4 + i * 4.2} width="30" height="2.6" rx="0.6" fill={t.color} />)}
       {tierId === "check_airman" && <path d="M33 3.2l.9 1.9 2 .3-1.5 1.4.4 2-1.8-1-1.8 1 .4-2-1.5-1.4 2-.3z" fill="#fff" />}
       {tierId === "ancient_albatross" && (
         <g fill={t.color}>

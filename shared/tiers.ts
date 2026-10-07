@@ -1,20 +1,22 @@
 // Wheelsdown "Logbook" crew status — tiers modeled on the pilot certificate ladder.
 import { computeVet } from "./vetting";
 
-export type TierId = "student" | "private" | "instrument" | "commercial" | "atp" | "check_airman" | "ancient_albatross";
+export type TierId = "student" | "private" | "instrument" | "commercial" | "restricted_atp" | "atp" | "check_airman" | "ancient_albatross";
 
 export const TIERS: {
   id: TierId; name: string; min: number; stripes: number; color: string; tagline: string; perks: string[];
 }[] = [
   { id: "student", name: "Student", min: 0, stripes: 0, color: "#94A3B8", tagline: "Solo endorsement pending",
     perks: ["Add listings, rate, review and vote", "Your own crew logbook"] },
-  { id: "private", name: "Private", min: 50, stripes: 1, color: "#C08457", tagline: "Cleared for the local area",
+  { id: "private", name: "Private", min: 40, stripes: 1, color: "#C08457", tagline: "Cleared for the local area",
     perks: ["Private badge on everything you post", "Listed on the crew leaderboard"] },
   { id: "instrument", name: "Instrument", min: 150, stripes: 2, color: "#CBD5E1", tagline: "Comfortable in the soup",
     perks: ["Silver badge", "Reviews are tagged \"Instrument-rated reviewer\"", "Suggest edits to any listing (planned)"] },
-  { id: "commercial", name: "Commercial", min: 400, stripes: 3, color: "#F5B83D", tagline: "Getting paid to know the good spots",
+  { id: "commercial", name: "Commercial", min: 250, stripes: 3, color: "#F5B83D", tagline: "Getting paid to know the good spots",
     perks: ["Gold badge", "Listings you add skip the moderation queue", "Early access to partner crew rates (planned)"] },
-  { id: "atp", name: "ATP", min: 1000, stripes: 4, color: "#E5E7EB", tagline: "Airline Transport Pro",
+  { id: "restricted_atp", name: "Restricted ATP", min: 750, stripes: 4, color: "#E8A88E", tagline: "Almost there, with a few more hours to log",
+    perks: ["Rose-gold badge", "Everything Commercial gets", "First look at new partner perks (planned)"] },
+  { id: "atp", name: "ATP", min: 1500, stripes: 4, color: "#E5E7EB", tagline: "Airline Transport Pro",
     perks: ["Platinum badge", "\"ATP Pick\" highlight on your listings (planned)", "Partner perks and giveaways (planned)"] },
   { id: "check_airman", name: "Check Airman", min: 2500, stripes: 4, color: "#67E8F9", tagline: "Trusted to check everyone else",
     perks: ["Diamond badge", "Resolve \"Needs check\" flags in your region (planned)", "Annual Wheelsdown swag kit (planned)"] },

@@ -34,7 +34,7 @@ The GitHub Pages build (`npm run build:pages`) remains a browser-only demo with 
 - **Profile (set once):** name, position (Pilot, Flight Attendant, Mechanic or Other), optional home base, and whether posts show your name or "Anonymous pilot" etc. Changing the preference re-labels your past posts. Anonymous members are hidden by name on the public leaderboard; admins can still see who they are.
 - **Participation counter:** your listings, ratings and votes are counted and shown in a recent-activity log in your Logbook.
 - **Points:** 10 per listing (+20 when it becomes Crew-vetted), 5 per rating (+3 for 40+ characters), 1 per vote, +1 for each upvote your listings get, +2 for each "helpful" vote your reviews get. Points are worked out from your activity rather than stored, so they always match what you did. Admins can add bonus points for activity outside the app.
-- **Status ladder:** Student (0), Private (50), Instrument (150), Commercial (400), ATP (1,000), Check Airman (2,500), Ancient Albatross (6,000). Each status has its own badge, shown next to your name on everything you post. Perks marked "planned" are not built yet.
+- **Status ladder:** Student (0), Private (40), Instrument (150), Commercial (250), Restricted ATP (750), ATP (1,500), Check Airman (2,500), Ancient Albatross (6,000). Each status has its own badge, shown next to your name on everything you post. Perks marked "planned" are not built yet.
 - Accounts use scrypt-hashed passwords and session tokens on the server build. In the GitHub Pages demo, accounts live only in your own browser.
 
 ## Home page and browsing
