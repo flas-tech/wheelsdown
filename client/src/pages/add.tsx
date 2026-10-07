@@ -53,6 +53,7 @@ export default function AddPage() {
   const [avoid, setAvoid] = useState(false); // new listings only: "Go around", crews should avoid this place
   const [why, setWhy] = useState("");
   const [place, setPlace] = useState<PlaceHit | null>(null); // chosen autofill result
+  const [geo, setGeo] = useState<{ state: "idle" | "busy" | "miss"; for: string }>({ state: "idle", for: "" });
   const [here, setHere] = useState<LatLng | null>(null);
   const [locating, setLocating] = useState(false);
   const [nearMsg, setNearMsg] = useState("");
@@ -124,6 +125,19 @@ export default function AddPage() {
     if (aiOn && me && !editId && (resolved?.icao || c.length >= 3)) runAutofill(p);
   }
 
+  /** A typed street address (not picked from search): find it on the map so the distance is measured, not guessed. */
+  async function locateAddress(addr: string) {
+    const a = addr.trim();
+    const code = resolved?.icao || c;
+    if (!/\d+\s+\w/.test(a) || code.length < 3 || (place && place.address === a)) return;
+    setGeo({ state: "busy", for: a });
+    try {
+      const g = await getJson<{ lat: number; lng: number; miles: number }>(`/api/places/geocode?icao=${encodeURIComponent(code)}&q=${encodeURIComponent(a)}`);
+      setPlace({ ref: "", name: name.trim(), address: a, lat: g.lat, lng: g.lng, kind: "", city: "" } as PlaceHit);
+      setGeo({ state: "idle", for: a });
+    } catch { setGeo({ state: "miss", for: a }); }
+  }
+
   /** Ask the server to gather OSM tags, the business website and web results, then fill only what's empty (or what AI filled before). */
   async function runAutofill(pick?: PlaceHit) {
     const nm = (pick?.name ?? name).trim();
@@ -152,6 +166,12 @@ export default function AddPage() {
       // keep a real street address from the map pick; only fill when empty or vague (no street number)
       const curAddr = (pick?.address ?? address).trim();
       take("address", !curAddr || !/\d+\s+\w/.test(curAddr), r.address, () => setAddress(r.address));
+      // no pin yet: the server located the address, so the distance is measured from the airport
+      if (r.at && !(at && at.lat != null)) {
+        const finalAddr = got.has("address") && r.address ? r.address : curAddr;
+        setPlace({ ref: "", name: nm, address: finalAddr, lat: r.at.lat, lng: r.at.lng, kind: "", city: "" } as PlaceHit);
+        setGeo({ state: "idle", for: finalAddr });
+      }
       take("website", !website.trim(), r.website, () => setWebsite(r.website));
       take("tags", !tags.trim(), r.tags, () => setTags(r.tags.join(", ")));
       if (got.has("address") || got.has("website") || got.has("tags")) setMore(true);
@@ -177,7 +197,7 @@ export default function AddPage() {
           pace: category === "eat" ? pace : null,
           minutesNeeded: category === "do" && time ? TIME_PRESETS[time] : category === "stay" ? 720 : 30,
           milesFromField: miles ? Number(miles) : 0,
-          lat: place?.lat ?? null, lng: place?.lng ?? null, placeRef: place?.ref ?? null,
+          lat: place?.lat ?? null, lng: place?.lng ?? null, placeRef: place?.ref || null,
           crewTip, address, website, tags,
           ...(!editId && avoid ? { goAround: { comment: why.trim() } } : {}),
         })
@@ -354,7 +374,10 @@ export default function AddPage() {
         {more && (
           <div className="space-y-3">
             {(aiFields.has("address") || aiFields.has("website") || aiFields.has("tags")) && <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground"><AiTag /> {["address", "website", "tags"].filter((k) => aiFields.has(k)).join(", ")} filled by AI</p>}
-            <input value={address} onChange={(e) => { setAddress(e.target.value); touch("address"); }} placeholder="Address" data-testid="input-add-address" className={inputCls} />
+            <input value={address} onChange={(e) => { setAddress(e.target.value); touch("address"); if (place && e.target.value.trim() !== place.address) setPlace(null); if (geo.state === "miss") setGeo({ state: "idle", for: "" }); }}
+              onBlur={() => { if (!place) locateAddress(address); }} placeholder="Street address — we'll measure the distance" data-testid="input-add-address" className={inputCls} />
+            {geo.state === "busy" && <p className="text-[11px] text-muted-foreground" data-testid="text-geo-busy">Finding that address…</p>}
+            {geo.state === "miss" && <p className="text-[11px] text-muted-foreground" data-testid="text-geo-miss">Couldn't find that address near {resolved?.icao || c}. Check it, or type the miles yourself.</p>}
             <input value={website} onChange={(e) => { setWebsite(e.target.value); touch("website"); }} placeholder="https://" inputMode="url" data-testid="input-add-website" className={inputCls} />
             <input value={tags} onChange={(e) => { setTags(e.target.value); touch("tags"); }} placeholder="Tags, comma separated — late night, crew discount" data-testid="input-add-tags" className={inputCls} />
           </div>
@@ -482,7 +505,7 @@ function AiTag() {
 type AutofillResult = {
   found: boolean; name: string; address: string; website: string; description: string; crewTip: string;
   costLevel: number | null; pace: "grab" | "sit" | "both" | null; minutesNeeded: number | null; tags: string[];
-  confidence: "high" | "medium" | "low"; notes: string; sources: string[]; duplicate: { id: number; name: string } | null;
+  confidence: "high" | "medium" | "low"; notes: string; sources: string[]; duplicate: { id: number; name: string } | null; at?: { lat: number; lng: number; miles: number } | null;
 };
 const host = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return u; } };
 

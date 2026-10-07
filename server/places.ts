@@ -90,3 +90,54 @@ export async function nearbyPlaces(lat: number, lng: number, cat?: string): Prom
     return dedupe((j.features || []).map(toHit)).slice(0, 12);
   });
 }
+
+const NOMINATIM = process.env.NOMINATIM_URL || "https://nominatim.openstreetmap.org";
+let lastNom = 0;
+const geoCache = new Map<string, { at: number; v: { lat: number; lng: number; label: string } | null }>();
+const milesApart = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => {
+  const R = 3958.8, toR = Math.PI / 180, dLat = (b.lat - a.lat) * toR, dLng = (b.lng - a.lng) * toR;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * toR) * Math.cos(b.lat * toR) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+};
+
+/**
+ * Turns a typed street address into map coordinates, preferring results near the airport (within maxMiles).
+ * Photon first; OpenStreetMap's Nominatim as a fallback (max 1 request/second per its usage policy). Null when unsure.
+ */
+export async function geocodeAddress(address: string, near: { lat: number; lng: number }, maxMiles = 60): Promise<{ lat: number; lng: number; label: string } | null> {
+  const q = address.trim().replace(/\s+/g, " ").slice(0, 200);
+  if (q.length < 6 || !/\d/.test(q) || !Number.isFinite(near.lat) || !Number.isFinite(near.lng)) return null;
+  const key = `${q.toLowerCase()}|${near.lat.toFixed(2)}|${near.lng.toFixed(2)}`;
+  const c = geoCache.get(key);
+  if (c && Date.now() - c.at < TTL) return c.v;
+  const ok = (lat: number, lng: number) => Number.isFinite(lat) && Number.isFinite(lng) && milesApart(near, { lat, lng }) <= maxMiles;
+  let v: { lat: number; lng: number; label: string } | null = null;
+  try {
+    const j = await photon(`/api/?q=${encodeURIComponent(q)}&lat=${near.lat}&lon=${near.lng}&limit=5&lang=en`);
+    for (const f of j.features || []) {
+      const [lng, lat] = f?.geometry?.coordinates || [];
+      const p = f?.properties || {};
+      // a street-level match (house number or a street), not just the town
+      if (ok(lat, lng) && (p.housenumber || p.street || p.osm_key === "amenity" || p.osm_key === "shop")) {
+        v = { lat, lng, label: [p.housenumber, p.street || p.name, p.city || p.town].filter(Boolean).join(" ") }; break;
+      }
+    }
+  } catch { /* fall through */ }
+  if (!v) {
+    try {
+      const wait = Math.max(0, lastNom + 1100 - Date.now());
+      if (wait) await new Promise((r) => setTimeout(r, wait));
+      lastNom = Date.now();
+      const d = 1.0;
+      const vb = `${near.lng - d},${near.lat + d},${near.lng + d},${near.lat - d}`;
+      const r = await fetch(`${NOMINATIM}/search?format=jsonv2&limit=3&countrycodes=&viewbox=${vb}&q=${encodeURIComponent(q)}`, { headers: { "User-Agent": UA, Accept: "application/json" }, signal: AbortSignal.timeout(8000) });
+      if (r.ok) for (const h of (await r.json()) as any[]) {
+        const lat = Number(h.lat), lng = Number(h.lon);
+        if (ok(lat, lng) && ["house", "building", "street", "road", "amenity", "shop", "tourism", "leisure"].some((k) => String(h.addresstype || h.type || h.class).includes(k) || h.class === k)) { v = { lat, lng, label: String(h.display_name || "").slice(0, 120) }; break; }
+      }
+    } catch { /* unsure: leave null */ }
+  }
+  geoCache.set(key, { at: Date.now(), v });
+  if (geoCache.size > 2000) geoCache.delete(geoCache.keys().next().value!);
+  return v;
+}

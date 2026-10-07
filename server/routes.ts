@@ -13,7 +13,7 @@ import { briefingSchema, type BriefingStop, type Briefing, type SpotWithStats } 
 import { isValidCost, costOptions, milesBetween, isPace, paceMinutes } from "@shared/cost";
 import { suggestPicks } from "@shared/briefing";
 import { refAirport, nearestAirports, isCode } from "./airportsData";
-import { searchPlaces, nearbyPlaces } from "./places";
+import { searchPlaces, nearbyPlaces, geocodeAddress } from "./places";
 import { AI_ENABLED, autofill, checkName, checkBio } from "./ai";
 import { isTestSignup } from "@shared/club";
 import { AI_PRICES, costOf, costReport } from "./aiUsage";
@@ -282,6 +282,13 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     return null;
   }
   /** Distance is always measured from the listing's airport, never from where the poster is standing. */
+  /** Listings typed in without a map pick: look up the street address so the pin and distance are real. */
+  async function locateByAddress(ap: { lat: number | null; lon: number | null } | undefined, rest: { address?: string | null; lat?: number | null; lng?: number | null }) {
+    if (rest.lat != null && rest.lng != null) return;
+    if (!rest.address || !/\d+\s+\w/.test(rest.address) || ap?.lat == null || ap?.lon == null) return;
+    const g = await geocodeAddress(rest.address, { lat: ap.lat, lng: ap.lon }).catch(() => null);
+    if (g) { rest.lat = g.lat; rest.lng = g.lng; }
+  }
   function milesFromAirport(ap: { lat: number | null; lon: number | null } | undefined, lat?: number | null, lng?: number | null) {
     if (lat == null || lng == null || ap?.lat == null || ap?.lon == null) return undefined;
     return Math.round(milesBetween({ lat: ap.lat, lon: ap.lon }, { lat, lon: lng }) * 10) / 10;
@@ -302,6 +309,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (err) return res.status(400).json({ message: err });
     const icao = await ensureAirport(code, airportCity);
     const ap = await storage.resolveCode(icao);
+    await locateByAddress(ap, rest);
     const mi = milesFromAirport(ap, rest.lat, rest.lng);
     if (mi !== undefined) rest.milesFromField = mi;
     const trusted = tierFor((await storage.me(user)).points).index >= TIERS.findIndex((t) => t.id === "commercial");
@@ -332,7 +340,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const err = applyCategoryRules(rest);
     if (err) return res.status(400).json({ message: err });
     const icao = await ensureAirport(code, airportCity);
-    const mi = milesFromAirport(await storage.resolveCode(icao), rest.lat, rest.lng);
+    const apE = await storage.resolveCode(icao);
+    // a changed address moves the pin, unless the client sent fresh coordinates with it
+    if (rest.address !== cur.address && rest.lat === cur.lat && rest.lng === cur.lng) { rest.lat = null; rest.lng = null; }
+    await locateByAddress(apE, rest);
+    const mi = milesFromAirport(apE, rest.lat, rest.lng);
     if (mi !== undefined) rest.milesFromField = mi;
     const patch = {
       icao, category: rest.category, name: rest.name, description: rest.description, address: rest.address, website: rest.website,
@@ -411,14 +423,22 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (!AI_ENABLED) return res.status(503).json({ message: "AI autofill isn't switched on yet" });
     const p = autofillSchema.safeParse(req.body);
     if (!p.success) return res.status(400).json({ message: msg(p.error) });
-    const ap = await storage.resolveCode(p.data.icao.toUpperCase());
+    // an airport nobody has listed at yet isn't stored, so fall back to the reference data (name, town, coordinates)
+    const ap = (await storage.resolveCode(p.data.icao.toUpperCase())) || (refAirport(p.data.icao) as any) || undefined;
     const icao = ap?.icao || p.data.icao.toUpperCase();
     const others = await storage.namesAt(icao, p.data.excludeId);
     const dup = findDuplicate(p.data, others);
     const mi = milesFromAirport(ap, p.data.lat, p.data.lng);
     try {
       const r = await autofill({ ...p.data, icao, airport: ap ? { name: ap.name, city: ap.city, lat: ap.lat, lon: ap.lon } : null, milesFromField: mi ?? null });
-      res.json({ ...r, duplicate: dup && dup.status === "live" ? { id: dup.id, name: dup.name } : null });
+      // no map pin yet: locate the address (theirs if they typed a street address, otherwise the one found) so the distance is measured
+      let at: { lat: number; lng: number; miles: number } | null = null;
+      const addr = /\d+\s+\w/.test(p.data.address || "") ? p.data.address! : r.address || "";
+      if ((p.data.lat == null || p.data.lng == null) && addr && ap?.lat != null && ap?.lon != null) {
+        const g = await geocodeAddress(addr, { lat: ap.lat, lng: ap.lon }).catch(() => null);
+        if (g) at = { lat: g.lat, lng: g.lng, miles: milesFromAirport(ap, g.lat, g.lng)! };
+      }
+      res.json({ ...r, at, duplicate: dup && dup.status === "live" ? { id: dup.id, name: dup.name } : null });
     } catch (e) {
       console.warn("[ai] autofill failed", (e as Error).message);
       res.status(502).json({ message: "AI autofill couldn't finish. Type the details in, or try again.", duplicate: dup && dup.status === "live" ? { id: dup.id, name: dup.name } : null });
@@ -440,6 +460,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.get("/api/places/search", placesLimit, async (req, res) => {
     try { res.json(await searchPlaces(String(req.query.q || ""), num(req.query.lat), num(req.query.lng), String(req.query.cat || ""))); }
     catch { res.status(502).json({ message: "Autofill is unavailable right now. Type the details in." }); }
+  });
+  app.get("/api/places/geocode", placesLimit, async (req, res) => {
+    const ap = (await storage.resolveCode(String(req.query.icao || ""))) || (refAirport(String(req.query.icao || "")) as any);
+    if (ap?.lat == null) return res.status(400).json({ message: "Pick the airport first" });
+    const g = await geocodeAddress(String(req.query.q || ""), { lat: ap.lat, lng: ap.lon }).catch(() => null);
+    g ? res.json({ ...g, miles: milesFromAirport(ap, g.lat, g.lng) }) : res.status(404).json({ message: "Couldn't find that address near the airport" });
   });
   app.get("/api/places/nearby", placesLimit, async (req, res) => {
     try { res.json(await nearbyPlaces(num(req.query.lat), num(req.query.lng), String(req.query.cat || ""))); }

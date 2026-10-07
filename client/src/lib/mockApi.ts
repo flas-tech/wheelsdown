@@ -150,6 +150,7 @@ function achStats(uid: number): AchStats {
     favoritedByOthers: (db.favorites || []).filter((f) => mineIds.has(f.spotId) && f.userId !== uid).length, fiveStarFinds: five,
     briefings: (db.briefings || []).filter((b) => b.userId === uid).length, firstAtAirport: Array.from(firstBy.values()).filter((x) => x === uid).length, followers: followCounts(uid).followers };
 }
+const canonBase = (b: string) => { const c = b.trim().toUpperCase().slice(0, 4); return c ? resolve(c)?.icao || c : ""; };
 function meOf(u: DemoUser) {
   const b = computePoints(db, u.id, u.bonusPoints);
   return { id: u.id, handle: u.handle, displayName: u.displayName, crewRole: u.crewRole, homeBase: u.homeBase, anonymous: !!u.anonymous, email: u.email || "",
@@ -196,7 +197,7 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
     if (body.acceptTerms !== true) throw new HttpError(400, "Please accept the Terms and Community Guidelines");
     const role = (CREW_ROLES as readonly string[]).includes(body.crewRole) ? body.crewRole : "Pilot";
     const u: DemoUser = { id: ++db.seq.user, handle, displayName: String(body.displayName).trim().slice(0, 40), crewRole: role, anonymous: !!body.anonymous,
-      homeBase: String(body.homeBase || "").toUpperCase().slice(0, 4), email: String(body.email || "").trim().toLowerCase(), pw: demoHash(String(body.password)), bonusPoints: 0, createdAt: Date.now() };
+      homeBase: canonBase(String(body.homeBase || "")), email: String(body.email || "").trim().toLowerCase(), pw: demoHash(String(body.password)), bonusPoints: 0, createdAt: Date.now() };
     if ((db.wrightTaken || 0) < WRIGHT_SEATS) { db.wrightTaken = (db.wrightTaken || 0) + 1; u.wrightNo = db.wrightTaken; }
     db.users.push(u); const t = newSession(u.id); save();
     return { token: t, me: meOf(u) };
@@ -213,7 +214,7 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
     const u = needUser();
     if (body.displayName !== undefined) { const n = String(body.displayName).trim(); if (n.length < 2) throw new HttpError(400, "Add a display name"); u.displayName = n.slice(0, 40); }
     if (body.crewRole !== undefined) { if (!(CREW_ROLES as readonly string[]).includes(body.crewRole)) throw new HttpError(400, "Pick a position"); u.crewRole = body.crewRole; }
-    if (body.homeBase !== undefined) u.homeBase = String(body.homeBase).toUpperCase().slice(0, 4);
+    if (body.homeBase !== undefined) u.homeBase = canonBase(String(body.homeBase));
     if (body.anonymous !== undefined) u.anonymous = !!body.anonymous;
     if (body.email !== undefined) u.email = String(body.email).trim().toLowerCase();
     if (body.aircraft !== undefined) { if (!validAircraftList(String(body.aircraft))) throw new HttpError(400, "Pick up to 6 aircraft from the list"); u.aircraft = String(body.aircraft); }

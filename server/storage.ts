@@ -5,6 +5,8 @@ import { achievementProgress, type AchStats } from "@shared/achievements";
 import type { Briefing, BriefingStop } from "@shared/schema";
 import { crewCost } from "@shared/cost";
 import { refAirport, isCode } from "./airportsData";
+/** Home bases are stored as the ICAO code (OPF -> KOPF, MIA -> KMIA) so everyone uses the same code worldwide. */
+export const canonBase = (b?: string | null) => { const c = (b || "").trim().toUpperCase(); return c ? refAirport(c)?.icao || c : ""; };
 import type { User, Vote, ReviewWithVotes, Airport, InsertAirport, Spot, InsertSpot, Review, InsertReview, Ad, InsertAd, SpotWithStats } from "@shared/schema";
 import { computePoints, recentActivity, publicName, tierFor, SEED_USERS, SEED_PASSWORD, type PublicUser, type Me } from "@shared/tiers";
 import { computeVet, seedVotesFor, shouldAutoHold } from "@shared/vetting";
@@ -362,7 +364,7 @@ export class DatabaseStorage {
     if (u.email && (await d.select({ id: users.id }).from(users).where(eq(users.email, u.email)))[0]) throw Object.assign(new Error("That email already has an account"), { status: 409 });
     invalidateActivity();
     const created = (await d.insert(users).values({
-      handle: u.handle, email: u.email || null, displayName: u.displayName, crewRole: u.crewRole || "Pilot", homeBase: u.homeBase || "",
+      handle: u.handle, email: u.email || null, displayName: u.displayName, crewRole: u.crewRole || "Pilot", homeBase: canonBase(u.homeBase),
       anonymous: u.anonymous ? 1 : 0, passwordHash: await hashPassword(u.password), createdAt: Date.now(),
     }).returning())[0];
     if (isTestSignup(created.handle, created.email)) return created;
@@ -376,6 +378,7 @@ export class DatabaseStorage {
   async updateUser(id: number, patch: { displayName?: string; crewRole?: string; homeBase?: string; anonymous?: boolean; email?: string; aircraft?: string; bio?: string; interests?: string[] }) {
     const d = db();
     const set: any = { ...patch };
+    if (patch.homeBase !== undefined) set.homeBase = canonBase(patch.homeBase);
     if (patch.interests !== undefined) set.interests = JSON.stringify(Array.from(new Set(patch.interests)));
     if (patch.anonymous !== undefined) set.anonymous = patch.anonymous ? 1 : 0;
     if (patch.email !== undefined) {

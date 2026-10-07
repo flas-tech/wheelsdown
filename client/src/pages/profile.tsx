@@ -285,6 +285,7 @@ function ProfileSettings() {
       <label className="block">
         <span className="text-xs font-medium text-muted-foreground">Home base (optional)</span>
         <input value={f.homeBase} onChange={(e) => setF({ ...f, homeBase: e.target.value.toUpperCase().slice(0, 4) })} placeholder="KMIA" data-testid="input-profile-base" className={inputCls + " mt-1 font-code uppercase w-32"} />
+        <span className="mt-1 block text-[11px] text-muted-foreground">Any code works (OPF, MIA). It's saved as the 4-letter ICAO code so every crew uses the same one.</span>
       </label>
       <label className="block">
         <span className="text-xs font-medium text-muted-foreground">Email (private, for password reset)</span>
