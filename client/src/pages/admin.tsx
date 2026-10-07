@@ -938,7 +938,7 @@ function CostsPanel() {
           <Kpi label="Today" value={usd(data.today.cost)} sub={`${data.today.calls} AI calls`} />
           <Kpi label={`${monthName} so far`} value={usd(data.monthToDate.cost)} sub={`on pace for about ${usd(pace)}`} />
           <Kpi label={`Last ${data.days} days`} value={usd(data.period.cost)} sub={`${fmt(data.period.calls)} calls · ${fmt(data.period.searches)} web searches`} />
-          <Kpi label="Before tracking" value={`~${usd(data.beforeTracking.estimate)}`} sub={`estimate: ${data.beforeTracking.listings} listing + ${data.beforeTracking.ratings} rating checks`} />
+          <Kpi label="Before tracking" value={`~${usd(data.beforeTracking.estimate)}`} sub={`estimate at measured rates: ${data.beforeTracking.listings} listing + ${data.beforeTracking.ratings} rating checks`} />
         </div>
         <section className="rounded-xl border border-card-border bg-card p-4">
           <h3 className="text-sm font-semibold">Where it goes</h3>

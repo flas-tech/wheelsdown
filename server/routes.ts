@@ -589,14 +589,16 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const byPurpose = Object.entries(inPeriod.reduce((m: Record<string, any>, x: any) => { m[x.purpose] = add(m[x.purpose] || zero(), x); return m; }, {}))
       .map(([purpose, t]) => ({ purpose, ...(t as any), cost: costOf(t as any) })).sort((a, b) => b.cost - a.cost);
     const daily = Object.entries(inPeriod.reduce((m: Record<string, any>, x: any) => { m[x.day] = add(m[x.day] || zero(), x); return m; }, {})).map(([day, t]) => ({ day, cost: costOf(t as any), calls: (t as any).calls }));
-    // checks that ran before usage was recorded, priced at typical rates (about 3.5 cents per listing check, 0.1 cent per rating)
+    // checks that ran before usage was recorded
     const cutoff = r.startMs ?? Date.now();
     const before = await storage.aiChecksBefore(cutoff);
+    // measured average per call once there's data, otherwise typical rates
+    const avgOf = (p: string, dflt: number) => { const x = byPurpose.find((y) => y.purpose === p); return x && x.calls >= 1 ? x.cost / x.calls : dflt; };
     const services = SERVICES.map((sv) => sv.id === "openai" ? { ...sv, monthToDate: sum(inMonth).cost } : sv);
     res.json({
       days, since: r.since, month: r.month, trackingSince: r.trackingSince, model: process.env.AI_MODEL || "gpt-5-mini", prices: AI_PRICES, aiOn: AI_ENABLED,
       today: sum(today), period: sum(inPeriod), monthToDate: sum(inMonth), byPurpose, daily,
-      beforeTracking: { listings: before.spot, ratings: before.review, estimate: before.spot * 0.035 + before.review * 0.001 },
+      beforeTracking: { listings: before.spot, ratings: before.review, estimate: before.spot * avgOf("listing", 0.035) + before.review * avgOf("rating", 0.001) },
       services, fixedMonthly: SERVICES.reduce((a, sv) => a + (sv.monthly || 0), 0),
     });
   });
