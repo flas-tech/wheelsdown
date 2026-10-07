@@ -112,7 +112,7 @@ export type PublicUser = {
   bio: string; interests: string[]; // empty for anonymous members
   wrightNo: number | null; // founding club seat; hidden for anonymous members
 };
-export type Me = PublicUser & { breakdown: PointsBreakdown; email?: string; follows?: { followers: number; following: number } };
+export type Me = PublicUser & { breakdown: PointsBreakdown; email?: string; isAdmin?: boolean; follows?: { followers: number; following: number } };
 
 // Demo crew members so the leaderboard has range (bonus = legacy points for the demo only)
 export const SEED_USERS = [

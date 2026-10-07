@@ -10,7 +10,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { CREW_ROLES } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
-import { LogOut, Star, ThumbsUp, ThumbsDown, PlusCircle, MessageSquare, ShieldCheck, Award, Gift, Activity } from "lucide-react";
+import { LogOut, Star, ThumbsUp, ThumbsDown, PlusCircle, MessageSquare, ShieldCheck, Award, Gift, Activity, ChevronRight } from "lucide-react";
 import { TIERS, POINTS, tierFor, publicName, SOLO_POINTS, hasSoloed, type TierId, type ActivityItem } from "@shared/tiers";
 import type { SpotWithStats, Review } from "@shared/schema";
 import { useAuth, Insignia, tierById, PostAsToggle } from "@/lib/auth";
@@ -119,6 +119,17 @@ export default function ProfilePage() {
       )}
 
       <Participation b={b} />
+
+      {me.isAdmin && (
+        <Link href="/admin" className="flex items-center gap-3 rounded-2xl border border-primary/40 bg-primary/5 p-4 hover-elevate" data-testid="link-admin-console">
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary/15"><ShieldCheck className="h-5 w-5 text-primary" /></div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold">Admin console</p>
+            <p className="text-xs text-muted-foreground">Moderation, listings, ads and advertiser metrics. Super-user access.</p>
+          </div>
+          <ChevronRight className="h-5 w-5 text-muted-foreground" />
+        </Link>
+      )}
 
       <InviteCard />
 

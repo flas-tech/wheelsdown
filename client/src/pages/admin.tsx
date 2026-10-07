@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Download, Upload, Trash2, Eye, EyeOff, Plus, Lock, Pencil, LogOut } from "lucide-react";
+import { Download, Upload, Trash2, Eye, EyeOff, Plus, Lock, Pencil, LogOut, BookUser } from "lucide-react";
+import { useLocation } from "wouter";
+import { useAuth } from "@/lib/auth";
 import { CATEGORIES, DOWN_REASONS, type Ad, type SpotWithStats } from "@shared/schema";
 import { apiRequest, queryClient, API_BASE, IS_STATIC } from "@/lib/queryClient";
 import { CAT_META, COST_LABELS, VetBadge } from "@/lib/ui";
@@ -27,7 +29,12 @@ const adm = (method: string, url: string, data?: unknown) => apiRequest(method, 
 const admGet = <T,>(url: string) => async () => (await adm("GET", url)).json() as Promise<T>;
 
 export default function AdminPage() {
+  const { me, loading } = useAuth();
   const [authed, setAuthed] = useState(false);
+  const [, navigate] = useLocation();
+  // Super-user accounts are signed in already; their session is the admin credential.
+  if (!authed && me?.isAdmin) return <Console viaAccount onLogout={() => navigate("/me")} />;
+  if (!authed && loading) return <Skeleton className="mx-auto mt-8 h-48 max-w-sm rounded-2xl" />;
   if (!authed) return <Login onOk={() => setAuthed(true)} />;
   return <Console onLogout={() => { ADMIN_KEY = ""; setAuthed(false); }} />;
 }
@@ -56,14 +63,17 @@ function Login({ onOk }: { onOk: () => void }) {
   );
 }
 
-function Console({ onLogout }: { onLogout: () => void }) {
+function Console({ onLogout, viaAccount = false }: { onLogout: () => void; viaAccount?: boolean }) {
   const { data: stats } = useQuery<Record<string, number>>({ queryKey: ["/api/admin/stats"], queryFn: admGet("/api/admin/stats") });
   const ctr = stats && stats.impressions ? ((stats.clicks / stats.impressions) * 100).toFixed(1) + "%" : "—";
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between print:hidden">
-        <h1 className="text-lg font-semibold">Admin console</h1>
-        <button onClick={onLogout} className={btn} data-testid="button-admin-logout"><LogOut className="h-4 w-4" />Lock</button>
+        <div>
+          <h1 className="text-lg font-semibold">Admin console</h1>
+          {viaAccount && <p className="text-xs text-muted-foreground" data-testid="text-admin-via">Signed in as a super-user admin. No key needed.</p>}
+        </div>
+        <button onClick={onLogout} className={btn} data-testid="button-admin-logout">{viaAccount ? <><BookUser className="h-4 w-4" />Logbook</> : <><LogOut className="h-4 w-4" />Lock</>}</button>
       </div>
       <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 print:hidden">
         {[
@@ -367,7 +377,12 @@ function Bulk() {
             setTimeout(() => URL.revokeObjectURL(a.href), 1000);
           }}><Download className="h-4 w-4" />Download CSV</button>
         ) : (
-          <a href={exportUrl} target="_blank" rel="noopener noreferrer" className={btnPrimary} data-testid="link-export"><Download className="h-4 w-4" />Download CSV</a>
+          ADMIN_KEY
+            ? <a href={exportUrl} target="_blank" rel="noopener noreferrer" className={btnPrimary} data-testid="link-export"><Download className="h-4 w-4" />Download CSV</a>
+            : <button className={btnPrimary} data-testid="link-export" onClick={async () => {
+                const r = await adm("GET", "/api/admin/export.csv"); const url = URL.createObjectURL(await r.blob());
+                const a = document.createElement("a"); a.href = url; a.download = "wheelsdown-spots.csv"; a.click(); setTimeout(() => URL.revokeObjectURL(url), 5000);
+              }}><Download className="h-4 w-4" />Download CSV</button>
         )}
         {IS_STATIC && (
           <button className={btn} data-testid="button-reset-demo" onClick={async () => {

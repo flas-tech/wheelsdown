@@ -29,10 +29,17 @@ const MODERATE = process.env.MODERATE === "1"; // when on, new submissions land 
 const APP_URL = (process.env.APP_URL || "").replace(/\/$/, "");
 
 const safeEq = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
-function requireAdmin(req: Request, res: Response, next: NextFunction) {
+/** Super-user admins: these accounts reach the admin console with their normal sign-in, no key needed.
+ *  Fixed account ids (5 = m_gravalec, 6 = jpj); override with SUPER_ADMIN_IDS="5,6" on the server. */
+const SUPER_ADMIN_IDS = new Set((process.env.SUPER_ADMIN_IDS || "5,6").split(",").map((x) => Number(x.trim())).filter((n) => Number.isInteger(n) && n > 0));
+/** "by <name>" for decisions made through a super-user account (key sign-ins stay unnamed). */
+const byAdmin = (req: Request, reason: string) => { const n = (req as any).adminName; return n ? (reason ? `${reason} (by ${n})` : `By ${n}`) : reason; };
+export const isSuperAdmin = (u?: User | null) => !!u && SUPER_ADMIN_IDS.has(u.id);
+async function requireAdmin(req: Request, res: Response, next: NextFunction) {
   const key = String(req.headers["x-admin-key"] || req.query.key || "");
-  if (!ADMIN_KEY || !safeEq(key, ADMIN_KEY)) return res.status(401).json({ message: "Admin key required" });
-  next();
+  if (ADMIN_KEY && key && safeEq(key, ADMIN_KEY)) return next();
+  try { const u = await userOf(req); if (isSuperAdmin(u)) { (req as any).adminName = u!.displayName; return next(); } } catch { /* fall through */ }
+  return res.status(401).json({ message: "Admin key required" });
 }
 
 const tokenOf = (req: Request) => String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
@@ -150,7 +157,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (!ok) return res.status(400).json({ message: "That reset link has expired or was already used. Request a new one." });
     res.json({ ok: true });
   });
-  app.get("/api/me", async (req, res) => { const u = await userOf(req); res.json(u ? await storage.me(u) : null); });
+  app.get("/api/me", async (req, res) => { const u = await userOf(req); res.json(u ? { ...(await storage.me(u)), isAdmin: isSuperAdmin(u) } : null); });
   app.patch("/api/me", requireUser, writeLimit, async (req, res) => {
     const p = updateMeSchema.safeParse(req.body);
     if (!p.success) return res.status(400).json({ message: msg(p.error) });
@@ -604,7 +611,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const before = JSON.parse(e.before);
     if (e.kind === "spot") { if (!(await storage.rawSpot(e.targetId))) return res.status(404).json({ message: "Not found" }); await storage.updateSpot(e.targetId, before); }
     else { if (!(await storage.getReview(e.targetId))) return res.status(404).json({ message: "Not found" }); await storage.setReviewMod(e.targetId, before); }
-    await storage.logMod({ kind: e.kind as "spot" | "review", targetId: e.targetId, actor: "admin", action: "revert", reason: "Edit reverted", isEdit: true, before: e.after ? JSON.parse(e.after) : undefined, after: before });
+    await storage.logMod({ kind: e.kind as "spot" | "review", targetId: e.targetId, actor: "admin", action: "revert", reason: byAdmin(req, "Edit reverted"), isEdit: true, before: e.after ? JSON.parse(e.after) : undefined, after: before });
     res.json({ ok: true });
   });
   /**
@@ -625,7 +632,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         await storage.setSpotMod(s.id, { status: "live", pendingEdit: null, modState: "approved", modNote: "", modAttempts: 0 });
       } else await storage.setSpotMod(s.id, edit ? { pendingEdit: null, modState: "approved", modNote: "" } : { status: "rejected", modState: "rejected", modNote: note ? `[admin] ${note}` : "[admin] Removed by a moderator." });
       const before = edit && action === "approve" ? Object.fromEntries(Object.keys(edit).map((k) => [k, (s as any)[k] ?? null])) : undefined;
-      await storage.logMod({ kind: "spot", targetId: s.id, actor: "admin", action, reason: note || (edit ? (action === "approve" ? "Edit applied" : action === "reject" ? "Edit discarded" : "") : ""), isEdit: !!edit, before, after: edit || undefined });
+      await storage.logMod({ kind: "spot", targetId: s.id, actor: "admin", action, reason: byAdmin(req, note || (edit ? (action === "approve" ? "Edit applied" : action === "reject" ? "Edit discarded" : "") : "")), isEdit: !!edit, before, after: edit || undefined });
     } else {
       const r = await storage.getReview(id(req));
       if (!r) return res.status(404).json({ message: "Not found" });
@@ -634,7 +641,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       else if (action === "approve") await storage.setReviewMod(r.id, { ...(edit || {}), status: "live", pendingEdit: null, modState: "approved", modNote: "", modAttempts: 0 });
       else await storage.setReviewMod(r.id, edit ? { pendingEdit: null, modState: "approved", modNote: "" } : { status: "rejected", modState: "rejected", modNote: note ? `[admin] ${note}` : "[admin] Removed by a moderator." });
       const before = edit && action === "approve" ? { rating: r.rating, comment: r.comment, costLevel: r.costLevel } : undefined;
-      await storage.logMod({ kind: "review", targetId: r.id, actor: "admin", action, reason: note || (edit ? (action === "approve" ? "Edit applied" : action === "reject" ? "Edit discarded" : "") : ""), isEdit: !!edit, before, after: edit || undefined });
+      await storage.logMod({ kind: "review", targetId: r.id, actor: "admin", action, reason: byAdmin(req, note || (edit ? (action === "approve" ? "Edit applied" : action === "reject" ? "Edit discarded" : "") : "")), isEdit: !!edit, before, after: edit || undefined });
     }
     res.json({ ok: true });
   });
