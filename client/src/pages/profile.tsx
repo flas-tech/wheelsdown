@@ -3,7 +3,7 @@ import { InterestPicker, InterestChips } from "@/lib/interests";
 import { WrightCard } from "@/lib/club";
 import { InviteCard } from "@/lib/share";
 import { BIO_MAX } from "@shared/interests";
-import { aircraftById } from "@shared/aircraft";
+import { aircraftList } from "@shared/aircraft";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -45,7 +45,7 @@ export function TierCard({ points, name, sub, tierId, aircraft }: { points: numb
           <div className="min-w-0">
             <p className="text-sm font-semibold truncate">{name}</p>
             {sub && <p className="text-xs text-white/60">{sub}</p>}
-            {aircraftById(aircraft) && <p className="text-[11px] text-white/50" data-testid="text-aircraft">Flies: {aircraftById(aircraft)!.label}</p>}
+            {aircraftList(aircraft).length > 0 && <p className="text-[11px] text-white/50" data-testid="text-aircraft">Aircraft: {aircraftList(aircraft).map((x) => x.label).join(", ")}</p>}
           </div>
         </div>
         <div className="text-right">
@@ -253,7 +253,7 @@ function ProfileSettings() {
       </label>
       <div>
         <span className="text-xs font-medium text-muted-foreground">Position</span>
-        <div className="mt-1 grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+        <div className="mt-1 grid grid-cols-2 sm:grid-cols-3 gap-1.5">
           {CREW_ROLES.map((r) => (
             <button key={r} type="button" onClick={() => setF({ ...f, crewRole: r })} aria-pressed={f.crewRole === r} data-testid={`button-role-${r.replace(/\s/g, "-").toLowerCase()}`}
               className={cn("h-10 rounded-xl border text-sm font-medium", f.crewRole === r ? "border-primary bg-primary/10" : "border-input text-muted-foreground")}>{r}</button>
@@ -261,7 +261,7 @@ function ProfileSettings() {
         </div>
       </div>
       <div>
-        <span className="text-xs font-medium text-muted-foreground">Your aircraft icon <span className="font-normal">· shown on the leaderboard and your profile</span></span>
+        <span className="text-xs font-medium text-muted-foreground">Aircraft you fly <span className="font-normal">· shown on your profile; your avatar appears next to your name</span></span>
         <div className="mt-1"><AircraftPicker value={f.aircraft} onChange={(a) => setF({ ...f, aircraft: a })} /></div>
       </div>
       <label className="block">

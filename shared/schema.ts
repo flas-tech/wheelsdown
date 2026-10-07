@@ -1,4 +1,4 @@
-import { AIRCRAFT_IDS } from "./aircraft";
+import { MAX_AIRCRAFT, validAircraftList } from "./aircraft";
 import { BIO_MAX, INTEREST_IDS, MAX_INTERESTS } from "./interests";
 import { pgTable, text, integer, serial, bigint, doublePrecision, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
@@ -243,8 +243,8 @@ export const passwordResets = pgTable("password_resets", {
   expiresAt: bigint("expires_at", { mode: "number" }).notNull(),
   usedAt: bigint("used_at", { mode: "number" }),
 });
-export const CREW_ROLES = ["Pilot", "Flight Attendant", "Mechanic", "Other"] as const;
-const roleSchema = z.enum(CREW_ROLES, { message: "Pick Pilot, Flight Attendant, Mechanic or Other" });
+export const CREW_ROLES = ["Pilot", "Flight Attendant", "Mechanic", "Dispatcher", "Flight Scheduler", "Other"] as const;
+const roleSchema = z.enum(CREW_ROLES, { message: "Pick a position from the list" });
 export const signupSchema = z.object({
   handle: z.string().trim().toLowerCase().regex(/^[a-z0-9_.-]{3,24}$/, "Handle: 3–24 letters, numbers, . _ -"),
   password: z.string().min(8, "Password must be at least 8 characters"),
@@ -261,7 +261,7 @@ export const updateMeSchema = z.object({
   homeBase: z.string().trim().toUpperCase().max(4).optional(),
   anonymous: z.boolean().optional(),
   email: z.union([z.literal(""), z.string().trim().toLowerCase().email("That email doesn't look right")]).optional(),
-  aircraft: z.string().refine((v) => v === "" || (AIRCRAFT_IDS as readonly string[]).includes(v), "Pick an aircraft from the list").optional(),
+  aircraft: z.string().transform((v) => v.split(",").map((s) => s.trim()).filter(Boolean).join(",")).refine(validAircraftList, `Pick up to ${MAX_AIRCRAFT} aircraft from the list`).optional(),
   bio: z.string().trim().max(BIO_MAX, `Keep it to ${BIO_MAX} characters`).optional(),
   interests: z.array(z.string().refine((v) => INTEREST_IDS.includes(v), "Pick from the list")).max(MAX_INTERESTS, `Pick up to ${MAX_INTERESTS}`).optional(),
 });

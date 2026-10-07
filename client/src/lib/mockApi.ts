@@ -5,7 +5,7 @@ import type { Airport, Spot, Review, Ad, Vote } from "@shared/schema";
 import { computeVet, seedVotesFor, shouldAutoHold } from "@shared/vetting";
 import { computePoints, recentActivity, publicName, tierFor, SEED_USERS, SEED_PASSWORD } from "@shared/tiers";
 import { CREW_ROLES } from "@shared/schema";
-import { aircraftById } from "@shared/aircraft";
+import { validAircraftList } from "@shared/aircraft";
 import { BIO_MAX, INTERESTS, MAX_INTERESTS } from "@shared/interests";
 import { WRIGHT_SEATS } from "@shared/club";
 import { buildHighlights } from "@shared/highlights";
@@ -200,7 +200,7 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
     if (body.homeBase !== undefined) u.homeBase = String(body.homeBase).toUpperCase().slice(0, 4);
     if (body.anonymous !== undefined) u.anonymous = !!body.anonymous;
     if (body.email !== undefined) u.email = String(body.email).trim().toLowerCase();
-    if (body.aircraft !== undefined) { if (body.aircraft && !aircraftById(String(body.aircraft))) throw new HttpError(400, "Pick an aircraft"); u.aircraft = String(body.aircraft); }
+    if (body.aircraft !== undefined) { if (!validAircraftList(String(body.aircraft))) throw new HttpError(400, "Pick up to 6 aircraft from the list"); u.aircraft = String(body.aircraft); }
     if (body.bio !== undefined) { const t = String(body.bio).trim(); if (/https?:\/\/|www\.|@\w+\.\w/.test(t)) throw new HttpError(400, "Leave links and emails out of your bio."); u.bio = t.slice(0, BIO_MAX); }
     if (body.interests !== undefined) u.interests = (Array.isArray(body.interests) ? body.interests : []).filter((i: string) => i in INTERESTS).slice(0, MAX_INTERESTS);
     relabel(u); save();

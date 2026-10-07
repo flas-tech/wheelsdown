@@ -18,7 +18,7 @@ import { AI_ENABLED, autofill, checkName, checkBio } from "./ai";
 import { isTestSignup } from "@shared/club";
 import { track, visit, pageKey, outboundKey, report, untracked } from "./metrics";
 import { INTERESTS, parseInterests } from "@shared/interests";
-import { aircraftById } from "@shared/aircraft";
+import { aircraftList } from "@shared/aircraft";
 import { startModerator, kickModerator, findDuplicate, SPOT_EDIT_FIELDS, manualReview, setManualReview, modStatus } from "./moderator";
 import { z } from "zod";
 
@@ -588,7 +588,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       audience: {
         crew: real.length, newCrew: real.filter((u: any) => Number(u.created_at) >= sinceMs).length,
         roles: tally(real.map((u: any) => u.crew_role)),
-        aircraft: tally(real.map((u: any) => aircraftById(u.aircraft)?.label || "")),
+        aircraft: tally(real.flatMap((u: any) => aircraftList(u.aircraft).map((a) => a.label))),
         homeBases: tally(real.map((u: any) => String(u.home_base || "").toUpperCase())).slice(0, 12),
         interests: tally(real.flatMap((u: any) => parseInterests(u.interests).map((i) => INTERESTS[i]))).slice(0, 12),
       },

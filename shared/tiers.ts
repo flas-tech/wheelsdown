@@ -104,7 +104,7 @@ export function recentActivity(data: Data, userId: number, limit = 25): Activity
 
 /** Name shown on posts and the leaderboard, honoring the anonymous preference. */
 export const publicName = (u: { displayName: string; crewRole: string; anonymous?: boolean | number | null }) =>
-  u.anonymous ? (["Pilot", "Flight Attendant", "Mechanic"].includes(u.crewRole) ? `Anonymous ${u.crewRole.toLowerCase()}` : "Anonymous crew") : u.displayName;
+  u.anonymous ? (["Pilot", "Flight Attendant", "Mechanic", "Dispatcher", "Flight Scheduler"].includes(u.crewRole) ? `Anonymous ${u.crewRole.toLowerCase()}` : "Anonymous crew") : u.displayName;
 
 export type PublicUser = {
   id: number; handle: string; displayName: string; crewRole: string; homeBase: string; anonymous: boolean; participation: number;
