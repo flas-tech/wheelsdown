@@ -4,7 +4,7 @@ import { useLocation, useRoute } from "wouter";
 import { ArrowLeft, Check, ChevronDown, LocateFixed, Loader2, MapPin, Search, AlertTriangle, PlaneLanding } from "lucide-react";
 import { Link } from "wouter";
 import { TIME_BUCKETS, type Airport, type Category, type SpotWithStats, type ReviewWithVotes } from "@shared/schema";
-import { COST_LABELS, PACES, costOptions, costUnit, paceOf, type PaceId } from "@shared/cost";
+import { COST_LABELS, PACES, costOptions, costUnit, paceOf, togglePace, isPace, type PaceValue } from "@shared/cost";
 import { CostChoice } from "@/lib/costChip";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { CAT_META, Chip } from "@/lib/ui";
@@ -42,7 +42,7 @@ export default function AddPage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [costLevel, setCost] = useState<number | null>(null);
-  const [pace, setPace] = useState<PaceId | null>(null);
+  const [pace, setPace] = useState<PaceValue | null>(null);
   const [time, setTime] = useState<string | null>(null);
   const [miles, setMiles] = useState("");
   const [crewTip, setCrewTip] = useState("");
@@ -61,7 +61,7 @@ export default function AddPage() {
     const s = editData?.spot;
     if (!s || loaded) return;
     setCategory(s.category as Category); setCode(s.icao); setName(s.name); setDescription(s.description || "");
-    setCost(s.category === "fbo" ? null : s.costLevel); setPace((s.pace as PaceId) || (s.category === "eat" ? paceOf(s) : null));
+    setCost(s.category === "fbo" ? null : s.costLevel); setPace(isPace(s.pace) ? s.pace : s.category === "eat" ? paceOf(s) : null);
     setTime(s.category === "do" ? bucketFor(s.minutesNeeded) : null); setMiles(s.milesFromField ? String(s.milesFromField) : "");
     setCrewTip(s.crewTip || ""); setAddress(s.address || ""); setWebsite(s.website || "");
     try { setTags((JSON.parse(s.tags || "[]") as string[]).join(", ")); } catch { /* ignore */ }
@@ -146,7 +146,7 @@ export default function AddPage() {
     c.length < 3 && "airport",
     unknown && !city.trim() && "city",
     needsCost && costLevel == null && "price",
-    category === "eat" && !pace && "Grab & go or Sit-down",
+    category === "eat" && !pace && "Grab & go and/or Sit-down",
     category === "do" && !time && "time needed",
   ].filter(Boolean) as string[];
   const canSubmit = missing.length === 0 && !notOwner && (!editId || loaded);
@@ -233,10 +233,15 @@ export default function AddPage() {
         </Field>
       )}
       {category === "eat" && (
-        <Field n={5} label="Grab & go or sit-down?">
-          <div className="flex gap-2">
-            {PACES.map((p) => <Chip key={p.id} active={pace === p.id} onClick={() => setPace(p.id)} testId={`chip-add-pace-${p.id}`}>{p.label}</Chip>)}
+        <Field n={5} label="Grab & go, sit-down, or both?" hint="pick one or both">
+          <div className="flex gap-2" role="group" aria-label="Pace">
+            {PACES.map((p) => {
+              const on = pace === p.id || pace === "both";
+              return <Chip key={p.id} active={on} onClick={() => setPace(togglePace(pace, p.id))} testId={`chip-add-pace-${p.id}`}>
+                <span className="inline-flex items-center gap-1">{on && <Check className="h-3.5 w-3.5" />}{p.label}</span></Chip>;
+            })}
           </div>
+          {pace === "both" && <p className="mt-1.5 text-[11px] text-muted-foreground" data-testid="text-pace-both">Shows up for crews looking for either.</p>}
         </Field>
       )}
       {category === "do" && (

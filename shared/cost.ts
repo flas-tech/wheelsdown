@@ -52,13 +52,26 @@ export const PACES = [
   { id: "sit", label: "Sit-down" },
 ] as const;
 export type PaceId = (typeof PACES)[number]["id"];
+/** Stored pace: one option, or "both" when a place works for grab & go and for sit-down. */
+export type PaceValue = PaceId | "both";
+export const isPace = (v: unknown): v is PaceValue => v === "grab" || v === "sit" || v === "both";
 /** Restaurant pace: stored tag, or derived from the legacy minutes field for older listings. */
-export function paceOf(s: { category: string; pace?: string | null; minutesNeeded: number }): PaceId | null {
+export function paceOf(s: { category: string; pace?: string | null; minutesNeeded: number }): PaceValue | null {
   if (s.category !== "eat") return null;
-  if (s.pace === "grab" || s.pace === "sit") return s.pace;
+  if (isPace(s.pace)) return s.pace;
   return s.minutesNeeded <= 45 ? "grab" : "sit";
 }
-export const paceLabel = (p: PaceId | null) => PACES.find((x) => x.id === p)?.label ?? "";
+/** Does a listing's pace fit what the crew wants? "both" fits either. */
+export const paceMatches = (p: PaceValue | null, want: PaceId) => p === want || p === "both";
+/** Pick/unpick one option and return the stored value (null when neither is picked). */
+export function togglePace(cur: PaceValue | null, id: PaceId): PaceValue | null {
+  const on = new Set<PaceId>(cur === "both" ? ["grab", "sit"] : cur ? [cur] : []);
+  on.has(id) ? on.delete(id) : on.add(id);
+  return on.size === 2 ? "both" : on.size === 1 ? Array.from(on)[0] : null;
+}
+export const paceLabel = (p: PaceValue | null) => (p === "both" ? "Grab & go or sit-down" : PACES.find((x) => x.id === p)?.label ?? "");
+/** Minutes used for older time-based logic: anything that offers grab & go counts as quick. */
+export const paceMinutes = (p: PaceValue) => (p === "sit" ? 90 : 30);
 export const usesTime = (category: Category | string) => category === "do";
 
 /** Great-circle distance in statute miles. */

@@ -56,6 +56,7 @@ export default function SpotPage() {
             {spot.reviewCount ? `${spot.avgRating?.toFixed(1)} from ${spot.reviewCount} crew` : "No ratings yet"}
           </span>
           {spot.goArounds > 0 && <GoAroundBadge count={spot.goArounds} />}
+          <button type="button" onClick={() => document.getElementById("rate")?.scrollIntoView({ behavior: "smooth", block: "center" })} className="text-xs font-medium text-primary" data-testid="button-jump-rate">Rate it</button>
         </div>
         {mine && (
           <Link href={`/spot/${spot.id}/edit`} className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-border px-3 h-8 text-xs font-medium hover-elevate" data-testid="link-edit-spot">
@@ -63,20 +64,6 @@ export default function SpotPage() {
           </Link>
         )}
       </header>
-
-      <ReviewForm spotId={spot.id} category={spot.category} />
-
-      <CrewVote spot={spot} />
-
-      <div className={cn("grid gap-2", spot.category === "do" || spot.category === "eat" ? "grid-cols-3" : hasCost(spot.category) ? "grid-cols-2" : "grid-cols-1")}>
-        {hasCost(spot.category) && (
-          <Fact label={spot.costVotes > 1 ? `Crew price · ${spot.costVotes} crew` : "Price"} value={spot.cost == null ? "Not priced" : COST_LABELS[spot.cost]} mono={spot.cost != null} testId="text-spot-cost"
-            sub={spot.cost != null && spot.cost > 0 ? `${costRange(spot.category, spot.cost)} ${spot.category === "stay" ? "/ night" : "pp"}` : undefined} />
-        )}
-        {spot.category === "eat" && <Fact label="Pace" value={paceLabel(paceOf(spot))} testId="text-spot-pace" />}
-        {spot.category === "do" && <Fact label="Time needed" value={fmtMinutes(totalMinutes(spot))} />}
-        <Fact label="From field" value={spot.milesFromField ? `${spot.milesFromField} mi` : "On field"} />
-      </div>
 
       <section className="rounded-2xl border border-card-border bg-card p-4 space-y-3">
         <p className="text-sm leading-relaxed">{spot.description || "No description yet."}</p>
@@ -100,6 +87,18 @@ export default function SpotPage() {
           {spot.userId && crew.get(spot.userId) && <TierChip tierId={crew.get(spot.userId)!.tierId} />}</p>
       </section>
 
+      <div className={cn("grid gap-2", spot.category === "do" || spot.category === "eat" ? "grid-cols-3" : hasCost(spot.category) ? "grid-cols-2" : "grid-cols-1")}>
+        {hasCost(spot.category) && (
+          <Fact label={spot.costVotes > 1 ? `Crew price · ${spot.costVotes} crew` : "Price"} value={spot.cost == null ? "Not priced" : COST_LABELS[spot.cost]} mono={spot.cost != null} testId="text-spot-cost"
+            sub={spot.cost != null && spot.cost > 0 ? `${costRange(spot.category, spot.cost)} ${spot.category === "stay" ? "/ night" : "pp"}` : undefined} />
+        )}
+        {spot.category === "eat" && <Fact label="Pace" value={paceLabel(paceOf(spot))} testId="text-spot-pace" />}
+        {spot.category === "do" && <Fact label="Time needed" value={fmtMinutes(totalMinutes(spot))} />}
+        <Fact label="From field" value={spot.milesFromField ? `${spot.milesFromField} mi` : "On field"} />
+      </div>
+
+      <CrewVote spot={spot} />
+
       <AdBanner slot="inline" icaos={[spot.icao]} />
 
       <section className="space-y-3">
@@ -117,7 +116,7 @@ export default function SpotPage() {
             ))}
           </div>
         </div>
-        {reviews.length === 0 && <p className="text-sm text-muted-foreground">No reviews yet. Be the first: tap the stars at the top of the page.</p>}
+        {reviews.length === 0 && <p className="text-sm text-muted-foreground">No reviews yet. Be the first: rate it below.</p>}
         {[...reviews].sort((a, b) => (b.up - b.down) - (a.up - a.down) || b.createdAt - a.createdAt).map((r) => (
           editing === r.id ? <ReviewForm key={r.id} spotId={spot.id} category={spot.category} edit={r} onDone={() => setEditing(null)} /> :
           <article key={r.id} className="rounded-2xl border border-card-border bg-card p-4" data-testid={`review-${r.id}`}>
@@ -141,6 +140,8 @@ export default function SpotPage() {
           </article>
         ))}
       </section>
+
+      <ReviewForm spotId={spot.id} category={spot.category} />
     </div>
   );
 }

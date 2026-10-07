@@ -10,7 +10,7 @@ import {
 import { tierFor, TIERS, publicName } from "@shared/tiers";
 import { buildHighlights } from "@shared/highlights";
 import { briefingSchema, type BriefingStop, type Briefing, type SpotWithStats } from "@shared/schema";
-import { isValidCost, costOptions, milesBetween } from "@shared/cost";
+import { isValidCost, costOptions, milesBetween, isPace, paceMinutes } from "@shared/cost";
 import { suggestPicks } from "@shared/briefing";
 import { refAirport, nearestAirports, isCode } from "./airportsData";
 import { searchPlaces, nearbyPlaces } from "./places";
@@ -227,8 +227,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (rest.category === "fbo") rest.costLevel = 0;
     else if (!isValidCost(rest.category as any, rest.costLevel)) return rest.category === "do" ? "Pick a price" : "Pick a price from $ to $$$$";
     if (rest.category === "eat") {
-      if (rest.pace !== "grab" && rest.pace !== "sit") return "Pick Grab & go or Sit-down";
-      rest.minutesNeeded = rest.pace === "grab" ? 30 : 90;
+      if (!isPace(rest.pace)) return "Pick Grab & go, Sit-down, or both";
+      rest.minutesNeeded = paceMinutes(rest.pace);
     } else rest.pace = null;
     if (rest.category === "stay") rest.minutesNeeded = 720;
     if (rest.category === "fbo") rest.minutesNeeded = 30;
@@ -498,7 +498,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         const data = insertSpotSchema.parse({
           icao, category: o.category.toLowerCase(), name: o.name, description: o.description || "", address: o.address || "", website: o.website || "",
           costLevel: o.costLevel || 1, minutesNeeded: o.minutesNeeded || 60, milesFromField: o.milesFromField ? Number(o.milesFromField) : 0,
-          pace: o.pace === "grab" || o.pace === "sit" ? o.pace : null, lat: o.lat ? Number(o.lat) : null, lng: o.lng ? Number(o.lng) : null,
+          pace: isPace(o.pace) ? o.pace : null, lat: o.lat ? Number(o.lat) : null, lng: o.lng ? Number(o.lng) : null,
           crewTip: o.crewTip || "", tags: JSON.stringify((o.tags || "").split(/[;|]/).map((t) => t.trim()).filter(Boolean)),
           submittedBy: o.submittedBy || "Admin import", status: ["live", "pending", "hidden"].includes(o.status) ? o.status : "live",
         });

@@ -7,7 +7,7 @@ import { TIME_BUCKETS, type Category, type SpotWithStats, type Airport } from "@
 import { apiRequest } from "@/lib/queryClient";
 import { CAT_META, fmtMinutes, totalMinutes, parseTags, Stars, AdBanner, Chip, VetBadge, GoAroundBadge } from "@/lib/ui";
 import { FavoriteButton } from "@/lib/favorites";
-import { COST_LABELS, PACES, costOptions, costRange, costText, paceLabel, paceOf, type PaceId } from "@shared/cost";
+import { COST_LABELS, PACES, costOptions, costRange, costText, paceLabel, paceOf, paceMatches, type PaceId } from "@shared/cost";
 import { CostChoice } from "@/lib/costChip";
 import { getPosition, type NearAirport } from "@/lib/geo";
 import { useToast } from "@/hooks/use-toast";
@@ -200,7 +200,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
   const filtered = useMemo(() => {
     let list = (data?.spots || []).filter((x) => x.category === cat);
     if (showTime && bucket) list = list.filter((x) => totalMinutes(x) <= bucket.max);
-    if (showPace && s.pace) list = list.filter((x) => paceOf(x) === s.pace);
+    if (showPace && s.pace) list = list.filter((x) => paceMatches(paceOf(x), s.pace as PaceId));
     if (showCost && budget != null) list = list.filter((x) => x.cost != null && x.cost <= budget);
     if (s.vettedOnly) list = list.filter((x) => x.vet.level === "vetted");
     const sorters = {

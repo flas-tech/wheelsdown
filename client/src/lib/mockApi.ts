@@ -7,7 +7,7 @@ import { computePoints, recentActivity, publicName, tierFor, SEED_USERS, SEED_PA
 import { CREW_ROLES } from "@shared/schema";
 import { aircraftById } from "@shared/aircraft";
 import { buildHighlights } from "@shared/highlights";
-import { crewCost, costOptions, isValidCost, milesBetween } from "@shared/cost";
+import { crewCost, costOptions, isValidCost, milesBetween, isPace, paceMinutes } from "@shared/cost";
 import { suggestPicks } from "@shared/briefing";
 import { SEED_AIRPORT_COORDS } from "@shared/seedAirportCoords";
 import type { BriefingStop } from "@shared/schema";
@@ -100,7 +100,7 @@ function cleanSpot(o: any) {
   const out: any = {};
   for (const k of ["icao", "category", "name", "description", "address", "website", "crewTip", "tags", "submittedBy", "status", "placeRef"]) if (o[k] !== undefined && o[k] !== null) out[k] = String(o[k]);
   for (const k of ["costLevel", "minutesNeeded", "milesFromField", "lat", "lng"]) if (o[k] !== undefined && o[k] !== "" && o[k] !== null) out[k] = Number(o[k]);
-  if (o.pace !== undefined) out.pace = o.pace === "grab" || o.pace === "sit" ? o.pace : null;
+  if (o.pace !== undefined) out.pace = isPace(o.pace) ? o.pace : null;
   if (out.category && !CATS.includes(out.category)) throw new Error("Invalid category");
   if (out.name !== undefined && out.name.trim().length < 2) throw new Error("Give it a name");
   if (out.costLevel !== undefined && (out.costLevel < 0 || out.costLevel > 4)) throw new Error("costLevel must be 0–4");
@@ -293,8 +293,8 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
     if (data.category === "fbo") data.costLevel = 0;
     else if (!isValidCost(data.category, data.costLevel)) throw new HttpError(400, data.category === "do" ? "Pick a price" : "Pick a price from $ to $$$$");
     if (data.category === "eat") {
-      if (data.pace !== "grab" && data.pace !== "sit") throw new HttpError(400, "Pick Grab & go or Sit-down");
-      data.minutesNeeded = data.pace === "grab" ? 30 : 90;
+      if (!isPace(data.pace)) throw new HttpError(400, "Pick Grab & go, Sit-down, or both");
+      data.minutesNeeded = paceMinutes(data.pace);
     } else data.pace = null;
     if (data.category === "stay") data.minutesNeeded = 720;
     if (data.category === "fbo") data.minutesNeeded = 30;
@@ -317,8 +317,8 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
     if (data.category === "fbo") data.costLevel = 0;
     else if (!isValidCost(data.category, data.costLevel)) throw new HttpError(400, data.category === "do" ? "Pick a price" : "Pick a price from $ to $$$$");
     if (data.category === "eat") {
-      if (data.pace !== "grab" && data.pace !== "sit") throw new HttpError(400, "Pick Grab & go or Sit-down");
-      data.minutesNeeded = data.pace === "grab" ? 30 : 90;
+      if (!isPace(data.pace)) throw new HttpError(400, "Pick Grab & go, Sit-down, or both");
+      data.minutesNeeded = paceMinutes(data.pace);
     } else data.pace = null;
     if (data.category === "stay") data.minutesNeeded = 720;
     if (data.category === "fbo") data.minutesNeeded = 30;
