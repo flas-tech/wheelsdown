@@ -8,8 +8,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { TierLadder } from "./profile";
 import { CrewAvatar } from "@/lib/aircraft";
-import { WrightChip, WrightFlyer } from "@/lib/club";
-import { WRIGHT_NAME } from "@shared/club";
 
 type Row = PublicUser & { rank: number };
 type Board = { total: number; crewTotal: number; base: string | null; rows: Row[]; offset: number; limit: number };
@@ -40,7 +38,6 @@ export default function CrewPage() {
   const { data: bases } = useQuery<{ code: string; n: number }[]>({ queryKey: ["/api/leaderboard/bases"] });
   const baseHints = base.trim().length >= 1 ? (bases || []).filter((b) => b.code.startsWith(base.trim().toUpperCase()) && b.code !== base.trim().toUpperCase()).slice(0, 5) : [];
   const filtered = !!dq || dbase.length >= 3;
-  const { data: club } = useQuery<{ seats: number; taken: number; left: number; members: { id: number; displayName: string; aircraft: string; wrightNo: number; homeBase: string }[] }>({ queryKey: ["/api/club"], staleTime: 30_000 });
 
   return (
     <div className="space-y-5">
@@ -56,28 +53,6 @@ export default function CrewPage() {
           </div>
         )}
       </header>
-
-      {club && (club.taken > 0 || club.left > 0) && (
-        <section className="relative overflow-hidden rounded-2xl border border-[#B8893B]/40 p-4 text-[#F3E3BF]" style={{ background: "radial-gradient(120% 140% at 100% 0%, #5A4220 0%, #2A2118 55%, #1A140E 100%)" }} data-testid="section-wright-club">
-          <p className="font-code text-[10px] tracking-[0.25em] text-[#C99A45]">FOUNDING MEMBERS · KITTY HAWK 1903</p>
-          <p className="mt-1 font-semibold text-white">{WRIGHT_NAME}</p>
-          <p className="text-xs text-[#F3E3BF]/75">{club.left > 0 ? `The first ${club.seats} crews to sign up get a numbered badge for good. ${club.left} of ${club.seats} seats left.` : `All ${club.seats} founding seats are taken.`}</p>
-          <div className="mt-3 grid grid-cols-5 gap-1.5" data-testid="grid-wright-seats">
-            {Array.from({ length: club.seats }, (_, i) => {
-              const m = club.members.find((x) => x.wrightNo === i + 1);
-              const taken = i < club.taken;
-              const inner = (
-                <div className={cn("flex h-14 flex-col items-center justify-center rounded-lg border text-center", m ? "border-[#C99A45] bg-[#1A140E]" : taken ? "border-[#C99A45]/40 bg-[#1A140E]/60" : "border-dashed border-[#C99A45]/30")}>
-                  <span className="font-code text-sm font-bold text-[#E9C77E] tabular">{i + 1}</span>
-                  <span className="w-full truncate px-1 text-[10px] text-[#F3E3BF]/80">{m ? m.displayName : taken ? "Anonymous" : "Open"}</span>
-                </div>
-              );
-              return m ? <Link key={i} href={`/crew/${m.id}`} data-testid={`seat-wright-${i + 1}`}>{inner}</Link> : <div key={i} data-testid={`seat-wright-${i + 1}`}>{inner}</div>;
-            })}
-          </div>
-          <WrightFlyer className="pointer-events-none absolute right-3 top-3 h-8 w-20 text-[#C99A45]/40" />
-        </section>
-      )}
 
       {albatrosses.length > 0 && (
         <section className="rounded-2xl p-4 text-white" style={{ background: "linear-gradient(135deg,#0B0F1A,#1F2937 60%,#F8D27A44)" }} data-testid="section-albatross-wall">
@@ -139,7 +114,7 @@ export default function CrewPage() {
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold truncate">{u.displayName}{me?.id === u.id && <span className="ml-1.5 text-[10px] uppercase text-primary">You</span>}</p>
                 <p className="text-[11px] text-muted-foreground truncate">{u.handle ? `@${u.handle} · ` : ""}{u.crewRole}{u.homeBase ? ` · ${u.homeBase}` : ""}</p>
-                <div className="mt-1 flex flex-wrap items-center gap-1.5"><Insignia tierId={u.tierId} className="h-4 shrink-0" /><TierChip tierId={u.tierId} points={u.points} /><WrightChip no={u.wrightNo} /></div>
+                <div className="mt-1 flex flex-wrap items-center gap-1.5"><Insignia tierId={u.tierId} className="h-4 shrink-0" /><TierChip tierId={u.tierId} points={u.points} /></div>
               </div>
               <div className="text-right shrink-0">
                 <p className="font-code text-sm font-bold tabular">{u.points.toLocaleString()}</p>

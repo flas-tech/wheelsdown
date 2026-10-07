@@ -1,7 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { InterestChips } from "@/lib/interests";
-import { WrightCard } from "@/lib/club";
 import { useToast } from "@/hooks/use-toast";
 import { UserPlus, UserCheck } from "lucide-react";
 import { Link, useRoute } from "wouter";
@@ -51,7 +50,6 @@ export default function CrewProfilePage() {
         <Stat label="Ratings" value={counts.reviews} />
         <Stat label="Contributions" value={u.participation} />
       </div>
-      {u.wrightNo && <WrightCard no={u.wrightNo} name={isMe ? undefined : u.displayName} />}
       {(u.bio || u.interests?.length > 0 || data.follow) && (
         <section className="space-y-3" data-testid="section-crew-about">
           {u.bio && <p className="text-sm whitespace-pre-line" data-testid="text-crew-bio">{u.bio}</p>}

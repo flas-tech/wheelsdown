@@ -25,7 +25,7 @@ R=$(curl -s -XPOST $BASE/api/auth/signup -H "$J" -d "{\"handle\":\"$H\",\"passwo
 T=$(echo "$R" | jget "d.get('token','')" 2>/dev/null)
 [[ -n "$T" ]] && ok "sign up" || bad "sign up" "$R"
 check "test signup takes no club seat" '"wrightNo":null' "$R"
-check "club"               '"seats":10'     "$(curl -s $BASE/api/club)"
+check "club"               '"seats":50'     "$(curl -s $BASE/api/club)"
 A="authorization: Bearer $T"
 check "me"                "\"handle\":\"$H\"" "$(curl -s $BASE/api/me -H "$A")"
 check "login by handle"   '"token"'        "$(curl -s -XPOST $BASE/api/auth/login -H "$J" -d "{\"handle\":\"$H\",\"password\":\"smoke-pass-123\"}")"

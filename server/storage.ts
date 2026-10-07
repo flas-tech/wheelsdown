@@ -461,7 +461,7 @@ export class DatabaseStorage {
       return {
         id: u.id, handle: anon && !admin ? "" : u.handle, displayName: admin ? u.displayName : publicName(u), crewRole: u.crewRole, homeBase: u.homeBase || "",
         anonymous: anon, participation: b.participation, points: b.total, tierId: tierFor(b.total).tier.id, createdAt: u.createdAt, aircraft: u.aircraft || "",
-        bio: anon && !admin ? "" : u.bio || "", interests: anon && !admin ? [] : parseInterests(u.interests), wrightNo: anon && !admin ? null : u.wrightNo ?? null,
+        bio: anon && !admin ? "" : u.bio || "", interests: anon && !admin ? [] : parseInterests(u.interests), wrightNo: admin ? u.wrightNo ?? null : null, // badge shows only on the member's own Logbook
         ...(admin ? { email: u.email } : {}),
       };
     }).sort((a, b) => b.points - a.points);
@@ -548,9 +548,7 @@ export class DatabaseStorage {
   // ---- founding club ----
   async wrightClub() {
     const taken = Number((await this.getSetting("wright_seats_taken")) || 0);
-    const members = (await this.publicUsers()).filter((u) => u.wrightNo).sort((a, b) => a.wrightNo! - b.wrightNo!)
-      .map((u) => ({ id: u.id, displayName: u.displayName, aircraft: u.aircraft, wrightNo: u.wrightNo, homeBase: u.homeBase }));
-    return { seats: WRIGHT_SEATS, taken, left: Math.max(0, WRIGHT_SEATS - taken), members };
+    return { seats: WRIGHT_SEATS, taken, left: Math.max(0, WRIGHT_SEATS - taken) };
   }
 
   // ---- following ----

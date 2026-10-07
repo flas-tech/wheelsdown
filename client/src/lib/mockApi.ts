@@ -146,8 +146,8 @@ function followCounts(id: number) {
 }
 function publicUsers(admin = false) {
   return db.users.map((u) => {
-    const { breakdown, follows: _f, ...rest } = meOf(u);
-    return admin || !u.anonymous ? rest : { ...rest, handle: "", displayName: publicName(u), bio: "", interests: [], wrightNo: null };
+    const { breakdown, follows: _f, wrightNo: _w, ...rest } = meOf(u);
+    return admin || !u.anonymous ? rest : { ...rest, handle: "", displayName: publicName(u), bio: "", interests: [] };
   }).sort((a, b) => b.points - a.points);
 }
 function relabel(u: DemoUser) {
@@ -396,9 +396,8 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
   }
 
   if (method === "GET" && path === "/api/club") {
-    const members = publicUsers().filter((p) => p.wrightNo).map((p) => ({ id: p.id, displayName: p.displayName, aircraft: p.aircraft, wrightNo: p.wrightNo, homeBase: p.homeBase }));
     const taken = db.wrightTaken || 0;
-    return { seats: WRIGHT_SEATS, taken, left: Math.max(0, WRIGHT_SEATS - taken), members };
+    return { seats: WRIGHT_SEATS, taken, left: Math.max(0, WRIGHT_SEATS - taken) };
   }
   // ---- following ----
   if ((m = path.match(/^\/api\/crew\/(\d+)\/follow$/)) && (method === "POST" || method === "DELETE")) {
