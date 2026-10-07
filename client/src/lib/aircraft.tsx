@@ -1,3 +1,4 @@
+import { useId } from "react";
 // Plan-view (top-down, nose up) aircraft silhouettes, drawn from simple symmetric geometry so they read at 20px.
 import { AIRCRAFT, MAX_AIRCRAFT, aircraftById, aircraftList, type AircraftId } from "@shared/aircraft";
 import { cn } from "@/lib/utils";
@@ -24,7 +25,7 @@ const pod = (x: number, y0: number, y1: number, w: number) => {
 };
 
 type HeliId = Extract<AircraftId, `heli_${string}`>;
-type FixedId = Exclude<AircraftId, HeliId>;
+type FixedId = Exclude<AircraftId, HeliId | `role_${string}`>;
 const SPECS: Record<FixedId, Spec> = {
   sep: { // high straight wing, nose prop
     fus: { y0: 9, y1: 57, w: 7, nose: 5, tail: 20 },
@@ -123,8 +124,55 @@ function HeliIcon({ id, className, title }: { id: HeliId; className?: string; ti
   );
 }
 
+/** Crew-role emblems drawn on the same 64x64 grid as the aircraft. */
+function RoleIcon({ id, className, title }: { id: string; className?: string; title?: string }) {
+  const uid = useId().replace(/[^a-zA-Z0-9_-]/g, "");
+  const label = title || aircraftById(id)?.label;
+  const svg = (children: React.ReactNode) => <svg viewBox="0 0 64 64" className={cn("h-6 w-6", className)} role="img" aria-label={label}>{children}</svg>;
+  if (id === "role_mech") {
+    // open-end head with a jaw cut in, slim handle, box-end ring at the tail; plain paths so no masks are needed
+    const wrench = (rot: number) => (
+      <g transform={`rotate(${rot} 32 32)`} fill="currentColor">
+        <path d="M28.6 1.6 A9 9 0 1 0 35.4 1.6 L35.4 11.2 L28.6 11.2 Z" />
+        <rect x="29" y="17" width="6" height="32" rx="2.4" />
+        <path fillRule="evenodd" d="M25.6 53.5 a6.4 6.4 0 1 0 12.8 0 a6.4 6.4 0 1 0 -12.8 0 Z M29.1 53.5 a2.9 2.9 0 1 0 5.8 0 a2.9 2.9 0 1 0 -5.8 0 Z" />
+      </g>
+    );
+    return svg(<>{wrench(45)}{wrench(-45)}</>);
+  }
+  if (id === "role_fa") {
+    // wings badge: three feather rows each side of a round crest
+    const wing = (sd: 1 | -1) => [0, 1, 2].map((i) => {
+      const y = 25 + i * 5.2, inner = 32 + sd * 7, outer = 32 + sd * (29 - i * 6.5);
+      return <path key={i} d={`M${inner} ${y}L${outer} ${y - 3.2 + i * 0.6}Q${outer + sd * 1.5} ${y + 0.4} ${outer - sd * 1.5} ${y + 2.8}L${inner} ${y + 4.4}Z`} fill="currentColor" />;
+    });
+    return svg(<>
+      <defs><mask id={`${uid}f`} maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64"><rect width="64" height="64" fill="white" /><circle cx="32" cy="31" r="3.6" fill="none" stroke="black" strokeWidth="1.7" /></mask></defs>
+      <g mask={`url(#${uid}f)`}>{wing(-1)}{wing(1)}<circle cx="32" cy="31" r="7.5" fill="currentColor" /></g>
+    </>);
+  }
+  if (id === "role_disp") {
+    return svg(<>
+      <path d="M12 34a20 20 0 0 1 40 0" fill="none" stroke="currentColor" strokeWidth="4.4" strokeLinecap="round" />
+      <rect x="8" y="31" width="10" height="17" rx="4" fill="currentColor" />
+      <rect x="46" y="31" width="10" height="17" rx="4" fill="currentColor" />
+      <path d="M13 47q2 9 15 9" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+      <rect x="27" y="53" width="9" height="6" rx="3" fill="currentColor" />
+    </>);
+  }
+  // scheduler: calendar page with binder rings and a trip line across the days
+  return svg(<>
+    <rect x="9" y="13" width="46" height="42" rx="5" fill="none" stroke="currentColor" strokeWidth="4" />
+    <rect x="9" y="13" width="46" height="11" rx="5" fill="currentColor" />
+    <rect x="19" y="7" width="4.5" height="11" rx="2.2" fill="currentColor" />
+    <rect x="40.5" y="7" width="4.5" height="11" rx="2.2" fill="currentColor" />
+    {[0, 1, 2].flatMap((r) => [0, 1, 2, 3].map((c) => <rect key={`${r}${c}`} x={15 + c * 9.5} y={29 + r * 7.8} width="5" height="4.6" rx="1" fill="currentColor" opacity={r === 1 && c > 0 ? 1 : 0.45} />))}
+  </>);
+}
+
 export function AircraftIcon({ type, className, title }: { type: string | null | undefined; className?: string; title?: string }) {
   const id = (aircraftById(type)?.id || "sep") as AircraftId;
+  if (id.startsWith("role_")) return <RoleIcon id={id} className={className} title={title} />;
   if (id.startsWith("heli_")) return <HeliIcon id={id as HeliId} className={className} title={title} />;
   const s = SPECS[id as FixedId];
   const pods = (s.pods || []).flatMap((p) => [pod(p.x, p.y0, p.y1, p.w), pod(2 * C - p.x, p.y0, p.y1, p.w)]);
@@ -156,7 +204,7 @@ export function AircraftPicker({ value, onChange }: { value: string; onChange: (
   const picked = aircraftList(value).map((a) => a.id as string);
   const toggle = (id: string) => onChange((picked.includes(id) ? picked.filter((x) => x !== id) : picked.length >= MAX_AIRCRAFT ? picked : [...picked, id]).join(","));
   const avatar = (id: string) => onChange([id, ...picked.filter((x) => x !== id)].join(","));
-  const group = (kind: "fixed" | "heli", label: string) => (
+  const group = (kind: "fixed" | "heli" | "role", label: string) => (
     <div>
       <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
       <div className="grid grid-cols-3 gap-1.5" role="group" aria-label={label}>
@@ -184,9 +232,10 @@ export function AircraftPicker({ value, onChange }: { value: string; onChange: (
   );
   return (
     <div className="space-y-3" data-testid="picker-aircraft">
-      <p className="text-[11px] text-muted-foreground">Pick everything you fly, up to {MAX_AIRCRAFT}. Tap "Set avatar" to choose which one shows next to your name. {picked.length > 0 && <span className="font-semibold text-foreground tabular">{picked.length}/{MAX_AIRCRAFT} picked</span>}</p>
+      <p className="text-[11px] text-muted-foreground">Pick everything you fly or work on, up to {MAX_AIRCRAFT}. Crew-role emblems are at the bottom. Tap "Set avatar" to choose which one shows next to your name. {picked.length > 0 && <span className="font-semibold text-foreground tabular">{picked.length}/{MAX_AIRCRAFT} picked</span>}</p>
       {group("fixed", "Airplanes")}
       {group("heli", "Helicopters")}
+      {group("role", "Crew roles")}
     </div>
   );
 }

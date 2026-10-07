@@ -3,6 +3,7 @@ import { InterestPicker, InterestChips } from "@/lib/interests";
 import { WrightCard } from "@/lib/club";
 import { BadgeProgressGrid } from "@/lib/achievements";
 import { FeedbackCard } from "@/lib/feedback";
+import { AirportCheckInCard, CheckInList, ProfileMap } from "@/lib/checkins";
 import { InviteCard } from "@/lib/share";
 import { BIO_MAX } from "@shared/interests";
 import { aircraftList } from "@shared/aircraft";
@@ -121,6 +122,10 @@ export default function ProfilePage() {
       )}
 
       <Participation b={b} />
+
+      <ProfileMap own />
+      <AirportCheckInCard />
+      <CheckInList />
 
       {me.isAdmin && (
         <Link href="/admin" className="flex items-center gap-3 rounded-2xl border border-primary/40 bg-primary/5 p-4 hover-elevate" data-testid="link-admin-console">

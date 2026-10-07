@@ -212,6 +212,7 @@ export class DatabaseStorage {
     await d.delete(reviews).where(inArray(reviews.spotId, ids));
     await d.delete(votes).where(and(eq(votes.targetType, "spot"), inArray(votes.targetId, ids)));
     await d.delete(favorites).where(inArray(favorites.spotId, ids));
+    await d.execute(sql`DELETE FROM checkins WHERE spot_id = ANY(${sql.raw("ARRAY[" + ids.map(Number).join(",") + "]::int[]")})`);
     return (await d.delete(spots).where(inArray(spots.id, ids)).returning({ id: spots.id })).length;
   }
 
@@ -406,6 +407,7 @@ export class DatabaseStorage {
     await d.update(spots).set({ userId: null, submittedBy: "Former crew member" }).where(eq(spots.userId, id));
     await d.delete(briefings).where(eq(briefings.userId, id));
     await d.delete(favorites).where(eq(favorites.userId, id));
+    await d.execute(sql`DELETE FROM checkins WHERE user_id = ${id}`);
     await d.delete(follows).where(or(eq(follows.followerId, id), eq(follows.followeeId, id)));
     await d.delete(sessions).where(eq(sessions.userId, id));
     await d.delete(passwordResets).where(eq(passwordResets.userId, id));

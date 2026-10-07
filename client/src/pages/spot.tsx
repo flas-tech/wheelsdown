@@ -7,6 +7,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { CAT_META, fmtMinutes, totalMinutes, parseTags, Stars, AdBanner, Chip, VetBadge, VoteButtons, timeAgo, GoAroundBadge, GoAroundIcon } from "@/lib/ui";
 import { FavoriteButton } from "@/lib/favorites";
 import { ShareButton } from "@/lib/share";
+import { CheckInButton } from "@/lib/checkins";
 import { trackOut } from "@/lib/metrics";
 import { CrewAvatar } from "@/lib/aircraft";
 import { ModNotice, type ModInfo } from "@/lib/moderation";
@@ -70,6 +71,7 @@ export default function SpotPage() {
           {spot.goArounds > 0 && <GoAroundBadge count={spot.goArounds} />}
           <button type="button" onClick={() => document.getElementById("rate")?.scrollIntoView({ behavior: "smooth", block: "center" })} className="text-xs font-medium text-primary" data-testid="button-jump-rate">Rate it</button>
         </div>
+        <div className="mt-3"><CheckInButton spotId={spot.id} name={spot.name} /></div>
         {mine && (
           <Link href={`/spot/${spot.id}/edit`} className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-border px-3 h-8 text-xs font-medium hover-elevate" data-testid="link-edit-spot">
             <Pencil className="h-3.5 w-3.5" /> Edit your listing

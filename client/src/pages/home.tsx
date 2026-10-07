@@ -7,6 +7,7 @@ import { TIME_BUCKETS, type Category, type SpotWithStats, type Airport } from "@
 import { apiRequest } from "@/lib/queryClient";
 import { CAT_META, fmtMinutes, totalMinutes, parseTags, Stars, AdBanner, Chip, VetBadge, GoAroundBadge } from "@/lib/ui";
 import { FavoriteButton } from "@/lib/favorites";
+import { CUISINES, cuisinesOf, cuisineLabel } from "@shared/cuisine";
 import { COST_LABELS, PACES, costOptions, costRange, costText, paceLabel, paceOf, paceMatches, type PaceId } from "@shared/cost";
 import { CostChoice } from "@/lib/costChip";
 import { getPosition, type NearAirport } from "@/lib/geo";
@@ -20,6 +21,8 @@ type SearchState = {
   route: string;
   time: string | null;
   pace: PaceId | null;
+  /** food type (pizza, BBQ…), eat only */
+  food: string | null;
   cost: number | null;
   sort: "trusted" | "rating" | "close" | "new";
   vettedOnly: boolean;
@@ -27,11 +30,11 @@ type SearchState = {
   browse: boolean;
 };
 const SearchCtx = createContext<[SearchState, (p: Partial<SearchState>) => void]>([
-  { category: null, route: "", time: null, pace: null, cost: null, sort: "trusted", vettedOnly: false, browse: false },
+  { category: null, route: "", time: null, pace: null, food: null, cost: null, sort: "trusted", vettedOnly: false, browse: false },
   () => {},
 ]);
 export function SearchProvider({ children }: { children: React.ReactNode }) {
-  const [s, set] = useState<SearchState>({ category: null, route: "", time: null, pace: null, cost: null, sort: "trusted", vettedOnly: false, browse: false });
+  const [s, set] = useState<SearchState>({ category: null, route: "", time: null, pace: null, food: null, cost: null, sort: "trusted", vettedOnly: false, browse: false });
   return <SearchCtx.Provider value={[s, (p) => set((o) => ({ ...o, ...p }))]}>{children}</SearchCtx.Provider>;
 }
 export const useSearch = () => useContext(SearchCtx);
@@ -203,6 +206,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
     if (showPace && s.pace) list = list.filter((x) => paceMatches(paceOf(x), s.pace as PaceId));
     if (showCost && budget != null) list = list.filter((x) => x.cost != null && x.cost <= budget);
     if (s.vettedOnly) list = list.filter((x) => x.vet.level === "vetted");
+    if (showPace && s.food) list = list.filter((x) => cuisinesOf(x).includes(s.food!));
     const sorters = {
       trusted: (a: SpotWithStats, b: SpotWithStats) => trustScore(b.vet) - trustScore(a.vet) || (b.avgRating ?? 0) - (a.avgRating ?? 0),
       rating: (a: SpotWithStats, b: SpotWithStats) => (b.avgRating ?? 0) - (a.avgRating ?? 0) || b.reviewCount - a.reviewCount,
@@ -210,7 +214,14 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
       new: (a: SpotWithStats, b: SpotWithStats) => b.createdAt - a.createdAt,
     };
     return [...list].sort(sorters[s.sort]);
-  }, [data, cat, s.time, s.pace, budget, s.sort, s.vettedOnly, showTime, showPace, showCost]);
+  }, [data, cat, s.time, s.pace, s.food, budget, s.sort, s.vettedOnly, showTime, showPace, showCost]);
+  // food types present in these results (before the food filter), most common first
+  const foodTypes = useMemo(() => {
+    if (!showPace) return [] as { id: string; n: number }[];
+    const n = new Map<string, number>();
+    for (const x of data?.spots || []) if (x.category === "eat") for (const id of cuisinesOf(x)) n.set(id, (n.get(id) || 0) + 1);
+    return CUISINES.filter((c) => n.has(c.id)).map((c) => ({ id: c.id, n: n.get(c.id)! })).sort((a, b) => b.n - a.n);
+  }, [data, showPace]);
 
   const legs = data?.legs || [];
   const icaos = legs.filter((l) => l.airport).map((l) => l.airport!.icao);
@@ -230,7 +241,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
   const PAGE = 10, PER_AIRPORT = 6;
   const [shown, setShown] = useState(PAGE);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  useEffect(() => { setShown(PAGE); setExpanded(new Set()); }, [cat, route, s.time, s.pace, s.cost, s.vettedOnly, s.sort, s.browse]);
+  useEffect(() => { setShown(PAGE); setExpanded(new Set()); }, [cat, route, s.time, s.pace, s.food, s.cost, s.vettedOnly, s.sort, s.browse]);
   const mode: "choose" | "browse" | "route" = route ? "route" : s.browse ? "browse" : "choose";
   const { data: hl } = useQuery<Highlights>({ queryKey: [`/api/highlights?category=${cat}`], enabled: mode === "choose" });
 
@@ -334,6 +345,20 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
           </div>
         </div>
       )}
+      {showPace && (foodTypes.length > 0 || s.food) && (
+        <div data-testid="filter-food">
+          <p className="text-xs font-medium text-muted-foreground mb-1.5">Food type</p>
+          <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4">
+            <Chip active={!s.food} onClick={() => set({ food: null })} testId="chip-food-any">All</Chip>
+            {s.food && !foodTypes.some((f) => f.id === s.food) && <Chip active onClick={() => set({ food: null })} testId={`chip-food-${s.food}`}>{cuisineLabel(s.food)}</Chip>}
+            {foodTypes.map((f) => (
+              <Chip key={f.id} active={s.food === f.id} onClick={() => set({ food: s.food === f.id ? null : f.id })} testId={`chip-food-${f.id}`}>
+                {cuisineLabel(f.id)} <span className="ml-1 font-code text-[10px] opacity-70 tabular">{f.n}</span>
+              </Chip>
+            ))}
+          </div>
+        </div>
+      )}
       {showCost && (
         <div>
           <p className="text-xs font-medium text-muted-foreground mb-1.5">Budget (up to) · crew-reported prices</p>
@@ -404,7 +429,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
             )}
             {g.spots.length === 0 ? (
               <Empty
-                title={`No ${M.label.toLowerCase()} picks${s.time || s.pace || budget != null || s.vettedOnly ? " match these filters" : " yet"}`}
+                title={`No ${M.label.toLowerCase()} picks${s.time || s.pace || s.food || budget != null || s.vettedOnly ? " match these filters" : " yet"}`}
                 body="Be the first crew to drop one here."
                 icao={g.icao}
               />

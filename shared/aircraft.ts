@@ -1,4 +1,4 @@
-// Profile aircraft: icons a crew member picks for their profile, smallest to largest. Cosmetic only (no points).
+// Profile aircraft: icons a crew member picks for their profile, smallest to largest, plus crew-role emblems. Cosmetic only (no points).
 // Stored on the user as a comma-separated list; the first one is the avatar.
 export const AIRCRAFT = [
   { id: "sep", label: "Single piston", example: "Cessna 172, SR22", kind: "fixed" },
@@ -15,6 +15,11 @@ export const AIRCRAFT = [
   { id: "heli_lt", label: "Light twin helicopter", example: "H135, H145", kind: "heli" },
   { id: "heli_mt", label: "Medium twin helicopter", example: "AW139, S-76", kind: "heli" },
   { id: "heli_ht", label: "Heavy multi-turbine helicopter", example: "S-92, AW189, AW101", kind: "heli" },
+  // crew-role emblems, for people who keep the fleet flying rather than (or as well as) flying it
+  { id: "role_mech", label: "Mechanic", example: "Crossed wrenches", kind: "role" },
+  { id: "role_fa", label: "Flight attendant", example: "Cabin crew wings", kind: "role" },
+  { id: "role_disp", label: "Dispatcher", example: "Headset", kind: "role" },
+  { id: "role_sched", label: "Scheduler", example: "Trip calendar", kind: "role" },
 ] as const;
 export type AircraftId = (typeof AIRCRAFT)[number]["id"];
 export const AIRCRAFT_IDS = AIRCRAFT.map((a) => a.id) as unknown as [AircraftId, ...AircraftId[]];

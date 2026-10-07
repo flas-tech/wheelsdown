@@ -3,6 +3,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { InterestChips } from "@/lib/interests";
 import { WrightCard } from "@/lib/club";
 import { BadgeShelf } from "@/lib/achievements";
+import { ProfileMap } from "@/lib/checkins";
 import { useToast } from "@/hooks/use-toast";
 import { UserPlus, UserCheck } from "lucide-react";
 import { Link, useRoute } from "wouter";
@@ -55,6 +56,7 @@ export default function CrewProfilePage() {
       </div>
       {data.wrightNo ? <WrightCard no={data.wrightNo} name={isMe ? undefined : u.displayName} /> : null}
       <BadgeShelf ids={data.badges || []} />
+      {!data.hidden && <ProfileMap userId={u.id} />}
       {(u.bio || u.interests?.length > 0 || data.follow) && (
         <section className="space-y-3" data-testid="section-crew-about">
           {u.bio && <p className="text-sm whitespace-pre-line" data-testid="text-crew-bio">{u.bio}</p>}

@@ -7,6 +7,7 @@ import { computePoints, recentActivity, publicName, tierFor, SEED_USERS, SEED_PA
 import { CREW_ROLES } from "@shared/schema";
 import { SERVICES } from "@shared/services";
 import type { FeedbackItem } from "@shared/feedback";
+import { CHECKIN_RULES, type MapDot } from "@shared/checkins";
 import { achievementProgress, type AchStats } from "@shared/achievements";
 import { validAircraftList } from "@shared/aircraft";
 import { BIO_MAX, INTERESTS, MAX_INTERESTS } from "@shared/interests";
@@ -22,7 +23,7 @@ const STORE_KEY = "wheelsdown-demo-v4";
 
 type DemoUser = { id: number; handle: string; displayName: string; crewRole: string; homeBase: string; anonymous: boolean; email?: string; aircraft?: string; bio?: string; interests?: string[]; wrightNo?: number | null; pw: string; bonusPoints: number; createdAt: number };
 type DemoBriefing = { id: number; userId: number; title: string; stops: BriefingStop[]; shareToken: string; createdAt: number; updatedAt: number };
-type DB = { airports: Airport[]; spots: Spot[]; reviews: Review[]; ads: Ad[]; votes: Vote[]; users: DemoUser[]; sessions: Record<string, number>; briefings?: DemoBriefing[]; favorites?: { userId: number; spotId: number; at: number }[]; follows?: { a: number; b: number; at: number }[]; wrightTaken?: number; feedback?: FeedbackItem[];
+type DB = { airports: Airport[]; spots: Spot[]; reviews: Review[]; ads: Ad[]; votes: Vote[]; users: DemoUser[]; sessions: Record<string, number>; briefings?: DemoBriefing[]; favorites?: { userId: number; spotId: number; at: number }[]; follows?: { a: number; b: number; at: number }[]; wrightTaken?: number; feedback?: FeedbackItem[]; checkins?: { id: number; userId: number; spotId: number | null; icao: string; lat: number; lng: number; createdAt: number }[];
   seq: { spot: number; review: number; ad: number; vote: number; user: number } };
 // Demo only: not a secure hash. The server build uses scrypt.
 const demoHash = (pw: string) => { let h = 5381; for (let i = 0; i < pw.length; i++) h = ((h << 5) + h + pw.charCodeAt(i)) | 0; return "demo:" + (h >>> 0).toString(36); };
@@ -538,6 +539,44 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
     status: { lastRunAt: 0, lastError: "", lastErrorAt: 0, checking: 0, held: 0, approved24h: 0, held24h: 0, errors24h: 0, overrides24h: 0 } };
   if (method === "PUT" && path === "/api/admin/moderation/settings") return { manual: false };
   // the demo records no traffic; the report shows its real ad, audience and content numbers with empty traffic
+  // ---- check-ins (demo: stored in this browser; same distance rules as the live site) ----
+  const cks = () => (db.checkins ||= []);
+  const addedDots = (uid: number): MapDot[] => db.spots.filter((s) => s.userId === uid && s.status === "live").map((s) => {
+    const ap = resolve(s.icao);
+    return { kind: "added" as const, spotId: s.id, name: s.name, icao: s.icao, category: s.category, lat: (s.lat ?? ap?.lat) as number, lng: (s.lng ?? ap?.lon) as number };
+  }).filter((d) => d.lat != null && d.lng != null);
+  if (method === "POST" && path === "/api/checkins") {
+    const u = needUser(); const b = body || {};
+    const here = { lat: Number(b.lat), lon: Number(b.lng) };
+    if ((Number(b.accuracy) || 0) / 1609.34 > CHECKIN_RULES.maxAccuracyMiles) throw new HttpError(400, "Your location is too rough to verify. Step outside or turn on precise location, then try again.");
+    let t: { spotId: number | null; icao: string; lat: number; lng: number; r: number; name: string } | null = null;
+    if (b.spotId) {
+      const s = db.spots.find((x) => x.id === Number(b.spotId) && x.status === "live"); if (!s) throw new HttpError(404, "Not found");
+      const ap = resolve(s.icao);
+      if (s.lat != null && s.lng != null) t = { spotId: s.id, icao: s.icao, lat: s.lat, lng: s.lng, r: CHECKIN_RULES.spotMiles, name: s.name };
+      else if (ap?.lat != null && ap?.lon != null) t = { spotId: s.id, icao: s.icao, lat: ap.lat, lng: ap.lon, r: (s.milesFromField || 0) + CHECKIN_RULES.unpinnedSlackMiles, name: s.name };
+    } else { const ap = resolve(String(b.icao || "")); if (ap?.lat != null && ap?.lon != null) t = { spotId: null, icao: ap.icao, lat: ap.lat, lng: ap.lon, r: CHECKIN_RULES.airportMiles, name: ap.icao }; }
+    if (!t) throw new HttpError(400, "Nothing to check in at");
+    const d = milesBetween(here, { lat: t.lat, lon: t.lng });
+    if (d > t.r) throw new HttpError(400, `You're about ${d < 10 ? d.toFixed(1) : Math.round(d)} miles from ${t.name}. Check in when you're there.`);
+    const prior = cks().find((c) => c.userId === u.id && c.spotId === t!.spotId && c.icao === t!.icao && c.createdAt > Date.now() - 20 * 3600_000);
+    if (prior) return { ok: true, id: prior.id, already: true, createdAt: prior.createdAt };
+    const row = { id: (cks().reduce((m, c) => Math.max(m, c.id), 0)) + 1, userId: u.id, spotId: t.spotId, icao: t.icao, lat: t.lat, lng: t.lng, createdAt: Date.now() };
+    cks().push(row); return { ok: true, id: row.id, already: false, createdAt: row.createdAt };
+  }
+  if (method === "GET" && path === "/api/me/checkins") {
+    const u = needUser();
+    return cks().filter((c) => c.userId === u.id).sort((a, b) => b.createdAt - a.createdAt).map((c) => { const s = db.spots.find((x) => x.id === c.spotId); return { ...c, spotName: s?.name ?? null, category: s?.category ?? null }; });
+  }
+  if (method === "DELETE" && (m = path.match(/^\/api\/checkins\/(\d+)$/))) { const u = needUser(); db.checkins = cks().filter((c) => !(c.id === Number(m![1]) && c.userId === u.id)); return { ok: true }; }
+  if (method === "GET" && path === "/api/me/map") {
+    const u = needUser(); const seen = new Set<string>();
+    const checkins: MapDot[] = cks().filter((c) => c.userId === u.id).sort((a, b) => b.createdAt - a.createdAt).filter((c) => { const k = `${c.spotId}|${c.icao}`; return !seen.has(k) && !!seen.add(k); })
+      .map((c) => { const s = db.spots.find((x) => x.id === c.spotId); return { kind: c.spotId ? "checkin" as const : "airport" as const, spotId: c.spotId, name: s?.name || c.icao, icao: c.icao, category: s?.category ?? null, lat: c.lat, lng: c.lng }; });
+    return { added: addedDots(u.id), checkins };
+  }
+  if (method === "GET" && (m = path.match(/^\/api\/crew\/(\d+)\/map$/))) { const du = db.users.find((x) => x.id === Number(m![1])); return { added: du && !du.anonymous ? addedDots(du.id) : [], checkins: [] }; }
+
   // ---- feedback (demo: stored in this browser) ----
   const fb = () => (db.feedback ||= []);
   if (method === "POST" && path === "/api/feedback") {
