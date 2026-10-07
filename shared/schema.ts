@@ -50,6 +50,11 @@ export const spots = pgTable("spots", {
   lat: doublePrecision("lat"),
   lng: doublePrecision("lng"),
   placeRef: text("place_ref"), // e.g. osm:N1576341770
+  // AI moderation: "" (not checked / legacy) | checking | approved | flagged. A held edit to a live listing waits in pendingEdit (JSON).
+  modState: text("mod_state").notNull().default(""),
+  modNote: text("mod_note").notNull().default(""),
+  modAttempts: integer("mod_attempts").notNull().default(0),
+  pendingEdit: text("pending_edit"),
 }, (t) => [index("spots_icao_idx").on(t.icao), index("spots_user_idx").on(t.userId)]);
 export const insertSpotSchema = createInsertSchema(spots, {
   icao: z.string().min(3).max(4),
@@ -61,7 +66,7 @@ export const insertSpotSchema = createInsertSchema(spots, {
   lat: z.number().min(-90).max(90).nullable().optional(),
   lng: z.number().min(-180).max(180).nullable().optional(),
   placeRef: z.string().max(40).nullable().optional(),
-}).omit({ id: true, createdAt: true });
+}).omit({ id: true, createdAt: true, modState: true, modNote: true, modAttempts: true, pendingEdit: true });
 export type InsertSpot = z.infer<typeof insertSpotSchema>;
 export type Spot = typeof spots.$inferSelect;
 
@@ -75,13 +80,18 @@ export const reviews = pgTable("reviews", {
   userId: integer("user_id"),
   createdAt: bigint("created_at", { mode: "number" }).notNull().default(0),
   costLevel: integer("cost_level"), // optional price vote: 0 free … 4 $$$$
+  status: text("status").notNull().default("live"), // live | pending | rejected (only live ratings count)
+  modState: text("mod_state").notNull().default(""),
+  modNote: text("mod_note").notNull().default(""),
+  modAttempts: integer("mod_attempts").notNull().default(0),
+  pendingEdit: text("pending_edit"),
 }, (t) => [index("reviews_spot_idx").on(t.spotId), index("reviews_user_idx").on(t.userId)]);
 export const insertReviewSchema = createInsertSchema(reviews, {
   // 1-5 stars, or 0 = "Go around" (crew says avoid this place)
   rating: z.coerce.number().int().min(0, "Pick a rating").max(5),
   comment: z.string().max(1500),
   costLevel: z.number().int().min(0).max(4).nullable().optional(),
-}).omit({ id: true, createdAt: true });
+}).omit({ id: true, createdAt: true, status: true, modState: true, modNote: true, modAttempts: true, pendingEdit: true });
 export type InsertReview = z.infer<typeof insertReviewSchema>;
 export type Review = typeof reviews.$inferSelect;
 

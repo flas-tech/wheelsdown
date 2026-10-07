@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLocation, useRoute } from "wouter";
-import { ArrowLeft, Check, ChevronDown, LocateFixed, Loader2, MapPin, Search, AlertTriangle, PlaneLanding } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, LocateFixed, Loader2, MapPin, Search, AlertTriangle, PlaneLanding, Sparkles, ExternalLink } from "lucide-react";
 import { Link } from "wouter";
 import { TIME_BUCKETS, type Airport, type Category, type SpotWithStats, type ReviewWithVotes } from "@shared/schema";
 import { COST_LABELS, PACES, costOptions, costUnit, paceOf, togglePace, isPace, type PaceValue } from "@shared/cost";
@@ -55,6 +55,12 @@ export default function AddPage() {
   const [locating, setLocating] = useState(false);
   const [nearMsg, setNearMsg] = useState("");
   const { me, requireAuth } = useAuth();
+  const { data: cfg } = useQuery<{ ai?: boolean }>({ queryKey: ["/api/config"], staleTime: 600_000 });
+  const aiOn = !!cfg?.ai;
+  const [ai, setAi] = useState<{ state: "idle" | "busy" | "done" | "error"; result: AutofillResult | null; error: string; filled: number }>({ state: "idle", result: null, error: "", filled: 0 });
+  const [aiFields, setAiFields] = useState<Set<string>>(new Set());
+  const touch = (k: string) => setAiFields((s) => { if (!s.has(k)) return s; const n = new Set(s); n.delete(k); return n; });
+  const aiSeq = useRef(0);
 
   // edit mode: load the listing once
   useEffect(() => {
@@ -112,6 +118,47 @@ export default function AddPage() {
     setName(p.name);
     if (p.address) setAddress(p.address);
     setMore(true);
+    if (aiOn && me && !editId && (resolved?.icao || c.length >= 3)) runAutofill(p);
+  }
+
+  /** Ask the server to gather OSM tags, the business website and web results, then fill only what's empty (or what AI filled before). */
+  async function runAutofill(pick?: PlaceHit) {
+    const nm = (pick?.name ?? name).trim();
+    if (nm.length < 2 || c.length < 3) return;
+    const my = ++aiSeq.current;
+    setAi({ state: "busy", result: null, error: "", filled: 0 });
+    const at = pick ?? place;
+    try {
+      const r: AutofillResult = await (await apiRequest("POST", "/api/ai/autofill", {
+        icao: resolved?.icao || c, category, name: nm, address: pick?.address ?? address, website: (pick as any)?.website || website,
+        placeRef: at?.ref?.startsWith("osm:") ? at.ref : null, lat: at?.lat ?? null, lng: at?.lng ?? null, excludeId: editId ? Number(editId) : undefined,
+      })).json();
+      if (my !== aiSeq.current) return;
+      const can = (k: string, empty: boolean) => empty || aiFields.has(k);
+      const got = new Set<string>(aiFields);
+      const take = (k: string, empty: boolean, value: unknown, apply: () => void) => {
+        if (value === null || value === undefined || value === "" || (Array.isArray(value) && !value.length)) return;
+        if (!can(k, empty)) return;
+        apply(); got.add(k);
+      };
+      take("description", !description.trim(), r.description, () => setDescription(r.description));
+      take("crewTip", !crewTip.trim(), r.crewTip, () => setCrewTip(r.crewTip));
+      if (category !== "fbo") take("cost", costLevel == null, r.costLevel, () => setCost(r.costLevel));
+      if (category === "eat") take("pace", !pace, r.pace, () => setPace(r.pace));
+      if (category === "do") take("time", !time, r.minutesNeeded, () => setTime(bucketFor(r.minutesNeeded!)));
+      // keep a real street address from the map pick; only fill when empty or vague (no street number)
+      const curAddr = (pick?.address ?? address).trim();
+      take("address", !curAddr || !/\d+\s+\w/.test(curAddr), r.address, () => setAddress(r.address));
+      take("website", !website.trim(), r.website, () => setWebsite(r.website));
+      take("tags", !tags.trim(), r.tags, () => setTags(r.tags.join(", ")));
+      if (got.has("address") || got.has("website") || got.has("tags")) setMore(true);
+      const newly = Array.from(got).filter((k) => !aiFields.has(k)).length;
+      setAiFields(got);
+      setAi({ state: "done", result: r, error: "", filled: newly });
+    } catch (e) {
+      if (my !== aiSeq.current) return;
+      setAi({ state: "error", result: null, error: errText(e), filled: 0 });
+    }
   }
 
   const m = useMutation({
@@ -133,7 +180,9 @@ export default function AddPage() {
       ).json(),
     onSuccess: (spot: { id: number; status: string }) => {
       for (const k of ["/api/search", "/api/airports", "/api/me", "/api/crew", "/api/highlights", "/api/spots", "/api/me/favorites", "/api/briefings"]) queryClient.invalidateQueries({ queryKey: [k] });
-      if (editId) { toast({ title: "Listing updated" }); navigate(`/spot/${spot.id}`); return; }
+      const checking = (spot as any).modState === "checking";
+      if (editId) { toast({ title: checking ? "Edit saved" : "Listing updated", description: checking ? "It goes live after a quick automatic check." : undefined }); navigate(`/spot/${spot.id}`); return; }
+      if (checking) { toast({ title: "Spot saved", description: "A quick automatic check runs before crews can see it, usually under a minute." }); navigate(`/spot/${spot.id}`); return; }
       toast({ title: spot.status === "pending" ? "Submitted for review" : "Spot added — thanks for helping the next crew" });
       navigate(spot.status === "pending" ? "/" : `/spot/${spot.id}`);
     },
@@ -216,6 +265,10 @@ export default function AddPage() {
             <span>{place.address || "Location set"}{placeMiles != null ? ` · ${placeMiles} mi from ${resolved?.icao || c}` : ""}</span>
           </p>
         )}
+        {aiOn && (me || !editId) && (
+          <AutofillPanel state={ai.state} result={ai.result} error={ai.error} filled={ai.filled} name={name}
+            canRun={!!me && name.trim().length >= 2 && c.length >= 3 && ai.state !== "busy"} onRun={() => requireAuth(() => runAutofill(), "Sign in to use AI autofill.")} />
+        )}
         {tooFar && (
           <p className="mt-1.5 flex items-start gap-1.5 rounded-lg bg-orange-500/10 p-2 text-xs" data-testid="text-add-far">
             <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-orange-600 dark:text-orange-400" />
@@ -225,19 +278,19 @@ export default function AddPage() {
       </Field>
 
       {needsCost && (
-        <Field n={4} label="Price" hint={costUnit(category)}>
+        <Field n={4} label="Price" hint={costUnit(category)} ai={aiFields.has("cost")}>
           <div className="flex gap-2 flex-wrap">
-            {costOptions(category).map((i) => <CostChoice key={i} category={category} level={i} active={costLevel === i} onClick={() => setCost(i)} testId={`chip-add-cost-${i}`} />)}
+            {costOptions(category).map((i) => <CostChoice key={i} category={category} level={i} active={costLevel === i} onClick={() => { setCost(i); touch("cost"); }} testId={`chip-add-cost-${i}`} />)}
           </div>
           <p className="mt-1.5 text-[11px] text-muted-foreground">{category === "eat" ? "One meal per person: $ is a fast-food meal, $$$$ is fine dining. " : category === "stay" ? "Per night, before taxes. " : "Per person. "}Crews who rate it add their own price — the listing shows the crew's typical price.</p>
         </Field>
       )}
       {category === "eat" && (
-        <Field n={5} label="Grab & go, sit-down, or both?" hint="pick one or both">
+        <Field n={5} label="Grab & go, sit-down, or both?" hint="pick one or both" ai={aiFields.has("pace")}>
           <div className="flex gap-2" role="group" aria-label="Pace">
             {PACES.map((p) => {
               const on = pace === p.id || pace === "both";
-              return <Chip key={p.id} active={on} onClick={() => setPace(togglePace(pace, p.id))} testId={`chip-add-pace-${p.id}`}>
+              return <Chip key={p.id} active={on} onClick={() => { setPace(togglePace(pace, p.id)); touch("pace"); }} testId={`chip-add-pace-${p.id}`}>
                 <span className="inline-flex items-center gap-1">{on && <Check className="h-3.5 w-3.5" />}{p.label}</span></Chip>;
             })}
           </div>
@@ -245,15 +298,16 @@ export default function AddPage() {
         </Field>
       )}
       {category === "do" && (
-        <Field n={5} label="Time it takes" hint="not counting travel">
+        <Field n={5} label="Time it takes" hint="not counting travel" ai={aiFields.has("time")}>
           <div className="flex gap-2 overflow-x-auto no-scrollbar">
-            {TIME_BUCKETS.map((b) => <Chip key={b.id} active={time === b.id} onClick={() => setTime(b.id)} testId={`chip-add-time-${b.id}`}>{b.sub}</Chip>)}
+            {TIME_BUCKETS.map((b) => <Chip key={b.id} active={time === b.id} onClick={() => { setTime(b.id); touch("time"); }} testId={`chip-add-time-${b.id}`}>{b.sub}</Chip>)}
           </div>
         </Field>
       )}
 
       <div className="space-y-5 rounded-2xl border border-card-border bg-card/60 p-4">
-        <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} data-testid="input-add-description"
+        {aiFields.has("description") && <div className="-mb-3 flex justify-end"><AiTag /></div>}
+        <textarea value={description} onChange={(e) => { setDescription(e.target.value); touch("description"); }} rows={3} data-testid="input-add-description"
           placeholder={category === "fbo" ? "Lounge, snooze rooms, crew car, fees, service — the real story." : "Why it's worth it, what to order, what to skip."}
           className="w-full rounded-xl border border-input bg-background p-3 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
         <div>
@@ -261,8 +315,8 @@ export default function AddPage() {
           <input inputMode="decimal" value={miles} readOnly={placeMiles != null} onChange={(e) => setMiles(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="0 = on field" data-testid="input-add-miles" className={cn(inputCls, placeMiles != null && "bg-muted/50 text-muted-foreground")} />
         </div>
         <div>
-          <p className="text-xs font-medium text-muted-foreground mb-1.5">Crew tip</p>
-          <input value={crewTip} onChange={(e) => setCrewTip(e.target.value)} placeholder="Crew discount, best time to go, call ahead…" data-testid="input-add-tip" className={inputCls} />
+          <p className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1.5">Crew tip {aiFields.has("crewTip") && <AiTag />}</p>
+          <input value={crewTip} onChange={(e) => { setCrewTip(e.target.value); touch("crewTip"); }} placeholder="Crew discount, best time to go, call ahead…" data-testid="input-add-tip" className={inputCls} />
         </div>
 
         <button type="button" onClick={() => setMore(!more)} data-testid="button-add-more" className="text-sm text-muted-foreground inline-flex items-center gap-1 hover:text-foreground">
@@ -270,9 +324,10 @@ export default function AddPage() {
         </button>
         {more && (
           <div className="space-y-3">
-            <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Address" data-testid="input-add-address" className={inputCls} />
-            <input value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="https://" inputMode="url" data-testid="input-add-website" className={inputCls} />
-            <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="Tags, comma separated — late night, crew discount" data-testid="input-add-tags" className={inputCls} />
+            {(aiFields.has("address") || aiFields.has("website") || aiFields.has("tags")) && <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground"><AiTag /> {["address", "website", "tags"].filter((k) => aiFields.has(k)).join(", ")} filled by AI</p>}
+            <input value={address} onChange={(e) => { setAddress(e.target.value); touch("address"); }} placeholder="Address" data-testid="input-add-address" className={inputCls} />
+            <input value={website} onChange={(e) => { setWebsite(e.target.value); touch("website"); }} placeholder="https://" inputMode="url" data-testid="input-add-website" className={inputCls} />
+            <input value={tags} onChange={(e) => { setTags(e.target.value); touch("tags"); }} placeholder="Tags, comma separated — late night, crew discount" data-testid="input-add-tags" className={inputCls} />
           </div>
         )}
       </div>
@@ -376,15 +431,71 @@ function PlaceAutocomplete({ value, onChange, onPick, anchor, category, here, fi
   );
 }
 
-function Field({ n, label, hint, children }: { n: number; label: string; hint?: string; children: React.ReactNode }) {
+function Field({ n, label, hint, ai, children }: { n: number; label: string; hint?: string; ai?: boolean; children: React.ReactNode }) {
   return (
     <div>
       <div className="flex items-baseline gap-2 mb-1.5">
         <span className="font-code text-[11px] font-bold text-primary">0{n}</span>
         <p className="text-sm font-semibold">{label}</p>
         {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+        {ai && <AiTag />}
       </div>
       {children}
+    </div>
+  );
+}
+
+/** Small marker on fields the AI filled, so the poster knows what to double-check. */
+function AiTag() {
+  return <span className="inline-flex items-center gap-0.5 rounded-full bg-primary/15 px-1.5 py-px text-[10px] font-semibold text-primary" title="Filled by AI. Check it before posting." data-testid="tag-ai-filled"><Sparkles className="h-2.5 w-2.5" />AI</span>;
+}
+
+type AutofillResult = {
+  found: boolean; name: string; address: string; website: string; description: string; crewTip: string;
+  costLevel: number | null; pace: "grab" | "sit" | "both" | null; minutesNeeded: number | null; tags: string[];
+  confidence: "high" | "medium" | "low"; notes: string; sources: string[]; duplicate: { id: number; name: string } | null;
+};
+const host = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return u; } };
+
+function AutofillPanel({ state, result, error, filled, canRun, onRun, name }: {
+  state: "idle" | "busy" | "done" | "error"; result: AutofillResult | null; error: string; filled: number; canRun: boolean; onRun: () => void; name: string;
+}) {
+  return (
+    <div className="mt-3 rounded-xl border border-primary/30 bg-primary/5 p-3" data-testid="panel-ai-autofill">
+      {state === "busy" ? (
+        <p className="flex items-center gap-2 text-sm" data-testid="text-ai-busy"><Loader2 className="h-4 w-4 animate-spin text-primary" />Looking up {name || "this place"} on the map, its website and the web. About 15 seconds.</p>
+      ) : (
+        <div className="flex items-start gap-3">
+          <div className="min-w-0 flex-1 text-xs text-muted-foreground">
+            {state === "done" && result ? (
+              <p className="text-sm text-foreground" data-testid="text-ai-done">
+                <span className="font-semibold">{filled ? `Filled ${filled} field${filled === 1 ? "" : "s"}` : "Nothing new to fill"}</span>
+                <span className="text-muted-foreground"> · {result.found ? `${result.confidence} confidence` : "couldn't confirm this place"}</span>
+              </p>
+            ) : state === "error" ? <p className="text-sm text-foreground" data-testid="text-ai-error">{error}</p>
+              : <p><span className="font-semibold text-foreground">AI autofill</span> fills in price, pace, description, address and more from the map, the business's own website and the web. You check it before posting.</p>}
+          </div>
+          <button type="button" onClick={onRun} disabled={!canRun} data-testid="button-ai-autofill"
+            className="h-9 shrink-0 rounded-full border border-primary/40 bg-card px-3 text-xs font-semibold inline-flex items-center gap-1.5 hover-elevate disabled:opacity-40">
+            <Sparkles className="h-3.5 w-3.5 text-primary" />{state === "done" || state === "error" ? "Run again" : "Autofill"}
+          </button>
+        </div>
+      )}
+      {state === "done" && result?.duplicate && (
+        <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-orange-500/10 p-2 text-xs" data-testid="text-ai-duplicate">
+          <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-orange-600 dark:text-orange-400" />
+          <span>Already listed: <Link href={`/spot/${result.duplicate.id}`} className="font-semibold underline underline-offset-2">{result.duplicate.name}</Link>. Rate that listing instead of adding a copy.</span>
+        </p>
+      )}
+      {state === "done" && result?.notes && (
+        <p className="mt-2 flex items-start gap-1.5 text-xs" data-testid="text-ai-notes"><AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-orange-600 dark:text-orange-400" /><span>{result.notes}</span></p>
+      )}
+      {state === "done" && !!result?.sources.length && (
+        <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground" data-testid="list-ai-sources">
+          <span>Sources:</span>
+          {result.sources.slice(0, 5).map((u) => <a key={u} href={u} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 underline underline-offset-2 hover:text-foreground">{host(u)}<ExternalLink className="h-2.5 w-2.5" /></a>)}
+        </p>
+      )}
     </div>
   );
 }

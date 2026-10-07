@@ -7,6 +7,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { CAT_META, fmtMinutes, totalMinutes, parseTags, Stars, AdBanner, Chip, VetBadge, VoteButtons, timeAgo, GoAroundBadge, GoAroundIcon } from "@/lib/ui";
 import { FavoriteButton } from "@/lib/favorites";
 import { CrewAvatar } from "@/lib/aircraft";
+import { ModNotice, type ModInfo } from "@/lib/moderation";
 import { COST_LABELS, costOptions, costRange, costUnit, hasCost, paceLabel, paceOf } from "@shared/cost";
 import { CostChoice } from "@/lib/costChip";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -22,12 +23,17 @@ export default function SpotPage() {
   const crew = useCrewIndex();
   const { me } = useAuth();
   const [editing, setEditing] = useState<number | null>(null);
-  const { data, isLoading, isError } = useQuery<{ spot: SpotWithStats; reviews: ReviewWithVotes[] }>({ queryKey: ["/api/spots", id] });
+  const { data, isLoading, isError } = useQuery<{ spot: SpotWithStats; reviews: ReviewWithVotes[]; mod?: ModInfo }>({
+    queryKey: ["/api/spots", id],
+    // poll while the automatic check is running on something the viewer posted
+    refetchInterval: (q) => { const d = q.state.data; return d && (d.mod?.state === "checking" || d.reviews.some((r) => r.modState === "checking" && r.userId === me?.id)) ? 4000 : false; },
+  });
 
   if (isLoading) return <div className="space-y-4"><Skeleton className="h-8 w-40" /><Skeleton className="h-40 rounded-2xl" /><Skeleton className="h-24 rounded-2xl" /></div>;
   if (isError || !data) return <p className="text-sm text-muted-foreground">This spot isn't available. <Link href="/" className="text-primary underline">Back to search</Link></p>;
 
-  const { spot, reviews } = data;
+  const { spot, reviews: allReviews, mod } = data;
+  const reviews = allReviews.filter((r) => r.status === "live"); // the author's own unpublished ratings are listed but don't count
   const M = CAT_META[spot.category as Category];
   const tags = parseTags(spot.tags);
   const dist = Object.fromEntries([5, 4, 3, 2, 1, 0].map((n) => [n, reviews.filter((r) => r.rating === n).length]));
@@ -64,6 +70,8 @@ export default function SpotPage() {
           </Link>
         )}
       </header>
+
+      {mine && mod && <ModNotice kind="listing" state={mod.state} status={mod.status} note={mod.note} editPending={!!mod.pendingEdit} editHref={`/spot/${spot.id}/edit`} />}
 
       <section className="rounded-2xl border border-card-border bg-card p-4 space-y-3">
         <p className="text-sm leading-relaxed">{spot.description || "No description yet."}</p>
@@ -116,8 +124,8 @@ export default function SpotPage() {
             ))}
           </div>
         </div>
-        {reviews.length === 0 && <p className="text-sm text-muted-foreground">No reviews yet. Be the first: rate it below.</p>}
-        {[...reviews].sort((a, b) => (b.up - b.down) - (a.up - a.down) || b.createdAt - a.createdAt).map((r) => (
+        {allReviews.length === 0 && <p className="text-sm text-muted-foreground">No reviews yet. Be the first: rate it below.</p>}
+        {[...allReviews].sort((a, b) => (b.up - b.down) - (a.up - a.down) || b.createdAt - a.createdAt).map((r) => (
           editing === r.id ? <ReviewForm key={r.id} spotId={spot.id} category={spot.category} edit={r} onDone={() => setEditing(null)} /> :
           <article key={r.id} className="rounded-2xl border border-card-border bg-card p-4" data-testid={`review-${r.id}`}>
             <div className="flex items-center justify-between">
@@ -132,6 +140,7 @@ export default function SpotPage() {
               </span>
             </div>
             {r.comment && <p className="mt-2 text-sm leading-relaxed">{r.comment}</p>}
+            {me && r.userId === me.id && <ModNotice kind="rating" state={r.modState} status={r.status} note={r.modNote} editPending={!!r.pendingEdit} className="mt-2.5" />}
             <div className="mt-2.5 flex items-center justify-between gap-2">
               <p className="text-[11px] text-muted-foreground flex items-center gap-2">{new Date(r.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
                 {me && r.userId === me.id && <button type="button" onClick={() => setEditing(r.id)} className="inline-flex items-center gap-1 text-primary font-medium" data-testid={`button-edit-review-${r.id}`}><Pencil className="h-3 w-3" />Edit</button>}</p>
@@ -169,9 +178,10 @@ function ReviewForm({ spotId, category, edit, onDone }: { spotId: number; catego
     mutationFn: async () => (edit
       ? await apiRequest("PATCH", `/api/reviews/${edit.id}`, { rating, comment, costLevel: paid })
       : await apiRequest("POST", `/api/spots/${spotId}/reviews`, { rating, comment, costLevel: paid })).json(),
-    onSuccess: () => {
+    onSuccess: (r: { modState?: string }) => {
+      if (r?.modState === "checking") toast({ title: edit ? "Edit saved" : "Rating saved", description: "It posts after a quick automatic check, usually under a minute." });
       for (const k of [["/api/spots", String(spotId)], ["/api/search"], ["/api/me"], ["/api/crew"], ["/api/leaderboard"], ["/api/highlights"], ["/api/me/favorites"]]) queryClient.invalidateQueries({ queryKey: k });
-      if (edit) { toast({ title: "Rating updated" }); onDone?.(); return; }
+      if (edit) { if (r?.modState !== "checking") toast({ title: "Rating updated" }); onDone?.(); return; }
       setOpen(false); setRating(null); setComment(""); setPaid(null);
     },
     onError: (e: Error) => toast({ title: edit ? "Couldn't update rating" : "Couldn't post review", description: e.message.replace(/^\d+: /, "").replace(/^\{"message":"|"\}$/g, ""), variant: "destructive" }),

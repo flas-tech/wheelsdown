@@ -14,6 +14,8 @@ import { isValidCost, costOptions, milesBetween, isPace, paceMinutes } from "@sh
 import { suggestPicks } from "@shared/briefing";
 import { refAirport, nearestAirports, isCode } from "./airportsData";
 import { searchPlaces, nearbyPlaces } from "./places";
+import { AI_ENABLED, autofill, checkName } from "./ai";
+import { startModerator, kickModerator, findDuplicate, SPOT_EDIT_FIELDS } from "./moderator";
 import { z } from "zod";
 
 const PROD = process.env.NODE_ENV === "production";
@@ -102,13 +104,15 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     try { await storage.health(); res.json({ ok: true, db: "up", time: new Date().toISOString() }); }
     catch { res.status(503).json({ ok: false, db: "down" }); }
   });
-  app.get("/api/config", (_req, res) => res.json({ contactEmail: process.env.CONTACT_EMAIL || "", emailEnabled: !!process.env.RESEND_API_KEY, moderated: MODERATE }));
+  app.get("/api/config", (_req, res) => res.json({ contactEmail: process.env.CONTACT_EMAIL || "", emailEnabled: !!process.env.RESEND_API_KEY, moderated: MODERATE || AI_ENABLED, ai: AI_ENABLED }));
 
   // ---------- accounts ----------
   app.post("/api/auth/signup", authLimit, async (req, res) => {
     const p = signupSchema.safeParse(req.body);
     if (!p.success) return res.status(400).json({ message: msg(p.error) });
     if (PROD && p.data.acceptTerms !== true) return res.status(400).json({ message: "Please accept the Terms and Community Guidelines" });
+    const bad = await checkName(`${p.data.displayName} (@${p.data.handle})`);
+    if (bad) return res.status(400).json({ message: bad });
     try {
       const u = await storage.createUser(p.data);
       res.status(201).json({ token: await storage.createSession(u.id), me: await storage.me(u) });
@@ -145,6 +149,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.patch("/api/me", requireUser, writeLimit, async (req, res) => {
     const p = updateMeSchema.safeParse(req.body);
     if (!p.success) return res.status(400).json({ message: msg(p.error) });
+    if (p.data.displayName && p.data.displayName !== (req as any).user.displayName) {
+      const bad = await checkName(p.data.displayName);
+      if (bad) return res.status(400).json({ message: bad });
+    }
     try { res.json(await storage.me(await storage.updateUser((req as any).user.id, p.data))); }
     catch (e: any) { res.status(e.status || 500).json({ message: e.message }); }
   });
@@ -202,7 +210,16 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const v = await voterOf(req);
     const s = await storage.getSpot(id(req), v);
     if (!s || s.status === "hidden") return res.status(404).json({ message: "Not found" });
-    res.json({ spot: s, reviews: await storage.listReviewsWithVotes(s.id, v) });
+    const viewer = await userOf(req);
+    const mine = !!viewer && s.userId === viewer.id;
+    if (s.status !== "live" && !mine) return res.status(404).json({ message: "Not found" });
+    let mod: any = null;
+    if (mine) {
+      const raw = await storage.rawSpot(s.id);
+      let edit = null; try { edit = raw?.pendingEdit ? JSON.parse(raw.pendingEdit) : null; } catch { /* ignore */ }
+      mod = { status: s.status, state: raw?.modState || "", note: (raw?.modNote || "").replace(/^\[[a-z_]+\]\s*/, ""), pendingEdit: edit };
+    }
+    res.json({ spot: s, reviews: await storage.listReviewsWithVotes(s.id, v), mod });
   });
 
   // Up/down vote on a listing or review. value: 1, -1, or 0 to clear. One vote per account per target.
@@ -258,6 +275,13 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const mi = milesFromAirport(ap, rest.lat, rest.lng);
     if (mi !== undefined) rest.milesFromField = mi;
     const trusted = tierFor((await storage.me(user)).points).index >= TIERS.findIndex((t) => t.id === "commercial");
+    if (AI_ENABLED) {
+      // saved unpublished; the background check publishes it (usually within a minute) or holds it with a note
+      const spot = await storage.createSpot({ ...rest, icao, tags: tagJson(tags), submittedBy: publicName(user), userId: user.id, status: "pending" });
+      await storage.setSpotMod(spot.id, { modState: "checking", modNote: "" });
+      kickModerator();
+      return res.status(201).json({ ...spot, modState: "checking" });
+    }
     const spot = await storage.createSpot({ ...rest, icao, tags: tagJson(tags), submittedBy: publicName(user), userId: user.id, status: MODERATE && !trusted ? "pending" : "live" });
     res.status(201).json(spot);
   });
@@ -278,11 +302,26 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const icao = await ensureAirport(code, airportCity);
     const mi = milesFromAirport(await storage.resolveCode(icao), rest.lat, rest.lng);
     if (mi !== undefined) rest.milesFromField = mi;
-    const s = await storage.updateSpot(cur.id, {
+    const patch = {
       icao, category: rest.category, name: rest.name, description: rest.description, address: rest.address, website: rest.website,
       costLevel: rest.costLevel, minutesNeeded: rest.minutesNeeded, pace: rest.pace ?? null, milesFromField: rest.milesFromField,
       lat: rest.lat ?? null, lng: rest.lng ?? null, placeRef: rest.placeRef ?? null, crewTip: rest.crewTip, tags: tagJson(tags),
-    });
+    };
+    if (AI_ENABLED) {
+      if (cur.status === "live") {
+        // the live listing stays exactly as it is until the edit passes the check
+        const held = Object.fromEntries(SPOT_EDIT_FIELDS.map((k) => [k, (patch as any)[k]]));
+        await storage.setSpotMod(cur.id, { pendingEdit: JSON.stringify(held), modState: "checking", modNote: "", modAttempts: 0 });
+        kickModerator();
+        return res.json({ ...cur, modState: "checking", editPending: true });
+      }
+      // not published yet (being checked or held): apply the fix and check again
+      const s = await storage.updateSpot(cur.id, patch);
+      await storage.setSpotMod(cur.id, { status: "pending", pendingEdit: null, modState: "checking", modNote: "", modAttempts: 0 });
+      kickModerator();
+      return res.json({ ...s, status: "pending", modState: "checking" });
+    }
+    const s = await storage.updateSpot(cur.id, patch);
     res.json(s);
   });
 
@@ -295,7 +334,13 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     // a price vote is optional; drop values that don't apply to this category (e.g. "Free" for a restaurant, anything for an FBO)
     const costLevel = p.data.costLevel != null && costOptions(spot.category).includes(p.data.costLevel) ? p.data.costLevel : null;
     if (p.data.rating === 0 && p.data.comment.trim().length < 10) return res.status(400).json({ message: "Tell crews why to go around (a sentence is enough)" });
-    res.status(201).json(await storage.createReview({ ...p.data, costLevel }));
+    const r = await storage.createReview({ ...p.data, costLevel });
+    if (AI_ENABLED) {
+      await storage.setReviewMod(r.id, { status: "pending", modState: "checking" });
+      kickModerator();
+      return res.status(201).json({ ...r, status: "pending", modState: "checking" });
+    }
+    res.status(201).json(r);
   });
   /** The author can fix their own rating, comment or price. */
   app.patch("/api/reviews/:id", requireUser, writeLimit, async (req, res) => {
@@ -309,7 +354,43 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (!p.success) return res.status(400).json({ message: msg(p.error) });
     const costLevel = p.data.costLevel != null && costOptions(spot.category).includes(p.data.costLevel) ? p.data.costLevel : null;
     if (p.data.rating === 0 && (p.data.comment || "").trim().length < 10) return res.status(400).json({ message: "Tell crews why to go around (a sentence is enough)" });
-    res.json(await storage.updateReview(r.id, { rating: p.data.rating, comment: p.data.comment ?? "", costLevel }));
+    const next = { rating: p.data.rating, comment: p.data.comment ?? "", costLevel };
+    if (AI_ENABLED) {
+      if (r.status === "live") {
+        await storage.setReviewMod(r.id, { pendingEdit: JSON.stringify(next), modState: "checking", modNote: "", modAttempts: 0 });
+        kickModerator();
+        return res.json({ ...r, modState: "checking", editPending: true });
+      }
+      const u = await storage.setReviewMod(r.id, { ...next, status: "pending", pendingEdit: null, modState: "checking", modNote: "", modAttempts: 0 });
+      kickModerator();
+      return res.json(u);
+    }
+    res.json(await storage.updateReview(r.id, next));
+  });
+
+  // ---------- AI autofill ----------
+  const aiLimit = rateLimit({ windowMs: 10 * 60_000, limit: 15, standardHeaders: "draft-8", legacyHeaders: false, message: { message: "AI autofill is busy. Try again in a few minutes, or type the details in." } });
+  const autofillSchema = z.object({
+    icao: z.string().trim().min(3).max(4), category: z.enum(CATEGORIES), name: z.string().trim().min(2).max(120),
+    address: z.string().max(300).optional(), website: z.string().max(300).optional(), placeRef: z.string().max(40).nullable().optional(),
+    lat: z.number().min(-90).max(90).nullable().optional(), lng: z.number().min(-180).max(180).nullable().optional(), excludeId: z.number().int().optional(),
+  });
+  app.post("/api/ai/autofill", requireUser, aiLimit, async (req, res) => {
+    if (!AI_ENABLED) return res.status(503).json({ message: "AI autofill isn't switched on yet" });
+    const p = autofillSchema.safeParse(req.body);
+    if (!p.success) return res.status(400).json({ message: msg(p.error) });
+    const ap = await storage.resolveCode(p.data.icao.toUpperCase());
+    const icao = ap?.icao || p.data.icao.toUpperCase();
+    const others = await storage.namesAt(icao, p.data.excludeId);
+    const dup = findDuplicate(p.data, others);
+    const mi = milesFromAirport(ap, p.data.lat, p.data.lng);
+    try {
+      const r = await autofill({ ...p.data, icao, airport: ap ? { name: ap.name, city: ap.city, lat: ap.lat, lon: ap.lon } : null, milesFromField: mi ?? null });
+      res.json({ ...r, duplicate: dup && dup.status === "live" ? { id: dup.id, name: dup.name } : null });
+    } catch (e) {
+      console.warn("[ai] autofill failed", (e as Error).message);
+      res.status(502).json({ message: "AI autofill couldn't finish. Type the details in, or try again.", duplicate: dup && dup.status === "live" ? { id: dup.id, name: dup.name } : null });
+    }
   });
 
   // ---------- location & autofill ----------
@@ -434,6 +515,30 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   // ---------- admin ----------
   app.post("/api/admin/login", authLimit, requireAdmin, (_req, res) => res.json({ ok: true }));
+  app.get("/api/admin/moderation", requireAdmin, async (_req, res) => res.json({ ai: AI_ENABLED, ...(await storage.modReviewList()) }));
+  /** approve = publish (or apply the held edit), reject = keep it off the site (or discard the edit), recheck = run the AI again */
+  app.post("/api/admin/moderation/:kind/:id", requireAdmin, async (req, res) => {
+    const kind = String(req.params.kind), action = String(req.body?.action || "");
+    if (!["spot", "review"].includes(kind) || !["approve", "reject", "recheck"].includes(action)) return res.status(400).json({ message: "kind spot|review, action approve|reject|recheck" });
+    if (kind === "spot") {
+      const s = await storage.rawSpot(id(req));
+      if (!s) return res.status(404).json({ message: "Not found" });
+      let edit: any = null; try { edit = s.pendingEdit ? JSON.parse(s.pendingEdit) : null; } catch { /* ignore */ }
+      if (action === "recheck") { await storage.setSpotMod(s.id, { modState: "checking", modAttempts: 0 }); kickModerator(); }
+      else if (action === "approve") {
+        if (edit) await storage.updateSpot(s.id, edit);
+        await storage.setSpotMod(s.id, { status: edit ? s.status : "live", pendingEdit: null, modState: "approved", modNote: "", modAttempts: 0 });
+      } else await storage.setSpotMod(s.id, edit ? { pendingEdit: null, modState: "approved", modNote: "" } : { status: "rejected", modState: "flagged" });
+    } else {
+      const r = await storage.getReview(id(req));
+      if (!r) return res.status(404).json({ message: "Not found" });
+      let edit: any = null; try { edit = r.pendingEdit ? JSON.parse(r.pendingEdit) : null; } catch { /* ignore */ }
+      if (action === "recheck") { await storage.setReviewMod(r.id, { modState: "checking", modAttempts: 0 }); kickModerator(); }
+      else if (action === "approve") await storage.setReviewMod(r.id, { ...(edit || {}), status: edit ? r.status : "live", pendingEdit: null, modState: "approved", modNote: "", modAttempts: 0 });
+      else await storage.setReviewMod(r.id, edit ? { pendingEdit: null, modState: "approved", modNote: "" } : { status: "rejected", modState: "flagged" });
+    }
+    res.json({ ok: true });
+  });
   app.get("/api/admin/stats", requireAdmin, async (_req, res) => res.json(await storage.stats()));
   app.get("/api/admin/spots", requireAdmin, async (_req, res) => res.json(await storage.searchSpots([], true)));
   app.get("/api/admin/spots/:id/votes", requireAdmin, async (req, res) => res.json(await storage.listSpotVotes(id(req))));
@@ -540,5 +645,6 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json(await storage.upsertAirport({ icao: String(icao).toUpperCase(), iata: iata ? String(iata).toUpperCase() : null, name, city, region: region || "", country: country || "US" }));
   });
 
+  startModerator();
   return httpServer;
 }

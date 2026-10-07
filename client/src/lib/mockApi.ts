@@ -30,13 +30,13 @@ function seed(): DB {
     id: i + 1, icao: s.icao, category: s.category, name: s.name, description: s.description, address: s.address || "", website: "",
     costLevel: s.costLevel, minutesNeeded: s.minutesNeeded, milesFromField: s.milesFromField, crewTip: s.crewTip || "",
     tags: JSON.stringify(s.tags), submittedBy: users[i % users.length].displayName, userId: users[i % users.length].id, status: "live", createdAt: now - i * 3600_000,
-    pace: null, lat: null, lng: null, placeRef: null,
+    pace: null, lat: null, lng: null, placeRef: null, modState: "", modNote: "", modAttempts: 0, pendingEdit: null,
   }));
   const reviews: Review[] = [];
   seedReviews.forEach((r, i) => {
     const sp = spots.find((s) => s.name === r.spot);
     const u = users.find((x) => x.displayName === r.author);
-    if (sp) reviews.push({ id: reviews.length + 1, spotId: sp.id, rating: r.rating, comment: r.comment, author: r.author, crewRole: r.crewRole, userId: u?.id ?? null, createdAt: now - i * 7200_000, costLevel: null });
+    if (sp) reviews.push({ id: reviews.length + 1, spotId: sp.id, rating: r.rating, comment: r.comment, author: r.author, crewRole: r.crewRole, userId: u?.id ?? null, createdAt: now - i * 7200_000, costLevel: null, status: "live", modState: "", modNote: "", modAttempts: 0, pendingEdit: null });
   });
   const ads: Ad[] = seedAds.map((a, i) => ({ id: i + 1, ...a, impressions: 0, clicks: 0 }));
   const votes: Vote[] = [];
@@ -198,7 +198,7 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
   }
   if (method === "POST" && path === "/api/auth/forgot") return { ok: true, message: "Demo build: no emails are sent. On the live site, a reset link goes to the email on your account." };
   if (method === "POST" && path === "/api/auth/reset") throw new HttpError(400, "Password reset works on the live site only.");
-  if (method === "GET" && path === "/api/config") return { contactEmail: "", emailEnabled: false, moderated: false };
+  if (method === "GET" && path === "/api/config") return { contactEmail: "", emailEnabled: false, moderated: false, ai: false };
   if (method === "DELETE" && path === "/api/me") {
     const u = needUser();
     if (String(body?.confirm || "").toLowerCase() !== u.handle) throw new HttpError(400, "Type your handle to confirm");
@@ -352,7 +352,7 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
     if (rating === 0 && String(body.comment || "").trim().length < 10) throw new HttpError(400, "Tell crews why to go around (a sentence is enough)");
     const cv = body.costLevel == null || body.costLevel === "" ? null : Number(body.costLevel);
     const costLevel = cv != null && costOptions(sp.category).includes(cv) ? cv : null;
-    const r: Review = { id: ++db.seq.review, spotId, rating, comment: String(body.comment || "").slice(0, 1500), author: publicName(u), crewRole: u.crewRole, userId: u.id, createdAt: Date.now(), costLevel };
+    const r: Review = { id: ++db.seq.review, spotId, rating, comment: String(body.comment || "").slice(0, 1500), author: publicName(u), crewRole: u.crewRole, userId: u.id, createdAt: Date.now(), costLevel, status: "live", modState: "", modNote: "", modAttempts: 0, pendingEdit: null };
     db.reviews.push(r); save(); return r;
   }
   // ---- location & autofill (demo: airports only; business autofill needs the live server) ----

@@ -75,14 +75,16 @@ function Console({ onLogout }: { onLogout: () => void }) {
           </div>
         ))}
       </div>
-      <Tabs defaultValue="spots">
+      <Tabs defaultValue="mod">
         <TabsList>
+          <TabsTrigger value="mod" data-testid="tab-mod">Moderation</TabsTrigger>
           <TabsTrigger value="spots" data-testid="tab-spots">Spots</TabsTrigger>
           <TabsTrigger value="check" data-testid="tab-check">Needs check</TabsTrigger>
           <TabsTrigger value="bulk" data-testid="tab-bulk">Import / Export</TabsTrigger>
           <TabsTrigger value="ads" data-testid="tab-ads">Ad banners</TabsTrigger>
           <TabsTrigger value="users" data-testid="tab-users">Crew</TabsTrigger>
         </TabsList>
+        <TabsContent value="mod"><ModerationQueue /></TabsContent>
         <TabsContent value="spots"><SpotsTable /></TabsContent>
         <TabsContent value="check"><NeedsCheck /></TabsContent>
         <TabsContent value="bulk"><Bulk /></TabsContent>
@@ -134,7 +136,7 @@ function SpotsTable() {
           {CATEGORIES.map((c) => <option key={c} value={c}>{CAT_META[c].label}</option>)}
         </select>
         <select value={status} onChange={(e) => setStatus(e.target.value)} className={cn(inputCls, "w-auto")} data-testid="select-admin-status">
-          <option value="all">All statuses</option><option value="live">Live</option><option value="pending">Pending</option><option value="hidden">Hidden</option>
+          <option value="all">All statuses</option><option value="live">Live</option><option value="pending">Pending</option><option value="hidden">Hidden</option><option value="rejected">Rejected</option>
         </select>
       </div>
 
@@ -237,7 +239,7 @@ function EditSpot({ spot, onClose }: { spot: SpotWithStats; onClose: () => void 
           {f.category === "eat" && <L l="Pace"><select className={inputCls} value={f.pace} onChange={set("pace")} data-testid="select-edit-pace"><option value="grab">Grab & go</option><option value="both">Both</option><option value="sit">Sit-down</option></select></L>}
           <L l="Minutes needed"><input type="number" className={inputCls} value={f.minutesNeeded} onChange={set("minutesNeeded")} data-testid="input-edit-minutes" /></L>
           <L l="Miles from field"><input type="number" step="0.1" className={inputCls} value={f.milesFromField} onChange={set("milesFromField")} data-testid="input-edit-miles" /></L>
-          <L l="Status"><select className={inputCls} value={f.status} onChange={set("status")} data-testid="select-edit-status"><option value="live">Live</option><option value="pending">Pending</option><option value="hidden">Hidden</option></select></L>
+          <L l="Status"><select className={inputCls} value={f.status} onChange={set("status")} data-testid="select-edit-status"><option value="live">Live</option><option value="pending">Pending</option><option value="hidden">Hidden</option><option value="rejected">Rejected</option></select></L>
           <L l="Crew tip" className="col-span-2"><input className={inputCls} value={f.crewTip} onChange={set("crewTip")} data-testid="input-edit-tip" /></L>
           <L l="Address" className="col-span-2"><input className={inputCls} value={f.address} onChange={set("address")} /></L>
           <L l="Website"><input className={inputCls} value={f.website} onChange={set("website")} /></L>
@@ -484,6 +486,92 @@ function UsersAdmin() {
         </tbody>
       </table>
       <p className="p-2.5 text-xs text-muted-foreground">Bonus points cover activity outside the app (events, imports, corrections). Everything else is counted from the crew member's activity.</p>
+    </div>
+  );
+}
+
+type ModSpot = SpotWithStats & { modState: string; modNote: string; pendingEdit: string | null };
+type ModReview = { id: number; spotId: number; spotName: string; icao: string; rating: number; comment: string; author: string; status: string; modState: string; modNote: string; pendingEdit: string | null; createdAt: number };
+const PROBLEM = (note: string) => /^\[([a-z_]+)\]/.exec(note)?.[1]?.replace(/_/g, " ") || "";
+const NOTE = (note: string) => note.replace(/^\[[a-z_]+\]\s*/, "");
+
+/** AI-held listings, ratings and edits. Approve publishes (or applies the edit); Reject keeps it off the site (or discards the edit). */
+function ModerationQueue() {
+  const { toast } = useToast();
+  const { data, isLoading } = useQuery<{ ai: boolean; spots: ModSpot[]; reviews: ModReview[] }>({ queryKey: ["/api/admin/moderation"], queryFn: admGet("/api/admin/moderation"), refetchInterval: 8000 });
+  const act = useMutation({
+    mutationFn: async (a: { kind: "spot" | "review"; id: number; action: "approve" | "reject" | "recheck" }) => (await adm("POST", `/api/admin/moderation/${a.kind}/${a.id}`, { action: a.action })).json(),
+    onSuccess: (_r, a) => { queryClient.invalidateQueries({ queryKey: ["/api/admin/moderation"] }); invalidateAll(); toast({ title: a.action === "approve" ? "Approved" : a.action === "reject" ? "Rejected" : "Checking again" }); },
+    onError: (e: Error) => toast({ title: "Didn't go through", description: e.message, variant: "destructive" }),
+  });
+  if (isLoading) return <Skeleton className="h-32 rounded-xl" />;
+  const spots = (data?.spots || []).filter((s) => s.status !== "rejected");
+  const reviews = (data?.reviews || []).filter((r) => r.status !== "rejected");
+  const Actions = ({ kind, id, edit }: { kind: "spot" | "review"; id: number; edit: boolean }) => (
+    <div className="flex flex-wrap gap-1.5">
+      <button className={btnPrimary} disabled={act.isPending} onClick={() => act.mutate({ kind, id, action: "approve" })} data-testid={`button-mod-approve-${kind}-${id}`}>{edit ? "Apply edit" : "Approve"}</button>
+      <button className={btn} disabled={act.isPending} onClick={() => act.mutate({ kind, id, action: "reject" })} data-testid={`button-mod-reject-${kind}-${id}`}>{edit ? "Discard edit" : "Reject"}</button>
+      <button className={btn} disabled={act.isPending} onClick={() => act.mutate({ kind, id, action: "recheck" })} data-testid={`button-mod-recheck-${kind}-${id}`}>Re-run AI</button>
+    </div>
+  );
+  const State = ({ state, status, edit }: { state: string; status: string; edit: boolean }) => (
+    <span className={cn("rounded-md px-1.5 py-0.5 text-[11px] font-semibold", state === "checking" ? "bg-primary/20" : "bg-orange-500/15 text-orange-700 dark:text-orange-300")}>
+      {state === "checking" ? "AI checking" : state === "flagged" ? (edit ? "Edit held" : "Held by AI") : status === "pending" ? "Pending" : state || status}
+    </span>
+  );
+  return (
+    <div className="space-y-4 pt-3" data-testid="panel-moderation">
+      <p className="text-xs text-muted-foreground">{data?.ai ? "AI moderation is on. New listings, ratings and edits stay unpublished until they pass; anything it holds lands here." : "AI moderation is off (no OPENAI_API_KEY on the server). New posts publish as before."}</p>
+      <section className="space-y-2">
+        <h3 className="text-sm font-semibold">Listings and edits ({spots.length})</h3>
+        {!spots.length && <p className="text-sm text-muted-foreground">Nothing waiting.</p>}
+        {spots.map((s) => {
+          let edit: Record<string, any> | null = null; try { edit = s.pendingEdit ? JSON.parse(s.pendingEdit) : null; } catch { /* ignore */ }
+          const changed = edit ? Object.keys(edit).filter((k) => String((edit as any)[k] ?? "") !== String((s as any)[k] ?? "")) : [];
+          return (
+            <article key={s.id} className="rounded-xl border border-card-border bg-card p-3 space-y-2" data-testid={`mod-spot-${s.id}`}>
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="font-code text-xs font-bold">{s.icao}</span>
+                <a href={`#/spot/${s.id}`} className="font-medium underline-offset-2 hover:underline">{s.name}</a>
+                <span className="text-xs text-muted-foreground">{s.category} · by {s.submittedBy}</span>
+                <State state={s.modState} status={s.status} edit={!!edit} />
+                {PROBLEM(s.modNote) && <span className="rounded-md bg-muted px-1.5 py-0.5 text-[11px]">{PROBLEM(s.modNote)}</span>}
+              </div>
+              {s.modNote && <p className="text-xs">{NOTE(s.modNote)}</p>}
+              {edit ? (
+                <div className="rounded-lg bg-muted/50 p-2 text-xs space-y-1">
+                  {changed.length ? changed.map((k) => <p key={k}><span className="font-semibold">{k}:</span> <span className="line-through text-muted-foreground">{String((s as any)[k] ?? "") || "–"}</span> → {String(edit![k] ?? "") || "–"}</p>) : <p className="text-muted-foreground">No visible changes.</p>}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground line-clamp-3">{s.description || "No description"}{s.address ? ` · ${s.address}` : ""}{s.website ? ` · ${s.website}` : ""}</p>
+              )}
+              {s.modState !== "checking" && <Actions kind="spot" id={s.id} edit={!!edit} />}
+            </article>
+          );
+        })}
+      </section>
+      <section className="space-y-2">
+        <h3 className="text-sm font-semibold">Ratings and edits ({reviews.length})</h3>
+        {!reviews.length && <p className="text-sm text-muted-foreground">Nothing waiting.</p>}
+        {reviews.map((r) => {
+          let edit: { rating: number; comment: string } | null = null; try { edit = r.pendingEdit ? JSON.parse(r.pendingEdit) : null; } catch { /* ignore */ }
+          const shown = edit || r;
+          return (
+            <article key={r.id} className="rounded-xl border border-card-border bg-card p-3 space-y-2" data-testid={`mod-review-${r.id}`}>
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="font-code text-xs font-bold">{r.icao}</span>
+                <a href={`#/spot/${r.spotId}`} className="font-medium underline-offset-2 hover:underline">{r.spotName}</a>
+                <span className="text-xs text-muted-foreground">by {r.author} · {shown.rating === 0 ? "Go around" : `${shown.rating}/5`}</span>
+                <State state={r.modState} status={r.status} edit={!!edit} />
+                {PROBLEM(r.modNote) && <span className="rounded-md bg-muted px-1.5 py-0.5 text-[11px]">{PROBLEM(r.modNote)}</span>}
+              </div>
+              {r.modNote && <p className="text-xs">{NOTE(r.modNote)}</p>}
+              <p className="rounded-lg bg-muted/50 p-2 text-xs">{shown.comment || "No comment"}</p>
+              {r.modState !== "checking" && <Actions kind="review" id={r.id} edit={!!edit} />}
+            </article>
+          );
+        })}
+      </section>
     </div>
   );
 }

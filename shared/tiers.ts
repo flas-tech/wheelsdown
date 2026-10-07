@@ -54,17 +54,22 @@ export type PointsBreakdown = {
 
 type Row = { id: number; userId?: number | null; createdAt: number };
 type Data = {
-  spots: (Row & { status: string; name: string })[];
-  reviews: (Row & { comment: string; spotId: number; rating: number })[];
+  spots: (Row & { status: string; name: string; modState?: string })[];
+  reviews: (Row & { comment: string; spotId: number; rating: number; status?: string })[];
   votes: { targetType: string; targetId: number; voter: string; value: number; reason?: string | null; createdAt: number; id: number }[];
 };
+
+/** A listing earns points unless it was hidden or rejected, or it's new and still waiting on (or held by) the automatic check. */
+const earns = (s: { status: string; modState?: string }) =>
+  s.status !== "hidden" && s.status !== "rejected" && !(s.status === "pending" && (s.modState === "checking" || s.modState === "flagged"));
 
 /** Points are computed from activity (not stored), so they can never drift from the record. */
 export function computePoints(data: Data, userId: number, bonus = 0): PointsBreakdown {
   const voter = `u:${userId}`;
-  const mySpots = data.spots.filter((s) => s.userId === userId && s.status !== "hidden");
+  // hidden and rejected listings and any rating that isn't live (still being checked, or held) earn nothing
+  const mySpots = data.spots.filter((s) => s.userId === userId && earns(s));
   const mySpotIds = new Set(mySpots.map((s) => s.id));
-  const myReviews = data.reviews.filter((r) => r.userId === userId);
+  const myReviews = data.reviews.filter((r) => r.userId === userId && (r.status ?? "live") === "live");
   const myReviewIds = new Set(myReviews.map((r) => r.id));
   const spotVotes = (id: number) => data.votes.filter((v) => v.targetType === "spot" && v.targetId === id) as any;
   const listingsVetted = mySpots.filter((s) => computeVet(spotVotes(s.id)).level === "vetted").length;
@@ -87,8 +92,8 @@ export function recentActivity(data: Data, userId: number, limit = 25): Activity
   const voter = `u:${userId}`;
   const name = (id: number) => data.spots.find((s) => s.id === id)?.name || "a listing";
   const items: ActivityItem[] = [];
-  for (const s of data.spots) if (s.userId === userId) items.push({ kind: "listing", label: `Added ${s.name}`, spotId: s.id, points: POINTS.listing, at: s.createdAt });
-  for (const r of data.reviews) if (r.userId === userId)
+  for (const s of data.spots) if (s.userId === userId && earns(s)) items.push({ kind: "listing", label: `Added ${s.name}`, spotId: s.id, points: POINTS.listing, at: s.createdAt });
+  for (const r of data.reviews) if (r.userId === userId && (r.status ?? "live") === "live")
     items.push({ kind: "review", label: r.rating === 0 ? `Go around: ${name(r.spotId)}` : `Rated ${name(r.spotId)} ${r.rating}/5`, spotId: r.spotId, points: POINTS.review + ((r.comment || "").trim().length >= 40 ? POINTS.reviewDetail : 0), at: r.createdAt });
   for (const v of data.votes) if (v.voter === voter) {
     if (v.targetType === "spot") items.push({ kind: v.value > 0 ? "vote_up" : "vote_down", label: `${v.value > 0 ? "Upvoted" : "Flagged"} ${name(v.targetId)}`, spotId: v.targetId, points: POINTS.vote, at: v.createdAt });

@@ -32,17 +32,33 @@ check "bad password"      'wrong'          "$(curl -s -XPOST $BASE/api/auth/logi
 S=$(curl -s -XPOST $BASE/api/spots -H "$A" -H "$J" -d '{"icao":"KMIA","category":"eat","name":"Smoke Test Cafe","costLevel":1,"pace":"grab","minutesNeeded":30,"milesFromField":2}')
 SID=$(echo "$S" | jget "d.get('id','')" 2>/dev/null)
 [[ -n "$SID" ]] && ok "add listing" || bad "add listing" "$S"
+# With AI moderation on, new posts wait for the check; the smoke test publishes its own items through the admin queue.
+AI=$(curl -s $BASE/api/config | jget "str(d.get('ai', False)).lower()")
+approve(){ [[ "$AI" == "true" ]] && curl -s -XPOST $BASE/api/admin/moderation/$1/$2 -H "x-admin-key: $ADMIN_KEY" -H "$J" -d '{"action":"approve"}' >/dev/null; return 0; }
+if [[ "$AI" == "true" ]]; then
+  check "listing held for check" '"modState":"checking"' "$S"
+  check "unpublished is private" 'Not found' "$(curl -s $BASE/api/spots/$SID)"
+  approve spot $SID
+fi
+check "config"             '"ai":'          "$(curl -s $BASE/api/config)"
+check "admin moderation"   '"reviews"'      "$(curl -s $BASE/api/admin/moderation -H "x-admin-key: $ADMIN_KEY")"
+check "autofill needs login" 'Sign in'      "$(curl -s -XPOST $BASE/api/ai/autofill -H "$J" -d '{"icao":"KMIA","category":"eat","name":"x"}')"
 check "vote up"           '"ok":true'      "$(curl -s -XPOST $BASE/api/spots/$SID/vote -H "$A" -H "$J" -d '{"value":1}')"
 check "rate + comment"    '"rating":5'     "$(curl -s -XPOST $BASE/api/spots/$SID/reviews -H "$A" -H "$J" -d '{"rating":5,"comment":"Smoke test review with enough characters to count as detailed."}')"
+R1=$(curl -s $BASE/api/spots/$SID -H "$A" | jget "[r['id'] for r in d['reviews']][0]" 2>/dev/null); approve review $R1
 check "spot detail"       'Smoke Test Cafe' "$(curl -s $BASE/api/spots/$SID -H "$A")"
 check "digit airport code" '"icao":"X51"'  "$(curl -s $BASE/api/airports/lookup/X51)"
 check "favorite on"        '"on":true'      "$(curl -s -XPUT $BASE/api/spots/$SID/favorite -H "$A" -H "$J" -d '{"on":true}')"
 check "favorites list"     "\"id\":$SID"    "$(curl -s $BASE/api/me/favorites -H "$A")"
 check "favorite needs login" 'Sign in'      "$(curl -s -XPUT $BASE/api/spots/$SID/favorite -H "$J" -d '{"on":true}')"
-check "edit own listing"   'Smoke Test Cafe (edited)' "$(curl -s -XPATCH $BASE/api/spots/$SID -H "$A" -H "$J" -d '{"name":"Smoke Test Cafe (edited)"}')"
+E=$(curl -s -XPATCH $BASE/api/spots/$SID -H "$A" -H "$J" -d '{"name":"Smoke Test Cafe (edited)"}')
+if [[ "$AI" == "true" ]]; then check "edit held, live unchanged" '"editPending":true' "$E"; approve spot $SID; E=$(curl -s $BASE/api/spots/$SID -H "$A"); fi
+check "edit own listing"   'Smoke Test Cafe (edited)' "$E"
 RID=$(curl -s $BASE/api/spots/$SID -H "$A" | jget "[r['id'] for r in d['reviews']][0]" 2>/dev/null)
 check "go around needs why" 'go around'     "$(curl -s -XPATCH $BASE/api/reviews/$RID -H "$A" -H "$J" -d '{"rating":0,"comment":"no"}')"
-check "edit own rating"    '"rating":0'     "$(curl -s -XPATCH $BASE/api/reviews/$RID -H "$A" -H "$J" -d '{"rating":0,"comment":"Smoke test: go around this one, it has enough detail to count."}')"
+ER=$(curl -s -XPATCH $BASE/api/reviews/$RID -H "$A" -H "$J" -d '{"rating":0,"comment":"Smoke test: go around this one, it has enough detail to count."}')
+[[ "$AI" == "true" ]] && check "rating edit held" '"editPending":true' "$ER" || check "edit own rating" '"rating":0' "$ER"
+approve review $RID
 check "go-around counted"  '"goArounds":1'  "$(curl -s $BASE/api/spots/$SID -H "$A")"
 check "leaderboard"        '"crewTotal"'    "$(curl -s "$BASE/api/leaderboard?q=$H")"
 check "leaderboard bases"  '['              "$(curl -s $BASE/api/leaderboard/bases)"

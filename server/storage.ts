@@ -79,14 +79,15 @@ async function withStats(rows: Spot[], voter = ""): Promise<SpotWithStats[]> {
   const ids = rows.map((r) => r.id);
   const agg = await d.select({ spotId: reviews.spotId, avg: sql<number>`AVG(${reviews.rating})::float`, n: sql<number>`COUNT(*)::int`, go: sql<number>`(COUNT(*) FILTER (WHERE ${reviews.rating} = 0))::int`,
     costs: sql<(number | null)[]>`array_agg(${reviews.costLevel})` })
-    .from(reviews).where(inArray(reviews.spotId, ids)).groupBy(reviews.spotId);
+    .from(reviews).where(and(inArray(reviews.spotId, ids), eq(reviews.status, "live"))).groupBy(reviews.spotId);
   const m = new Map(agg.map((a) => [a.spotId, a]));
   const aps = new Map((await d.select().from(airports).where(inArray(airports.icao, Array.from(new Set(rows.map((r) => r.icao)))))).map((a) => [a.icao, a]));
   const vs = await d.select().from(votes).where(and(eq(votes.targetType, "spot"), inArray(votes.targetId, ids)));
   const byId = new Map<number, Vote[]>();
   vs.forEach((v) => byId.set(v.targetId, [...(byId.get(v.targetId) || []), v]));
+  // moderation details (held edits, notes) never leave the server through public listing data
   return rows.map((r) => ({
-    ...r, avgRating: m.get(r.id)?.avg ?? null, reviewCount: m.get(r.id)?.n ?? 0, airport: aps.get(r.icao), vet: computeVet(byId.get(r.id) || [], voter),
+    ...r, pendingEdit: null, modNote: "", modAttempts: 0, avgRating: m.get(r.id)?.avg ?? null, reviewCount: m.get(r.id)?.n ?? 0, airport: aps.get(r.icao), vet: computeVet(byId.get(r.id) || [], voter),
     goArounds: m.get(r.id)?.go ?? 0,
     ...crewCost(r.category, r.costLevel, m.get(r.id)?.costs || []),
   }));
@@ -230,8 +231,11 @@ export class DatabaseStorage {
 
   // ---- reviews ----
   listReviews(spotId: number) { return db().select().from(reviews).where(eq(reviews.spotId, spotId)).orderBy(desc(reviews.createdAt)); }
+  /** Live ratings for everyone; the author also sees their own ratings that are still being checked or were held. */
   async listReviewsWithVotes(spotId: number, voter = ""): Promise<ReviewWithVotes[]> {
-    const rs = await this.listReviews(spotId);
+    const viewer = /^u:(\d+)$/.exec(voter)?.[1];
+    const rs = (await this.listReviews(spotId)).filter((r) => r.status === "live" || (viewer && r.userId === Number(viewer)))
+      .map((r) => (viewer && r.userId === Number(viewer) ? { ...r, modNote: r.modNote.replace(/^\[[a-z_]+\]\s*/, "") } : { ...r, pendingEdit: null, modNote: "", modAttempts: 0 }));
     if (!rs.length) return [];
     const vs = await db().select().from(votes).where(and(eq(votes.targetType, "review"), inArray(votes.targetId, rs.map((r) => r.id))));
     const uids = Array.from(new Set(rs.map((r) => r.userId).filter((x): x is number => x != null)));
@@ -251,6 +255,38 @@ export class DatabaseStorage {
     invalidateActivity();
     await db().delete(votes).where(and(eq(votes.targetType, "review"), eq(votes.targetId, id)));
     await db().delete(reviews).where(eq(reviews.id, id));
+  }
+
+  // ---- moderation ----
+  async rawSpot(id: number) { return Number.isFinite(id) ? (await db().select().from(spots).where(eq(spots.id, id)))[0] : undefined; }
+  async setSpotMod(id: number, patch: Partial<Pick<Spot, "status" | "modState" | "modNote" | "modAttempts" | "pendingEdit">>) {
+    invalidateActivity(); return (await db().update(spots).set(patch).where(eq(spots.id, id)).returning())[0];
+  }
+  async setReviewMod(id: number, patch: Partial<Pick<Review, "status" | "modState" | "modNote" | "modAttempts" | "pendingEdit" | "rating" | "comment" | "costLevel">>) {
+    invalidateActivity(); return (await db().update(reviews).set(patch).where(eq(reviews.id, id)).returning())[0];
+  }
+  /** Work queue for the background checker (oldest first). */
+  async modQueue(limit = 4) {
+    const d = db();
+    const [s, r] = await Promise.all([
+      d.select().from(spots).where(eq(spots.modState, "checking")).orderBy(spots.createdAt).limit(limit),
+      d.select().from(reviews).where(eq(reviews.modState, "checking")).orderBy(reviews.createdAt).limit(limit),
+    ]);
+    return { spots: s, reviews: r };
+  }
+  /** Everything a person should look at: held or checking items and edits. */
+  async modReviewList() {
+    const d = db();
+    const s = await d.select().from(spots).where(or(eq(spots.status, "pending"), inArray(spots.modState, ["checking", "flagged"]), sql`${spots.pendingEdit} IS NOT NULL`)).orderBy(desc(spots.createdAt)).limit(200);
+    const r = await d.select().from(reviews).where(or(sql`${reviews.status} <> 'live'`, inArray(reviews.modState, ["checking", "flagged"]), sql`${reviews.pendingEdit} IS NOT NULL`)).orderBy(desc(reviews.createdAt)).limit(200);
+    const names = new Map((r.length ? await d.select({ id: spots.id, name: spots.name, icao: spots.icao }).from(spots).where(inArray(spots.id, r.map((x) => x.spotId))) : []).map((x) => [x.id, x]));
+    return { spots: s, reviews: r.map((x) => ({ ...x, spotName: names.get(x.spotId)?.name || "", icao: names.get(x.spotId)?.icao || "" })) };
+  }
+  /** Other listings at the same airport, for duplicate checks. */
+  async namesAt(icao: string, exceptId?: number) {
+    const rows = await db().select({ id: spots.id, name: spots.name, category: spots.category, address: spots.address, lat: spots.lat, lng: spots.lng, status: spots.status })
+      .from(spots).where(and(eq(spots.icao, icao), sql`${spots.status} <> 'rejected'`));
+    return rows.filter((r) => r.id !== exceptId);
   }
 
   // ---- ads ----
@@ -426,10 +462,12 @@ export class DatabaseStorage {
   }
   async userContributions(userId: number) {
     const d = db();
-    const mySpots = await withStats(await d.select().from(spots).where(eq(spots.userId, userId)).orderBy(desc(spots.createdAt)));
+    const raw = await d.select().from(spots).where(eq(spots.userId, userId)).orderBy(desc(spots.createdAt));
+    const modOf = new Map(raw.map((r) => [r.id, { state: r.modState, note: r.modNote.replace(/^\[[a-z_]+\]\s*/, ""), editPending: !!r.pendingEdit }]));
+    const mySpots = (await withStats(raw)).map((x) => ({ ...x, mod: modOf.get(x.id) }));
     const rs = await d.select().from(reviews).where(eq(reviews.userId, userId)).orderBy(desc(reviews.createdAt));
     const names = new Map((rs.length ? await d.select({ id: spots.id, name: spots.name }).from(spots).where(inArray(spots.id, rs.map((r) => r.spotId))) : []).map((s) => [s.id, s.name]));
-    return { spots: mySpots, reviews: rs.map((r) => ({ ...r, spotName: names.get(r.spotId) || "" })), activity: recentActivity(await this.loadActivity(), userId) };
+    return { spots: mySpots, reviews: rs.map((r) => ({ ...r, modNote: r.modNote.replace(/^\[[a-z_]+\]\s*/, ""), spotName: names.get(r.spotId) || "" })), activity: recentActivity(await this.loadActivity(), userId) };
   }
   /** Public crew profile. Anonymous members show stats only, so their posts cannot be traced back to them. */
   async crewProfile(userId: number) {
@@ -438,15 +476,15 @@ export class DatabaseStorage {
     const rank = (await this.publicUsers()).findIndex((u) => u.id === userId) + 1;
     const u = (await db().select().from(users).where(eq(users.id, userId)))[0];
     const c = await this.userContributions(userId);
-    const counts = { listings: c.spots.filter((s) => s.status === "live").length, reviews: c.reviews.length };
+    const counts = { listings: c.spots.filter((s) => s.status === "live").length, reviews: c.reviews.filter((r) => r.status === "live").length };
     if (u?.anonymous) return { user: pub, rank, counts, spots: [], reviews: [], hidden: true };
     const live = new Set(c.spots.filter((s) => s.status === "live").map((s) => s.id));
     const liveIds = (await db().select({ id: spots.id }).from(spots).where(eq(spots.status, "live"))).map((x) => x.id);
     const liveAll = new Set(liveIds);
     return {
       user: pub, rank, counts, hidden: false,
-      spots: c.spots.filter((s) => live.has(s.id)),
-      reviews: c.reviews.filter((r) => liveAll.has(r.spotId)).map(({ userId: _u, ...r }) => r),
+      spots: c.spots.filter((s) => live.has(s.id)).map(({ mod: _m, ...s }) => s),
+      reviews: c.reviews.filter((r) => liveAll.has(r.spotId) && r.status === "live").map(({ userId: _u, pendingEdit: _p, modNote: _n, ...r }) => r),
     };
   }
 
