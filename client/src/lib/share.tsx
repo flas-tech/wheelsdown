@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { IS_STATIC } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { trackShare } from "@/lib/metrics";
+import { POINTS } from "@shared/tiers";
 
 const SITE = "https://getwheelsdown.com";
 /** Public link to a page. The demo build shares its own address; the live site always shares getwheelsdown.com. */
@@ -15,13 +16,13 @@ const isApple = () => /iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent);
 /** Messages link with the text filled in. iOS and macOS use "&body=", Android and others "?body=". */
 export const smsHref = (body: string) => `sms:${isApple() ? "&" : "?"}body=${encodeURIComponent(body)}`;
 
-type Props = { title?: string; message?: string; path?: string };
+type Props = { title?: string; message?: string; path?: string; /** full link to share instead of a page path (invite links) */ url?: string };
 const DEFAULT_MSG = "Check out Wheelsdown, a crew-vetted layover guide. Search your route for places to eat and things to do near the airport:";
 
 /** Share dialog: text a link, open the phone's share sheet, or copy the link. */
-export function ShareDialog({ open, onOpenChange, title = "Share Wheelsdown", message = DEFAULT_MSG, path = "/" }: Props & { open: boolean; onOpenChange: (o: boolean) => void }) {
+export function ShareDialog({ open, onOpenChange, title = "Share Wheelsdown", message = DEFAULT_MSG, path = "/", url: fixedUrl, note }: Props & { open: boolean; onOpenChange: (o: boolean) => void; note?: string }) {
   const [copied, setCopied] = useState(false);
-  const url = shareUrl(path);
+  const url = fixedUrl || shareUrl(path);
   const body = `${message} ${url}`;
   const what = path === "/" ? "site" : "spot";
   const canNative = typeof navigator !== "undefined" && !!navigator.share;
@@ -37,7 +38,7 @@ export function ShareDialog({ open, onOpenChange, title = "Share Wheelsdown", me
       <DialogContent className="max-w-sm" data-testid="dialog-share">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>Send it to your crew. The link opens right in their browser, no app needed.</DialogDescription>
+          <DialogDescription>{note || "Send it to your crew. The link opens right in their browser, no app needed."}</DialogDescription>
         </DialogHeader>
         <p className="rounded-xl bg-muted/60 p-3 text-sm" data-testid="text-share-message">{message} <span className="break-all text-primary">{url}</span></p>
         <div className="space-y-2">
@@ -67,18 +68,28 @@ export function ShareButton({ className, ...p }: Props & { className?: string })
   );
 }
 
-/** Inline call to action, e.g. on the Logbook. */
-export function InviteCard() {
+/** Your personal invite link: opens the site and remembers who sent it until the person signs up. */
+export function inviteUrl(refId: number) {
+  const base = IS_STATIC ? window.location.href.split("#")[0].split("?")[0] : SITE + "/";
+  return `${base}?ref=${refId}`;
+}
+
+/** Inline call to action on the Logbook. Points are only awarded once the invited person creates an account. */
+export function InviteCard({ refId, referrals = 0 }: { refId?: number; referrals?: number }) {
   const [open, setOpen] = useState(false);
+  const pts = POINTS.referral;
   return (
     <section className="flex items-center gap-3 rounded-2xl border border-card-border bg-card p-4" data-testid="card-invite">
       <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary/15"><MessageCircle className="h-5 w-5 text-primary" /></div>
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold">Invite your crew</p>
-        <p className="text-xs text-muted-foreground">More crews means better picks on every layover.</p>
+        <p className="text-xs text-muted-foreground" data-testid="text-invite-sub">{refId
+          ? <>Earn <span className="font-semibold text-foreground">{pts} pts</span> for each person who signs up with your link.{referrals ? ` ${referrals} joined so far.` : ""}</>
+          : "More crews means better picks on every layover."}</p>
       </div>
       <button onClick={() => setOpen(true)} className="h-10 shrink-0 rounded-full taxi-sign px-4 text-sm font-semibold hover-elevate" data-testid="button-invite">Text a link</button>
-      <ShareDialog open={open} onOpenChange={setOpen} title="Invite your crew" />
+      <ShareDialog open={open} onOpenChange={setOpen} title="Invite your crew" url={refId ? inviteUrl(refId) : undefined}
+        note={refId ? `This link is yours. When someone creates an account with it, you get ${pts} points. Nothing is awarded for clicks alone.` : undefined} />
     </section>
   );
 }

@@ -31,6 +31,17 @@ check "test signup takes no club seat" '"wrightNo":null' "$R"
 check "club"               '"seats":50'     "$(curl -s $BASE/api/club)"
 A="authorization: Bearer $T"
 check "me"                "\"handle\":\"$H\"" "$(curl -s $BASE/api/me -H "$A")"
+MYID=$(curl -s $BASE/api/me -H "$A" | jget "d['id']")
+check "invite: who sent it" '"name":"Smoke Test"' "$(curl -s $BASE/api/ref/$MYID)"
+check "invite: no points yet" '"referrals":0' "$(curl -s $BASE/api/me -H "$A")"
+H2="${H}r"
+R2=$(curl -s -XPOST $BASE/api/auth/signup -H "$J" -d "{\"handle\":\"$H2\",\"password\":\"smoke-pass-123\",\"displayName\":\"Smoke Invitee\",\"crewRole\":\"Pilot\",\"email\":\"$H2@example.com\",\"acceptTerms\":true,\"ref\":$MYID}")
+T2=$(echo "$R2" | jget "d.get('token','')" 2>/dev/null)
+check "invite: points on sign-up" '"referrals":1' "$(curl -s $BASE/api/me -H "$A")"
+check "invite: bad ref still signs up" '"token"' "$(curl -s -XPOST $BASE/api/auth/signup -H "$J" -d "{\"handle\":\"${H}x\",\"password\":\"smoke-pass-123\",\"displayName\":\"Smoke X\",\"crewRole\":\"Pilot\",\"acceptTerms\":true,\"ref\":\"abc\"}" | tee /tmp/smx.json)"
+TX=$(jget "d.get('token','')" < /tmp/smx.json 2>/dev/null); curl -s -o /dev/null -XDELETE $BASE/api/me -H "authorization: Bearer $TX" -H "$J" -d "{\"confirm\":\"${H}x\"}"
+curl -s -o /dev/null -XDELETE $BASE/api/me -H "authorization: Bearer $T2" -H "$J" -d "{\"confirm\":\"$H2\"}"
+check "invite: removed when they delete" '"referrals":0' "$(curl -s $BASE/api/me -H "$A")"
 check "login by handle"   '"token"'        "$(curl -s -XPOST $BASE/api/auth/login -H "$J" -d "{\"handle\":\"$H\",\"password\":\"smoke-pass-123\"}")"
 check "login by email"    '"token"'        "$(curl -s -XPOST $BASE/api/auth/login -H "$J" -d "{\"handle\":\"$H@example.com\",\"password\":\"smoke-pass-123\"}")"
 check "bad password"      'wrong'          "$(curl -s -XPOST $BASE/api/auth/login -H "$J" -d "{\"handle\":\"$H\",\"password\":\"nope\"}")"

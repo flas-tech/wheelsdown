@@ -1,3 +1,4 @@
+import { pendingRef, clearRef } from "@/lib/referral";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient, setAuthToken, getAuthToken, IS_STATIC } from "@/lib/queryClient";
@@ -149,6 +150,9 @@ function AuthDialog({ open, onOpenChange, reason, onAuthed }: { open: boolean; o
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const { toast: clubToast } = useToast();
+  const refId = pendingRef();
+  const { data: inviterData } = useQuery<{ name: string } | null>({ queryKey: [`/api/ref/${refId}`], enabled: !!refId && mode === "signup", staleTime: 600_000, retry: false });
+  const inviter = inviterData?.name;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault(); setErr(""); setNotice("");
@@ -159,12 +163,13 @@ function AuthDialog({ open, onOpenChange, reason, onAuthed }: { open: boolean; o
         const r = await (await apiRequest("POST", "/api/auth/forgot", { email })).json();
         setNotice(r.message); setBusy(false); return;
       }
-      const body = mode === "signup" ? { handle, password, displayName, crewRole, homeBase, anonymous, email, acceptTerms: true } : { handle, password };
+      const body = mode === "signup" ? { handle, password, displayName, crewRole, homeBase, anonymous, email, acceptTerms: true, ref: pendingRef() } : { handle, password };
       const res = await apiRequest("POST", mode === "signup" ? "/api/auth/signup" : "/api/auth/login", body);
       const { token, me } = await res.json();
       setAuthToken(token);
       queryClient.setQueryData(["/api/me"], me);
       setPassword("");
+      if (mode === "signup") clearRef();
       onAuthed();
       if (mode === "signup" && me?.wrightNo) {
         clubToast({ title: `Welcome to the ${WRIGHT_NAME}`, description: `You're founding member No. ${me.wrightNo} of ${WRIGHT_SEATS}. Your badge is on your Logbook.` });
@@ -204,6 +209,7 @@ function AuthDialog({ open, onOpenChange, reason, onAuthed }: { open: boolean; o
           )}
           {mode === "signup" && (
             <>
+              {inviter && <p className="rounded-lg bg-primary/10 px-3 py-2 text-xs" data-testid="text-invited-by">Invited by <span className="font-semibold">{inviter}</span>. Signing up gives them credit for the invite.</p>}
               <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Display name (shown on your posts)" data-testid="input-auth-name" className={inputCls} />
               <div className="grid grid-cols-[1fr_96px] gap-2">
                 <select value={crewRole} onChange={(e) => setRole(e.target.value)} data-testid="select-auth-role" className={inputCls}>

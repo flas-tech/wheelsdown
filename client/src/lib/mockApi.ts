@@ -21,7 +21,7 @@ import type { BriefingStop } from "@shared/schema";
 export const DEMO_ADMIN_KEY = "wheelsdown-admin";
 const STORE_KEY = "wheelsdown-demo-v4";
 
-type DemoUser = { id: number; handle: string; displayName: string; crewRole: string; homeBase: string; anonymous: boolean; email?: string; aircraft?: string; bio?: string; interests?: string[]; wrightNo?: number | null; pw: string; bonusPoints: number; createdAt: number };
+type DemoUser = { referredBy?: number | null; id: number; handle: string; displayName: string; crewRole: string; homeBase: string; anonymous: boolean; email?: string; aircraft?: string; bio?: string; interests?: string[]; wrightNo?: number | null; pw: string; bonusPoints: number; createdAt: number };
 type DemoBriefing = { id: number; userId: number; title: string; stops: BriefingStop[]; shareToken: string; createdAt: number; updatedAt: number };
 type DB = { airports: Airport[]; spots: Spot[]; reviews: Review[]; ads: Ad[]; votes: Vote[]; users: DemoUser[]; sessions: Record<string, number>; briefings?: DemoBriefing[]; favorites?: { userId: number; spotId: number; at: number }[]; follows?: { a: number; b: number; at: number }[]; wrightTaken?: number; feedback?: FeedbackItem[]; checkins?: { id: number; userId: number; spotId: number | null; icao: string; lat: number; lng: number; createdAt: number }[];
   seq: { spot: number; review: number; ad: number; vote: number; user: number } };
@@ -199,10 +199,12 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
     const role = (CREW_ROLES as readonly string[]).includes(body.crewRole) ? body.crewRole : "Pilot";
     const u: DemoUser = { id: ++db.seq.user, handle, displayName: String(body.displayName).trim().slice(0, 40), crewRole: role, anonymous: !!body.anonymous,
       homeBase: canonBase(String(body.homeBase || "")), email: String(body.email || "").trim().toLowerCase(), pw: demoHash(String(body.password)), bonusPoints: 0, createdAt: Date.now() };
+    { const r = Number(body.ref); if (r > 0 && db.users.some((x) => x.id === r)) u.referredBy = r; }
     if ((db.wrightTaken || 0) < WRIGHT_SEATS) { db.wrightTaken = (db.wrightTaken || 0) + 1; u.wrightNo = db.wrightTaken; }
     db.users.push(u); const t = newSession(u.id); save();
     return { token: t, me: meOf(u) };
   }
+  if (method === "GET" && (m = path.match(/^\/api\/ref\/(\d+)$/))) { const r = db.users.find((x) => x.id === Number(m![1])); return r ? { name: publicName(r) } : null; }
   if (method === "POST" && path === "/api/auth/login") {
     const h = String(body.handle || "").trim().toLowerCase();
     const u = db.users.find((x) => x.handle === h || (!!x.email && x.email === h));

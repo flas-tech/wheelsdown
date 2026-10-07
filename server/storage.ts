@@ -359,12 +359,15 @@ export class DatabaseStorage {
   }
 
   // ---- accounts ----
-  async createUser(u: { handle: string; password: string; displayName: string; crewRole: string; homeBase?: string; anonymous?: boolean; email?: string }) {
+  async createUser(u: { handle: string; password: string; displayName: string; crewRole: string; homeBase?: string; anonymous?: boolean; email?: string; ref?: number }) {
     const d = db();
     if ((await d.select({ id: users.id }).from(users).where(eq(users.handle, u.handle)))[0]) throw Object.assign(new Error("That handle is taken"), { status: 409 });
     if (u.email && (await d.select({ id: users.id }).from(users).where(eq(users.email, u.email)))[0]) throw Object.assign(new Error("That email already has an account"), { status: 409 });
     invalidateActivity();
+    // referral credit is tied to this new account existing: it's counted from referred_by, never stored as points
+    const referredBy = u.ref ? (await d.select({ id: users.id }).from(users).where(eq(users.id, u.ref)))[0]?.id ?? null : null;
     const created = (await d.insert(users).values({
+      referredBy,
       handle: u.handle, email: u.email || null, displayName: u.displayName, crewRole: u.crewRole || "Pilot", homeBase: canonBase(u.homeBase),
       anonymous: u.anonymous ? 1 : 0, passwordHash: await hashPassword(u.password), createdAt: Date.now(),
     }).returning())[0];

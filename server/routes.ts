@@ -135,6 +135,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       res.status(201).json({ token: await storage.createSession(u.id), me: await storage.me(u) });
     } catch (e: any) { res.status(e.status || 500).json({ message: e.message }); }
   });
+  // who sent an invite link, for the "Invited by" line on sign-up (honors the anonymous setting)
+  app.get("/api/ref/:id", async (req, res) => {
+    const u = (await storage.publicUsers()).find((x) => x.id === Number(req.params.id));
+    res.json(u ? { name: u.displayName } : null);
+  });
   app.post("/api/auth/login", authLimit, async (req, res) => {
     const p = loginSchema.safeParse(req.body);
     const r = p.success ? await storage.login(p.data.handle, p.data.password) : undefined;

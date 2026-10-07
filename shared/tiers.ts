@@ -32,6 +32,7 @@ export const POINTS = {
   vote: 1,            // cast an up/down vote
   upvoteReceived: 1,  // someone else upvotes your listing
   helpfulReceived: 2, // someone marks your review helpful
+  referral: 25,       // someone signs up with your invite link (only once they have an account)
 } as const;
 
 /** Milestone inside Student. Does not change tier thresholds or rankings. */
@@ -49,7 +50,7 @@ export function tierFor(points: number) {
 
 export type PointsBreakdown = {
   listings: number; listingsVetted: number; reviews: number; detailedReviews: number;
-  votes: number; upvotesReceived: number; helpfulReceived: number; bonus: number; total: number;
+  votes: number; upvotesReceived: number; helpfulReceived: number; referrals: number; bonus: number; total: number;
   /** Participation counter: everything this crew member has done (listings + ratings + votes). */
   participation: number;
 };
@@ -59,7 +60,11 @@ type Data = {
   spots: (Row & { status: string; name: string; modState?: string })[];
   reviews: (Row & { comment: string; spotId: number; rating: number; status?: string })[];
   votes: { targetType: string; targetId: number; voter: string; value: number; reason?: string | null; createdAt: number; id: number }[];
+  /** Members, for referral credit: a signed-up account whose referredBy is you. */
+  users?: { id: number; referredBy?: number | null; createdAt: number; displayName: string; crewRole: string; anonymous?: boolean | number | null }[];
 };
+/** Accounts that signed up with this member's invite link. Deleted accounts drop out, so the credit always matches real sign-ups. */
+const referralsOf = (data: Data, userId: number) => (data.users || []).filter((u) => u.referredBy === userId && u.id !== userId);
 
 /** A listing earns points unless it was hidden or rejected, or it's new and still waiting on (or held by) the automatic check. */
 const earns = (s: { status: string; modState?: string }) =>
@@ -79,15 +84,16 @@ export function computePoints(data: Data, userId: number, bonus = 0): PointsBrea
   const upvotesReceived = data.votes.filter((v) => v.targetType === "spot" && mySpotIds.has(v.targetId) && v.value > 0 && v.voter !== voter).length;
   const helpfulReceived = data.votes.filter((v) => v.targetType === "review" && myReviewIds.has(v.targetId) && v.value > 0 && v.voter !== voter).length;
   const detailedReviews = myReviews.filter((r) => (r.comment || "").trim().length >= 40).length;
+  const referrals = referralsOf(data, userId).length;
   const total =
     mySpots.length * POINTS.listing + listingsVetted * POINTS.listingVetted + myReviews.length * POINTS.review +
     detailedReviews * POINTS.reviewDetail + votes * POINTS.vote + upvotesReceived * POINTS.upvoteReceived +
-    helpfulReceived * POINTS.helpfulReceived + bonus;
-  return { listings: mySpots.length, listingsVetted, reviews: myReviews.length, detailedReviews, votes, upvotesReceived, helpfulReceived, bonus, total,
+    helpfulReceived * POINTS.helpfulReceived + referrals * POINTS.referral + bonus;
+  return { listings: mySpots.length, listingsVetted, reviews: myReviews.length, detailedReviews, votes, upvotesReceived, helpfulReceived, referrals, bonus, total,
     participation: mySpots.length + myReviews.length + votes };
 }
 
-export type ActivityItem = { kind: "listing" | "review" | "vote_up" | "vote_down" | "review_vote"; label: string; spotId: number; points: number; at: number };
+export type ActivityItem = { kind: "listing" | "review" | "vote_up" | "vote_down" | "review_vote" | "referral"; label: string; spotId: number; points: number; at: number };
 
 /** Most recent activity for the participation log. */
 export function recentActivity(data: Data, userId: number, limit = 25): ActivityItem[] {
@@ -101,6 +107,7 @@ export function recentActivity(data: Data, userId: number, limit = 25): Activity
     if (v.targetType === "spot") items.push({ kind: v.value > 0 ? "vote_up" : "vote_down", label: `${v.value > 0 ? "Upvoted" : "Flagged"} ${name(v.targetId)}`, spotId: v.targetId, points: POINTS.vote, at: v.createdAt });
     else { const r = data.reviews.find((x) => x.id === v.targetId); if (r) items.push({ kind: "review_vote", label: `Voted on a review of ${name(r.spotId)}`, spotId: r.spotId, points: POINTS.vote, at: v.createdAt }); }
   }
+  for (const u of referralsOf(data, userId)) items.push({ kind: "referral", label: `${publicName(u as any)} joined with your invite`, spotId: 0, points: POINTS.referral, at: u.createdAt });
   return items.sort((a, b) => b.at - a.at).slice(0, limit);
 }
 

@@ -13,7 +13,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { CREW_ROLES } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
-import { LogOut, Star, ThumbsUp, ThumbsDown, PlusCircle, MessageSquare, ShieldCheck, Award, Gift, Activity, ChevronRight } from "lucide-react";
+import { LogOut, Star, ThumbsUp, ThumbsDown, PlusCircle, MessageSquare, ShieldCheck, Award, Gift, Activity, ChevronRight, UserPlus } from "lucide-react";
 import { TIERS, POINTS, tierFor, publicName, SOLO_POINTS, hasSoloed, type TierId, type ActivityItem } from "@shared/tiers";
 import type { SpotWithStats, Review } from "@shared/schema";
 import { useAuth, Insignia, tierById, PostAsToggle } from "@/lib/auth";
@@ -102,6 +102,7 @@ export default function ProfilePage() {
     { icon: ThumbsUp, label: "Votes cast", n: b.votes, each: POINTS.vote },
     { icon: ThumbsUp, label: "Upvotes on your listings", n: b.upvotesReceived, each: POINTS.upvoteReceived },
     { icon: Award, label: "Helpful votes on your reviews", n: b.helpfulReceived, each: POINTS.helpfulReceived },
+    { icon: UserPlus, label: "Crew who signed up with your invite", n: b.referrals || 0, each: POINTS.referral },
   ];
   return (
     <div className="space-y-5">
@@ -139,7 +140,7 @@ export default function ProfilePage() {
       )}
 
       {me.achievements && <BadgeProgressGrid progress={me.achievements} />}
-      <InviteCard />
+      <InviteCard refId={me.id} referrals={b.referrals || 0} />
       <FeedbackCard />
 
       <ProfileSettings />
@@ -306,7 +307,7 @@ function ProfileSettings() {
   );
 }
 
-const ACT_ICON = { listing: PlusCircle, review: Star, vote_up: ThumbsUp, vote_down: ThumbsDown, review_vote: MessageSquare } as const;
+const ACT_ICON = { listing: PlusCircle, review: Star, vote_up: ThumbsUp, vote_down: ThumbsDown, review_vote: MessageSquare, referral: UserPlus } as const;
 function ActivityLog({ items, loading }: { items?: ActivityItem[]; loading: boolean }) {
   return (
     <section className="rounded-2xl border border-card-border bg-card" data-testid="section-activity">
@@ -318,7 +319,7 @@ function ActivityLog({ items, loading }: { items?: ActivityItem[]; loading: bool
           const Icon = ACT_ICON[a.kind];
           return (
             <li key={i}>
-              <Link href={`/spot/${a.spotId}`} className="flex items-center gap-3 px-4 py-2.5 text-sm hover-elevate" data-testid={`row-activity-${i}`}>
+              <Link href={a.kind === "referral" ? "/crew" : `/spot/${a.spotId}`} className="flex items-center gap-3 px-4 py-2.5 text-sm hover-elevate" data-testid={`row-activity-${i}`}>
                 <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
                 <span className="flex-1 min-w-0 truncate">{a.label}</span>
                 <span className="text-[11px] text-muted-foreground whitespace-nowrap">{timeAgo(a.at)}</span>
@@ -338,7 +339,7 @@ export function TierLadder({ points, signedIn = true }: { points: number; signed
     <section className="rounded-2xl border border-card-border bg-card p-4" data-testid="section-ladder">
       <h2 className="text-sm font-semibold">The ratings ladder</h2>
       <p className="text-xs text-muted-foreground mt-0.5">
-        {POINTS.listing} pts per listing (+{POINTS.listingVetted} when it's Crew-vetted) · {POINTS.review} per rating (+{POINTS.reviewDetail} if detailed) · {POINTS.vote} per vote · points when others upvote your work
+        {POINTS.listing} pts per listing (+{POINTS.listingVetted} when it's Crew-vetted) · {POINTS.review} per rating (+{POINTS.reviewDetail} if detailed) · {POINTS.vote} per vote · {POINTS.referral} per crew member who signs up with your invite link · points when others upvote your work
       </p>
       <ol className="mt-3 space-y-1">
         {TIERS.map((t, i) => (

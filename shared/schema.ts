@@ -227,6 +227,7 @@ export const users = pgTable("users", {
   aircraft: text("aircraft").notNull().default(""), // profile icon, see shared/aircraft.ts
   bio: text("bio").notNull().default(""), // short public "about me"
   interests: text("interests").notNull().default("[]"), // JSON ids from shared/interests.ts
+  referredBy: integer("referred_by"), // member whose invite link this account signed up with
   wrightNo: integer("wright_no"), // seat number in the founding Orville & Wilbur Wright Club (1-10), null for everyone else
   createdAt: bigint("created_at", { mode: "number" }).notNull().default(0),
 });
@@ -253,6 +254,7 @@ export const signupSchema = z.object({
   homeBase: z.string().trim().toUpperCase().max(4).optional().default(""),
   anonymous: z.boolean().optional().default(false),
   email: z.union([z.literal(""), z.string().trim().toLowerCase().email("That email doesn't look right")]).optional().default(""),
+  ref: z.coerce.number().int().positive().optional().catch(undefined), // inviter's member id from their invite link
   acceptTerms: z.literal(true, { message: "Please accept the Terms and Community Guidelines" }).optional(),
 });
 export const updateMeSchema = z.object({
