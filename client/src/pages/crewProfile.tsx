@@ -30,7 +30,7 @@ export default function CrewProfilePage() {
       <Link href="/crew" data-testid="link-back-crew" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
         <ArrowLeft className="h-4 w-4" /> Leaderboard
       </Link>
-      <TierCard points={u.points} tierId={u.tierId} name={u.displayName} sub={`${u.crewRole}${u.homeBase ? ` · ${u.homeBase}` : ""} · #${data.rank} on the leaderboard`} />
+      <TierCard points={u.points} tierId={u.tierId} name={u.displayName} aircraft={u.aircraft || ""} sub={`${u.crewRole}${u.homeBase ? ` · ${u.homeBase}` : ""} · #${data.rank} on the leaderboard`} />
       <div className="grid grid-cols-3 gap-2 text-center">
         <Stat label="Listings" value={counts.listings} />
         <Stat label="Ratings" value={counts.reviews} />

@@ -7,6 +7,7 @@ import { useAuth, Insignia, TierChip } from "@/lib/auth";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { TierLadder } from "./profile";
+import { CrewAvatar } from "@/lib/aircraft";
 
 type Row = PublicUser & { rank: number };
 type Board = { total: number; crewTotal: number; base: string | null; rows: Row[]; offset: number; limit: number };
@@ -51,7 +52,7 @@ export default function CrewPage() {
           <div className="mt-2 flex flex-wrap gap-3">
             {albatrosses.map((u) => (
               <Link key={u.id} href={`/crew/${u.id}`} className="flex items-center gap-2">
-                <Insignia tierId="ancient_albatross" className="h-6" />
+                <CrewAvatar aircraft={u.aircraft} dark className="h-8 w-8" />
                 <div><p className="text-sm font-semibold">{u.displayName}</p><p className="text-[11px] text-white/60">{u.homeBase ? `${u.homeBase} · ` : ""}{u.points.toLocaleString()} pts</p></div>
               </Link>
             ))}
@@ -101,11 +102,11 @@ export default function CrewPage() {
           <li key={u.id} className={cn(me?.id === u.id && "bg-primary/10")} data-testid={`row-crew-${u.handle || u.id}`}>
             <Link href={`/crew/${u.id}`} className="flex items-center gap-3 px-4 py-3 hover-elevate" data-testid={`link-crew-${u.id}`}>
               <span className={cn("min-w-[2rem] font-code text-sm font-bold tabular", u.rank <= 3 ? "text-primary" : "text-muted-foreground")}>{u.rank}</span>
-              <Insignia tierId={u.tierId} className="h-6 shrink-0" />
+              <CrewAvatar aircraft={u.aircraft} />
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold truncate">{u.displayName}{me?.id === u.id && <span className="ml-1.5 text-[10px] uppercase text-primary">You</span>}</p>
                 <p className="text-[11px] text-muted-foreground truncate">{u.handle ? `@${u.handle} · ` : ""}{u.crewRole}{u.homeBase ? ` · ${u.homeBase}` : ""}</p>
-                <div className="mt-1"><TierChip tierId={u.tierId} points={u.points} /></div>
+                <div className="mt-1 flex items-center gap-1.5"><Insignia tierId={u.tierId} className="h-4 shrink-0" /><TierChip tierId={u.tierId} points={u.points} /></div>
               </div>
               <div className="text-right shrink-0">
                 <p className="font-code text-sm font-bold tabular">{u.points.toLocaleString()}</p>

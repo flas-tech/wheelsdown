@@ -103,7 +103,7 @@ export const publicName = (u: { displayName: string; crewRole: string; anonymous
 
 export type PublicUser = {
   id: number; handle: string; displayName: string; crewRole: string; homeBase: string; anonymous: boolean; participation: number;
-  points: number; tierId: TierId; createdAt: number;
+  points: number; tierId: TierId; createdAt: number; aircraft: string;
 };
 export type Me = PublicUser & { breakdown: PointsBreakdown; email?: string };
 

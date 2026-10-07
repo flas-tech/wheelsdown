@@ -1,3 +1,5 @@
+import { AircraftPicker, CrewAvatar } from "@/lib/aircraft";
+import { aircraftById } from "@shared/aircraft";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -12,7 +14,7 @@ import { VetBadge, timeAgo } from "@/lib/ui";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
-export function TierCard({ points, name, sub, tierId }: { points: number; name: string; sub?: string; tierId: TierId }) {
+export function TierCard({ points, name, sub, tierId, aircraft }: { points: number; name: string; sub?: string; tierId: TierId; aircraft?: string }) {
   const { tier, next, progress, toNext } = tierFor(points);
   const student = tier.id === "student";
   const soloed = student && hasSoloed(points);
@@ -33,10 +35,14 @@ export function TierCard({ points, name, sub, tierId }: { points: number; name: 
         </div>
         <Insignia tierId={tier.id} className="h-10" />
       </div>
-      <div className="relative mt-6 flex items-end justify-between">
-        <div>
-          <p className="text-sm font-semibold">{name}</p>
-          {sub && <p className="text-xs text-white/60">{sub}</p>}
+      <div className="relative mt-6 flex items-end justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          {aircraft !== undefined && <CrewAvatar aircraft={aircraft} dark className="h-11 w-11" />}
+          <div className="min-w-0">
+            <p className="text-sm font-semibold truncate">{name}</p>
+            {sub && <p className="text-xs text-white/60">{sub}</p>}
+            {aircraftById(aircraft) && <p className="text-[11px] text-white/50" data-testid="text-aircraft">Flies: {aircraftById(aircraft)!.label}</p>}
+          </div>
         </div>
         <div className="text-right">
           <p className="font-code text-2xl font-bold tabular" data-testid="text-points">{points.toLocaleString()}</p>
@@ -89,7 +95,7 @@ export default function ProfilePage() {
   ];
   return (
     <div className="space-y-5">
-      <TierCard points={me.points} name={me.displayName} sub={`@${me.handle} · ${me.crewRole}${me.homeBase ? " · " + me.homeBase : ""}`} tierId={me.tierId} />
+      <TierCard points={me.points} name={me.displayName} sub={`@${me.handle} · ${me.crewRole}${me.homeBase ? " · " + me.homeBase : ""}`} tierId={me.tierId} aircraft={me.aircraft || ""} />
 
       <Participation b={b} />
 
@@ -185,9 +191,9 @@ function Participation({ b }: { b: { participation: number; listings: number; re
 function ProfileSettings() {
   const { me } = useAuth();
   const { toast } = useToast();
-  const [f, setF] = useState({ displayName: "", crewRole: "Pilot", homeBase: "", anonymous: false, email: "" });
-  useEffect(() => { if (me) setF({ displayName: me.displayName, crewRole: me.crewRole, homeBase: me.homeBase, anonymous: me.anonymous, email: me.email || "" }); }, [me?.id, me?.displayName, me?.crewRole, me?.homeBase, me?.anonymous, me?.email]);
-  const dirty = !!me && (f.displayName !== me.displayName || f.crewRole !== me.crewRole || f.homeBase !== me.homeBase || f.anonymous !== me.anonymous || f.email !== (me.email || ""));
+  const [f, setF] = useState({ displayName: "", crewRole: "Pilot", homeBase: "", anonymous: false, email: "", aircraft: "" });
+  useEffect(() => { if (me) setF({ displayName: me.displayName, crewRole: me.crewRole, homeBase: me.homeBase, anonymous: me.anonymous, email: me.email || "", aircraft: me.aircraft || "" }); }, [me?.id, me?.displayName, me?.crewRole, me?.homeBase, me?.anonymous, me?.email, me?.aircraft]);
+  const dirty = !!me && (f.displayName !== me.displayName || f.crewRole !== me.crewRole || f.homeBase !== me.homeBase || f.anonymous !== me.anonymous || f.email !== (me.email || "") || f.aircraft !== (me.aircraft || ""));
   const m = useMutation({
     mutationFn: async () => (await apiRequest("PATCH", "/api/me", f)).json(),
     onSuccess: (next) => {
@@ -217,6 +223,10 @@ function ProfileSettings() {
               className={cn("h-10 rounded-xl border text-sm font-medium", f.crewRole === r ? "border-primary bg-primary/10" : "border-input text-muted-foreground")}>{r}</button>
           ))}
         </div>
+      </div>
+      <div>
+        <span className="text-xs font-medium text-muted-foreground">Your aircraft icon <span className="font-normal">· shown on the leaderboard and your profile</span></span>
+        <div className="mt-1"><AircraftPicker value={f.aircraft} onChange={(a) => setF({ ...f, aircraft: a })} /></div>
       </div>
       <label className="block">
         <span className="text-xs font-medium text-muted-foreground">Home base (optional)</span>

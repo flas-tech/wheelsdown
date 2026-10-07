@@ -6,6 +6,7 @@ import { DOWN_REASONS, type Category, type ReviewWithVotes, type SpotWithStats }
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { CAT_META, fmtMinutes, totalMinutes, parseTags, Stars, AdBanner, Chip, VetBadge, VoteButtons, timeAgo, GoAroundBadge, GoAroundIcon } from "@/lib/ui";
 import { FavoriteButton } from "@/lib/favorites";
+import { CrewAvatar } from "@/lib/aircraft";
 import { COST_LABELS, costOptions, costRange, costUnit, hasCost, paceLabel, paceOf } from "@shared/cost";
 import { CostChoice } from "@/lib/costChip";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -122,7 +123,7 @@ export default function SpotPage() {
           <article key={r.id} className="rounded-2xl border border-card-border bg-card p-4" data-testid={`review-${r.id}`}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm">
-                <span className="grid h-7 w-7 place-items-center rounded-full bg-muted"><User className="h-3.5 w-3.5" /></span>
+                {r.authorId && crew.get(r.authorId)?.aircraft ? <CrewAvatar aircraft={crew.get(r.authorId)!.aircraft} className="h-7 w-7" /> : <span className="grid h-7 w-7 place-items-center rounded-full bg-muted"><User className="h-3.5 w-3.5" /></span>}
                 {r.authorId ? <Link href={`/crew/${r.authorId}`} className="font-medium hover:underline underline-offset-2" data-testid={`link-review-author-${r.id}`}>{r.author}</Link> : <span className="font-medium">{r.author}</span>}
                 {r.userId && crew.get(r.userId) ? <TierChip tierId={crew.get(r.userId)!.tierId} /> : <span className="text-xs text-muted-foreground">{r.crewRole}</span>}
               </div>

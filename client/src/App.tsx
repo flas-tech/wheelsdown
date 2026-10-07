@@ -19,6 +19,7 @@ import LegalPage from "@/pages/legal";
 import CrewProfilePage from "@/pages/crewProfile";
 import { BriefListPage, BriefEditorPage, SharedBriefPage } from "@/pages/brief";
 import { AuthProvider, useAuth, Insignia } from "@/lib/auth";
+import { CrewAvatar } from "@/lib/aircraft";
 import { tierFor } from "@shared/tiers";
 import { Logo, ThemeProvider, ThemeToggle } from "@/lib/ui";
 import { cn } from "@/lib/utils";
@@ -58,7 +59,7 @@ function Shell() {
             <ThemeToggle />
             {me ? (
               <Link href="/me" data-testid="link-me" className="ml-1 inline-flex items-center gap-1.5 rounded-full border border-border bg-card pl-1.5 pr-2.5 h-9 hover-elevate">
-                <Insignia tierId={me.tierId} className="h-4" />
+                {me.aircraft ? <CrewAvatar aircraft={me.aircraft} className="h-6 w-6" /> : <Insignia tierId={me.tierId} className="h-4" />}
                 <span className="font-code text-xs font-bold tabular">{me.points.toLocaleString()}</span>
                 <span className="hidden sm:inline text-xs text-muted-foreground">{tierFor(me.points).tier.name}</span>
               </Link>

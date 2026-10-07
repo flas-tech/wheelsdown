@@ -5,6 +5,7 @@ import type { Airport, Spot, Review, Ad, Vote } from "@shared/schema";
 import { computeVet, seedVotesFor, shouldAutoHold } from "@shared/vetting";
 import { computePoints, recentActivity, publicName, tierFor, SEED_USERS, SEED_PASSWORD } from "@shared/tiers";
 import { CREW_ROLES } from "@shared/schema";
+import { aircraftById } from "@shared/aircraft";
 import { buildHighlights } from "@shared/highlights";
 import { crewCost, costOptions, isValidCost, milesBetween } from "@shared/cost";
 import { suggestPicks } from "@shared/briefing";
@@ -14,7 +15,7 @@ import type { BriefingStop } from "@shared/schema";
 export const DEMO_ADMIN_KEY = "wheelsdown-admin";
 const STORE_KEY = "wheelsdown-demo-v4";
 
-type DemoUser = { id: number; handle: string; displayName: string; crewRole: string; homeBase: string; anonymous: boolean; email?: string; pw: string; bonusPoints: number; createdAt: number };
+type DemoUser = { id: number; handle: string; displayName: string; crewRole: string; homeBase: string; anonymous: boolean; email?: string; aircraft?: string; pw: string; bonusPoints: number; createdAt: number };
 type DemoBriefing = { id: number; userId: number; title: string; stops: BriefingStop[]; shareToken: string; createdAt: number; updatedAt: number };
 type DB = { airports: Airport[]; spots: Spot[]; reviews: Review[]; ads: Ad[]; votes: Vote[]; users: DemoUser[]; sessions: Record<string, number>; briefings?: DemoBriefing[]; favorites?: { userId: number; spotId: number; at: number }[];
   seq: { spot: number; review: number; ad: number; vote: number; user: number } };
@@ -134,7 +135,7 @@ export function exportCsv() {
 function meOf(u: DemoUser) {
   const b = computePoints(db, u.id, u.bonusPoints);
   return { id: u.id, handle: u.handle, displayName: u.displayName, crewRole: u.crewRole, homeBase: u.homeBase, anonymous: !!u.anonymous, email: u.email || "",
-    participation: b.participation, points: b.total, tierId: tierFor(b.total).tier.id, createdAt: u.createdAt, breakdown: b };
+    participation: b.participation, points: b.total, tierId: tierFor(b.total).tier.id, createdAt: u.createdAt, aircraft: u.aircraft || "", breakdown: b };
 }
 function publicUsers(admin = false) {
   return db.users.map((u) => {
@@ -191,6 +192,7 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
     if (body.homeBase !== undefined) u.homeBase = String(body.homeBase).toUpperCase().slice(0, 4);
     if (body.anonymous !== undefined) u.anonymous = !!body.anonymous;
     if (body.email !== undefined) u.email = String(body.email).trim().toLowerCase();
+    if (body.aircraft !== undefined) { if (body.aircraft && !aircraftById(String(body.aircraft))) throw new HttpError(400, "Pick an aircraft"); u.aircraft = String(body.aircraft); }
     relabel(u); save();
     return meOf(u);
   }

@@ -275,7 +275,7 @@ export class DatabaseStorage {
     }).returning())[0];
   }
   /** Update profile; re-labels the member's existing posts so the anonymous preference applies everywhere. */
-  async updateUser(id: number, patch: { displayName?: string; crewRole?: string; homeBase?: string; anonymous?: boolean; email?: string }) {
+  async updateUser(id: number, patch: { displayName?: string; crewRole?: string; homeBase?: string; anonymous?: boolean; email?: string; aircraft?: string }) {
     const d = db();
     const set: any = { ...patch };
     if (patch.anonymous !== undefined) set.anonymous = patch.anonymous ? 1 : 0;
@@ -371,7 +371,7 @@ export class DatabaseStorage {
       const anon = !!u.anonymous;
       return {
         id: u.id, handle: anon && !admin ? "" : u.handle, displayName: admin ? u.displayName : publicName(u), crewRole: u.crewRole, homeBase: u.homeBase || "",
-        anonymous: anon, participation: b.participation, points: b.total, tierId: tierFor(b.total).tier.id, createdAt: u.createdAt,
+        anonymous: anon, participation: b.participation, points: b.total, tierId: tierFor(b.total).tier.id, createdAt: u.createdAt, aircraft: u.aircraft || "",
         ...(admin ? { email: u.email } : {}),
       };
     }).sort((a, b) => b.points - a.points);
@@ -421,7 +421,7 @@ export class DatabaseStorage {
     const b = computePoints(await this.activity(), u.id, u.bonusPoints);
     return {
       id: u.id, handle: u.handle, email: u.email || "", displayName: u.displayName, crewRole: u.crewRole, homeBase: u.homeBase || "", anonymous: !!u.anonymous,
-      participation: b.participation, points: b.total, tierId: tierFor(b.total).tier.id, createdAt: u.createdAt, breakdown: b,
+      participation: b.participation, points: b.total, tierId: tierFor(b.total).tier.id, createdAt: u.createdAt, aircraft: u.aircraft || "", breakdown: b,
     };
   }
   async userContributions(userId: number) {

@@ -85,6 +85,7 @@ ALTER TABLE spots ADD COLUMN IF NOT EXISTS lat double precision;
 ALTER TABLE spots ADD COLUMN IF NOT EXISTS lng double precision;
 ALTER TABLE spots ADD COLUMN IF NOT EXISTS place_ref text;
 ALTER TABLE reviews ADD COLUMN IF NOT EXISTS cost_level integer;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS aircraft text NOT NULL DEFAULT '';
 CREATE TABLE IF NOT EXISTS briefings (id serial PRIMARY KEY, user_id integer NOT NULL, title text NOT NULL DEFAULT '', stops text NOT NULL DEFAULT '[]',
   share_token text NOT NULL, created_at bigint NOT NULL DEFAULT 0, updated_at bigint NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS briefings_user_idx ON briefings(user_id);
