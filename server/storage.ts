@@ -247,6 +247,11 @@ export class DatabaseStorage {
       return { ...r, authorId: r.userId != null && named.has(r.userId) ? r.userId : null, up: mine.filter((v) => v.value > 0).length, down: mine.filter((v) => v.value < 0).length, myVote: mine.find((v) => v.voter === voter)?.value ?? 0 };
     });
   }
+  /** AI moderation decisions logged before a time (for estimating spend before usage was recorded). */
+  async aiChecksBefore(t: number) {
+    const rows = (await db().execute(sql`SELECT kind, COUNT(*)::int AS n FROM mod_log WHERE actor = 'ai' AND created_at < ${t} GROUP BY kind`)).rows as any[];
+    return { spot: rows.find((r) => r.kind === "spot")?.n || 0, review: rows.find((r) => r.kind === "review")?.n || 0 };
+  }
   /** True when the person who posted the listing also rated it "Go around" (they added it as a warning). */
   async ownerWarns(spotId: number, userId: number | null) {
     if (userId == null) return false;

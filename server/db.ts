@@ -114,6 +114,7 @@ CREATE TABLE IF NOT EXISTS follows (follower_id integer NOT NULL, followee_id in
 CREATE UNIQUE INDEX IF NOT EXISTS follows_pair_idx ON follows(follower_id, followee_id);
 CREATE INDEX IF NOT EXISTS follows_followee_idx ON follows(followee_id);
 CREATE TABLE IF NOT EXISTS metrics_daily (day text NOT NULL, kind text NOT NULL, key text NOT NULL DEFAULT '', n integer NOT NULL DEFAULT 0, PRIMARY KEY (day, kind, key));
+CREATE TABLE IF NOT EXISTS ai_usage_daily (day text NOT NULL, purpose text NOT NULL, calls integer NOT NULL DEFAULT 0, failures integer NOT NULL DEFAULT 0, input_tokens bigint NOT NULL DEFAULT 0, cached_tokens bigint NOT NULL DEFAULT 0, output_tokens bigint NOT NULL DEFAULT 0, searches integer NOT NULL DEFAULT 0, PRIMARY KEY (day, purpose));
 CREATE TABLE IF NOT EXISTS visitors_daily (day text NOT NULL, vid text NOT NULL, signed_in integer NOT NULL DEFAULT 0, PRIMARY KEY (day, vid));
 CREATE TABLE IF NOT EXISTS app_settings (key text PRIMARY KEY, value text NOT NULL DEFAULT '');
 INSERT INTO app_settings (key, value) VALUES ('wright_seats_taken', '0') ON CONFLICT (key) DO NOTHING;

@@ -5,6 +5,7 @@ import type { Airport, Spot, Review, Ad, Vote } from "@shared/schema";
 import { computeVet, seedVotesFor, shouldAutoHold } from "@shared/vetting";
 import { computePoints, recentActivity, publicName, tierFor, SEED_USERS, SEED_PASSWORD } from "@shared/tiers";
 import { CREW_ROLES } from "@shared/schema";
+import { SERVICES } from "@shared/services";
 import { validAircraftList } from "@shared/aircraft";
 import { BIO_MAX, INTERESTS, MAX_INTERESTS } from "@shared/interests";
 import { WRIGHT_SEATS } from "@shared/club";
@@ -518,6 +519,13 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
     status: { lastRunAt: 0, lastError: "", lastErrorAt: 0, checking: 0, held: 0, approved24h: 0, held24h: 0, errors24h: 0, overrides24h: 0 } };
   if (method === "PUT" && path === "/api/admin/moderation/settings") return { manual: false };
   // the demo records no traffic; the report shows its real ad, audience and content numbers with empty traffic
+  if (method === "GET" && path === "/api/admin/costs") {
+    const z = { calls: 0, failures: 0, input_tokens: 0, cached_tokens: 0, output_tokens: 0, searches: 0, cost: 0 };
+    const days = [7, 30, 90].includes(Number(query.get("days"))) ? Number(query.get("days")) : 30;
+    return { days, since: "", month: new Date().toISOString().slice(0, 7), trackingSince: null, model: "gpt-5-mini", aiOn: false,
+      prices: { input: 0.25, cached: 0.025, output: 2, search: 10 }, today: z, period: z, monthToDate: z, byPurpose: [], daily: [],
+      beforeTracking: { listings: 0, ratings: 0, estimate: 0 }, services: SERVICES, fixedMonthly: SERVICES.reduce((a, sv) => a + (sv.monthly || 0), 0) };
+  }
   if (method === "GET" && path === "/api/admin/advertisers") {
     const days = [7, 30, 90].includes(Number(query.get("days"))) ? Number(query.get("days")) : 30;
     const live = db.spots.filter((s) => s.status === "live");

@@ -4,6 +4,7 @@ import dns from "node:dns/promises";
 import net from "node:net";
 import { COST_LABELS, COST_RANGES, costOptions } from "@shared/cost";
 import type { Category } from "@shared/schema";
+import { recordAi, usageOf, type AiPurpose } from "./aiUsage";
 
 const KEY = process.env.OPENAI_API_KEY || "";
 const BASE = (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
@@ -12,7 +13,7 @@ export const AI_ENABLED = !!KEY && process.env.AI_DISABLED !== "1";
 const UA = "Wheelsdown/1.0 (+https://getwheelsdown.com)";
 
 // ---------------------------------------------------------------- model calls
-type CallOpts = { search?: boolean; schema: { name: string; schema: any }; timeoutMs?: number; effort?: "minimal" | "low" | "medium" };
+type CallOpts = { purpose: AiPurpose; search?: boolean; schema: { name: string; schema: any }; timeoutMs?: number; effort?: "minimal" | "low" | "medium" };
 async function callModel<T>(system: string, user: string, o: CallOpts): Promise<T> {
   if (!AI_ENABLED) throw new Error("AI disabled");
   const ctl = new AbortController();
@@ -27,8 +28,9 @@ async function callModel<T>(system: string, user: string, o: CallOpts): Promise<
     };
     if (o.search) body.tools = [{ type: "web_search" }];
     const r = await fetch(`${BASE}/responses`, { method: "POST", headers: { authorization: `Bearer ${KEY}`, "content-type": "application/json" }, body: JSON.stringify(body), signal: ctl.signal });
-    if (!r.ok) throw new Error(`AI ${r.status}: ${(await r.text()).slice(0, 200)}`);
+    if (!r.ok) { recordAi(o.purpose, { input: 0, cached: 0, output: 0, searches: 0, failed: true }); throw new Error(`AI ${r.status}: ${(await r.text()).slice(0, 200)}`); }
     const j: any = await r.json();
+    recordAi(o.purpose, { ...usageOf(j), failed: j.status === "incomplete" });
     const textOut = j.output_text ?? (j.output || []).flatMap((x: any) => x.type === "message" ? (x.content || []) : []).filter((c: any) => c.type === "output_text").map((c: any) => c.text).join("");
     const sources: string[] = (j.output || []).flatMap((x: any) => x.type === "message" ? (x.content || []) : [])
       .flatMap((c: any) => c.annotations || []).filter((a: any) => a.type === "url_citation" && a.url).map((a: any) => a.url);
@@ -47,6 +49,7 @@ async function moderationEndpoint(text: string): Promise<{ flagged: boolean; cat
       body: JSON.stringify({ model: "omni-moderation-latest", input: text.slice(0, 8000) }), signal: AbortSignal.timeout(10_000) });
     if (r.status === 404) { modEndpointOk = false; return null; }
     if (!r.ok) return null;
+    recordAi("safety", { input: 0, cached: 0, output: 0, searches: 0 }); // free endpoint: counted, never priced
     const res = (await r.json())?.results?.[0];
     if (!res) return null;
     return { flagged: !!res.flagged, categories: Object.entries(res.categories || {}).filter(([, v]) => v).map(([k]) => k) };
@@ -162,7 +165,7 @@ Rules:
     openStreetMapTags: osm || {},
     officialWebsiteText: (site || site2)?.text.slice(0, 5000) || "",
   });
-  const v = await callModel<AutofillResult>(system, user, { search: true, schema: AUTOFILL_SCHEMA, timeoutMs: 75_000 });
+  const v = await callModel<AutofillResult>(system, user, { purpose: "autofill", search: true, schema: AUTOFILL_SCHEMA, timeoutMs: 75_000 });
   // normalize to what the form accepts
   v.description = (v.description || "").replace(/!/g, ".").slice(0, 500);
   v.crewTip = (v.crewTip || "").replace(/!/g, ".").slice(0, 140);
@@ -221,7 +224,7 @@ reason: one or two short polite sentences (under 250 characters) addressed to th
     openStreetMapTags: osm || {},
     officialWebsiteText: site?.text.slice(0, 3500) || (s.website ? "(website could not be loaded)" : ""),
   });
-  const v = normalize(await callModel<Verdict>(system, user, { search: true, schema: VERDICT_SCHEMA, timeoutMs: 90_000 }));
+  const v = normalize(await callModel<Verdict>(system, user, { purpose: "listing", search: true, schema: VERDICT_SCHEMA, timeoutMs: 90_000 }));
   // editing an existing listing never makes it the duplicate; a newer copy would be
   if (ctx.isEdit && v.problem === "duplicate" && v.verdict === "review" && String((ctx.previous as any)?.name || "").trim().toLowerCase() === String(s.name || "").trim().toLowerCase()) return { verdict: "approve", problem: "none", reason: "" };
   return v;
@@ -238,7 +241,7 @@ ${SAFETY}
 - approve: everything else, including harsh but honest opinions and very short comments.
 reason: one short polite sentence (under 200 characters) to the author saying what to change (empty when approving). No emojis or exclamation points.`;
   const user = JSON.stringify({ place: spot, rating: r.rating, comment: r.comment.slice(0, 1500) });
-  return normalize(await callModel<Verdict>(system, user, { schema: VERDICT_SCHEMA, timeoutMs: 45_000, effort: "minimal" }));
+  return normalize(await callModel<Verdict>(system, user, { purpose: "rating", schema: VERDICT_SCHEMA, timeoutMs: 45_000, effort: "minimal" }));
 }
 
 /** Display names and handles: a quick synchronous check. Returns a message when the name isn't allowed, null when fine or unavailable. */
@@ -249,7 +252,7 @@ export async function checkName(name: string): Promise<string | null> {
     if (mod?.flagged) return "Pick a different name. Names are public, so they can't be offensive or look like site staff.";
     const v = await callModel<Verdict>(`You check public display names on a site for airline and charter flight crews. ${SAFETY}
 Reject names that are slurs, sexual, hateful, harassing, impersonate the site staff ("admin", "moderator", "Wheelsdown"), or advertise. Normal names, nicknames, call signs and aviation jokes are fine.
-problem "none" + verdict approve when fine. reason: one short sentence when rejecting.`, JSON.stringify({ name }), { schema: VERDICT_SCHEMA, timeoutMs: 8000, effort: "minimal" });
+problem "none" + verdict approve when fine. reason: one short sentence when rejecting.`, JSON.stringify({ name }), { purpose: "name", schema: VERDICT_SCHEMA, timeoutMs: 8000, effort: "minimal" });
     return v.verdict === "reject" ? "Pick a different name. Names are public, so they can't be offensive or look like site staff." : null;
   } catch { return null; }
 }
@@ -266,7 +269,7 @@ export async function checkBio(bio: string): Promise<string | null> {
     if (mod?.flagged) return "Your bio has language that isn't allowed. Keep it friendly; it's public.";
     const v = normalize(await callModel<Verdict>(`You check short public profile bios on a site for airline and charter flight crews. ${SAFETY}
 Reject bios that are offensive, hateful, sexual, harassing, advertise a business or service, solicit, or share personal contact details or another person's private info. Normal self-descriptions, jobs, home towns, food opinions and jokes are fine.
-problem "none" + verdict approve when fine. reason: one short polite sentence telling them what to change when rejecting.`, JSON.stringify({ bio: t }), { schema: VERDICT_SCHEMA, timeoutMs: 10_000, effort: "minimal" }));
+problem "none" + verdict approve when fine. reason: one short polite sentence telling them what to change when rejecting.`, JSON.stringify({ bio: t }), { purpose: "bio", schema: VERDICT_SCHEMA, timeoutMs: 10_000, effort: "minimal" }));
     return v.verdict === "reject" ? v.reason || "Please reword your bio; it's public." : null;
   } catch { return null; }
 }

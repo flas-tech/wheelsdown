@@ -16,6 +16,9 @@ import { refAirport, nearestAirports, isCode } from "./airportsData";
 import { searchPlaces, nearbyPlaces } from "./places";
 import { AI_ENABLED, autofill, checkName, checkBio } from "./ai";
 import { isTestSignup } from "@shared/club";
+import { AI_PRICES, costOf, costReport } from "./aiUsage";
+import { dayKey } from "./metrics";
+import { SERVICES } from "@shared/services";
 import { track, visit, pageKey, outboundKey, report, untracked } from "./metrics";
 import { INTERESTS, parseInterests } from "@shared/interests";
 import { aircraftList } from "@shared/aircraft";
@@ -576,6 +579,27 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ---------- admin ----------
+  app.get("/api/admin/costs", requireAdmin, async (req, res) => {
+    const days = [7, 30, 90].includes(Number(req.query.days)) ? Number(req.query.days) : 30;
+    const r = await costReport(days);
+    const zero = () => ({ calls: 0, failures: 0, input_tokens: 0, cached_tokens: 0, output_tokens: 0, searches: 0 });
+    const add = (a: any, x: any) => { for (const k of Object.keys(a)) a[k] += Number(x[k]) || 0; return a; };
+    const inPeriod = r.rows.filter((x: any) => x.day >= r.since), inMonth = r.rows.filter((x: any) => x.day.startsWith(r.month)), today = r.rows.filter((x: any) => x.day === dayKey());
+    const sum = (rows: any[]) => { const t = rows.reduce(add, zero()); return { ...t, cost: costOf(t) }; };
+    const byPurpose = Object.entries(inPeriod.reduce((m: Record<string, any>, x: any) => { m[x.purpose] = add(m[x.purpose] || zero(), x); return m; }, {}))
+      .map(([purpose, t]) => ({ purpose, ...(t as any), cost: costOf(t as any) })).sort((a, b) => b.cost - a.cost);
+    const daily = Object.entries(inPeriod.reduce((m: Record<string, any>, x: any) => { m[x.day] = add(m[x.day] || zero(), x); return m; }, {})).map(([day, t]) => ({ day, cost: costOf(t as any), calls: (t as any).calls }));
+    // checks that ran before usage was recorded, priced at typical rates (about 3.5 cents per listing check, 0.1 cent per rating)
+    const cutoff = r.startMs ?? Date.now();
+    const before = await storage.aiChecksBefore(cutoff);
+    const services = SERVICES.map((sv) => sv.id === "openai" ? { ...sv, monthToDate: sum(inMonth).cost } : sv);
+    res.json({
+      days, since: r.since, month: r.month, trackingSince: r.trackingSince, model: process.env.AI_MODEL || "gpt-5-mini", prices: AI_PRICES, aiOn: AI_ENABLED,
+      today: sum(today), period: sum(inPeriod), monthToDate: sum(inMonth), byPurpose, daily,
+      beforeTracking: { listings: before.spot, ratings: before.review, estimate: before.spot * 0.035 + before.review * 0.001 },
+      services, fixedMonthly: SERVICES.reduce((a, sv) => a + (sv.monthly || 0), 0),
+    });
+  });
   app.get("/api/admin/advertisers", requireAdmin, async (req, res) => {
     const days = [7, 30, 90].includes(Number(req.query.days)) ? Number(req.query.days) : 30;
     const r = await report(days);

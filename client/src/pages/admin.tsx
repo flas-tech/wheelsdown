@@ -90,6 +90,7 @@ function Console({ onLogout, viaAccount = false }: { onLogout: () => void; viaAc
         <TabsList className="print:hidden">
           <TabsTrigger value="mod" data-testid="tab-mod">Moderation</TabsTrigger>
           <TabsTrigger value="adv" data-testid="tab-advertisers">Advertisers</TabsTrigger>
+          <TabsTrigger value="costs" data-testid="tab-costs">Costs</TabsTrigger>
           <TabsTrigger value="spots" data-testid="tab-spots">Spots</TabsTrigger>
           <TabsTrigger value="check" data-testid="tab-check">Needs check</TabsTrigger>
           <TabsTrigger value="bulk" data-testid="tab-bulk">Import / Export</TabsTrigger>
@@ -98,6 +99,7 @@ function Console({ onLogout, viaAccount = false }: { onLogout: () => void; viaAc
         </TabsList>
         <TabsContent value="mod"><ModerationQueue /></TabsContent>
         <TabsContent value="adv"><AdvertiserReport /></TabsContent>
+        <TabsContent value="costs"><CostsPanel /></TabsContent>
         <TabsContent value="spots"><SpotsTable /></TabsContent>
         <TabsContent value="check"><NeedsCheck /></TabsContent>
         <TabsContent value="bulk"><Bulk /></TabsContent>
@@ -889,6 +891,118 @@ function AdvertiserReport() {
             </table>
           </div>
         )}
+      </section>
+    </div>
+  );
+}
+
+// ---------- Costs: AI spend (recorded per call) and the outside services the site runs on ----------
+type CostTotals = { calls: number; failures: number; input_tokens: number; cached_tokens: number; output_tokens: number; searches: number; cost: number };
+type CostData = {
+  days: number; since: string; month: string; trackingSince: string | null; model: string; aiOn: boolean;
+  prices: { input: number; cached: number; output: number; search: number };
+  today: CostTotals; period: CostTotals; monthToDate: CostTotals;
+  byPurpose: (CostTotals & { purpose: string })[]; daily: { day: string; cost: number; calls: number }[];
+  beforeTracking: { listings: number; ratings: number; estimate: number };
+  services: { id: string; name: string; role: string; what: string; plan: string; monthly: number | null; costText: string; note?: string; dashboard: string; pricing: string; monthToDate?: number }[];
+  fixedMonthly: number;
+};
+const PURPOSE_LABEL: Record<string, string> = { listing: "Listing checks (new and edits)", rating: "Rating checks", autofill: "Add spot autofill", name: "Display-name checks", bio: "Bio checks", safety: "First-pass safety check (free)" };
+const usd = (n: number) => n < 0.01 && n > 0 ? "<$0.01" : `$${n.toFixed(n < 10 ? 2 : 0)}`;
+const tok = (n: number) => n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n);
+
+function CostsPanel() {
+  const [days, setDays] = useState(30);
+  const { data, isLoading } = useQuery<CostData>({ queryKey: ["/api/admin/costs", days], queryFn: admGet(`/api/admin/costs?days=${days}`), refetchInterval: 30000 });
+  if (isLoading || !data) return <Skeleton className="h-64 rounded-xl" />;
+  const d = new Date();
+  const dim = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  const pace = data.monthToDate.cost / Math.max(1, d.getDate()) * dim;
+  const monthName = new Date(data.month + "-15").toLocaleDateString(undefined, { month: "long" });
+  return (
+    <div className="space-y-6" data-testid="panel-costs">
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-lg font-semibold">AI costs</h2>
+            <p className="text-xs text-muted-foreground">Recorded from OpenAI's usage numbers on every call{data.trackingSince ? ` since ${new Date(data.trackingSince + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : ""}, priced at {data.model} list rates. Your OpenAI bill is the final word.</p>
+          </div>
+          <div className="flex rounded-lg border border-border p-0.5">
+            {[7, 30, 90].map((n) => (
+              <button key={n} onClick={() => setDays(n)} data-testid={`button-cost-range-${n}`} className={cn("h-8 rounded-md px-3 text-sm", days === n ? "bg-primary text-primary-foreground font-semibold" : "text-muted-foreground")}>{n}d</button>
+            ))}
+          </div>
+        </div>
+        {!data.aiOn && <p className="rounded-lg bg-muted p-2.5 text-xs">AI is switched off, so nothing is being spent.</p>}
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <Kpi label="Today" value={usd(data.today.cost)} sub={`${data.today.calls} AI calls`} />
+          <Kpi label={`${monthName} so far`} value={usd(data.monthToDate.cost)} sub={`on pace for about ${usd(pace)}`} />
+          <Kpi label={`Last ${data.days} days`} value={usd(data.period.cost)} sub={`${fmt(data.period.calls)} calls · ${fmt(data.period.searches)} web searches`} />
+          <Kpi label="Before tracking" value={`~${usd(data.beforeTracking.estimate)}`} sub={`estimate: ${data.beforeTracking.listings} listing + ${data.beforeTracking.ratings} rating checks`} />
+        </div>
+        <section className="rounded-xl border border-card-border bg-card p-4">
+          <h3 className="text-sm font-semibold">Where it goes</h3>
+          {data.byPurpose.length === 0 ? <p className="mt-2 text-xs text-muted-foreground">No AI calls recorded in this period yet. They'll appear as crews post.</p> : (
+            <div className="overflow-x-auto">
+              <table className="mt-3 w-full min-w-[520px] text-sm">
+                <thead><tr className="text-left text-xs text-muted-foreground"><th className="py-1">Use</th><th className="py-1 text-right">Calls</th><th className="py-1 text-right">Tokens in / out</th><th className="py-1 text-right">Searches</th><th className="py-1 text-right">Cost</th><th className="py-1 text-right">Per call</th></tr></thead>
+                <tbody>{data.byPurpose.map((p) => (
+                  <tr key={p.purpose} className="border-t border-border" data-testid={`row-cost-${p.purpose}`}>
+                    <td className="py-1.5">{PURPOSE_LABEL[p.purpose] || p.purpose}{p.failures > 0 && <span className="ml-1.5 text-xs text-muted-foreground">({p.failures} failed)</span>}</td>
+                    <td className="py-1.5 text-right font-code tabular">{fmt(p.calls)}</td>
+                    <td className="py-1.5 text-right font-code text-xs tabular">{tok(p.input_tokens)} / {tok(p.output_tokens)}</td>
+                    <td className="py-1.5 text-right font-code tabular">{fmt(p.searches)}</td>
+                    <td className="py-1.5 text-right font-code tabular font-semibold">{usd(p.cost)}</td>
+                    <td className="py-1.5 text-right font-code text-xs tabular text-muted-foreground">{p.calls ? usd(p.cost / p.calls) : "—"}</td>
+                  </tr>))}</tbody>
+              </table>
+            </div>
+          )}
+          {data.daily.length > 1 && (
+            <div className="mt-4 h-40">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={data.daily} margin={{ left: -10, right: 8, top: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="day" tickFormatter={(x: string) => x.slice(5)} tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
+                  <YAxis tickFormatter={(v: number) => `$${v.toFixed(2)}`} tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
+                  <Tooltip formatter={(v: number) => usd(v)} contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }} />
+                  <Area type="monotone" dataKey="cost" name="AI cost" stroke="hsl(var(--primary))" fill="hsl(var(--primary) / 0.25)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+          <p className="mt-3 text-[11px] text-muted-foreground">Rates: ${data.prices.input}/1M input tokens (${data.prices.cached} cached), ${data.prices.output}/1M output tokens, ${data.prices.search}/1,000 web searches.</p>
+        </section>
+      </section>
+
+      <section className="space-y-3">
+        <div>
+          <h2 className="text-lg font-semibold">Services and billing</h2>
+          <p className="text-xs text-muted-foreground">Everything the site runs on. Fixed costs come to about <span className="font-semibold text-foreground">{usd(data.fixedMonthly)}/month</span>, plus AI usage ({usd(data.monthToDate.cost)} so far in {monthName}). Prices checked Oct 7, 2026.</p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {data.services.map((sv) => (
+            <article key={sv.id} className="flex flex-col rounded-xl border border-card-border bg-card p-4" data-testid={`card-service-${sv.id}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-semibold">{sv.name}</h3>
+                  <p className="text-xs font-medium text-primary">{sv.role}</p>
+                </div>
+                <div className="text-right">
+                  <p className="font-code text-sm font-bold tabular">{sv.id === "openai" && sv.monthToDate !== undefined ? usd(sv.monthToDate) : sv.costText}</p>
+                  {sv.id === "openai" && <p className="text-[10px] text-muted-foreground">{monthName} so far</p>}
+                </div>
+              </div>
+              <p className="mt-2 text-sm">{sv.what}</p>
+              <p className="mt-2 text-xs text-muted-foreground"><span className="font-semibold text-foreground">Plan:</span> {sv.plan}</p>
+              {sv.note && <p className="mt-1 text-xs text-muted-foreground">{sv.note}</p>}
+              <div className="mt-auto flex gap-2 pt-3">
+                <a href={sv.dashboard} target="_blank" rel="noopener noreferrer" className={btnPrimary} data-testid={`link-service-${sv.id}`}>Open {sv.name.split(" ")[0]}</a>
+                <a href={sv.pricing} target="_blank" rel="noopener noreferrer" className={btn} data-testid={`link-pricing-${sv.id}`}>Pricing</a>
+              </div>
+            </article>
+          ))}
+        </div>
       </section>
     </div>
   );
