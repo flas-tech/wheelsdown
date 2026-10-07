@@ -205,11 +205,11 @@ export async function checkSpot(s: SpotForCheck, ctx: { airport?: { name: string
   const system = `You moderate listings on Wheelsdown, a guide where flight crews share places near airports for layovers. Decide if this ${ctx.isEdit ? "edit" : "new listing"} can be published.
 ${SAFETY}
 Also check accuracy using the data given and web search:
-- The place should exist and be near the airport (milesFromField is measured from the airport; over 30 miles is suspicious unless it's a known day trip).
+- The place should exist and be near the airport (milesFromField is measured from the airport; over 30 miles is suspicious unless it's a known day trip). milesFromField of 0 or null just means it wasn't measured; never hold for that.
 - Category must fit (${CAT_HELP}). Price level, pace and address should be roughly consistent with what you find. Price guide: ${priceGuide(s.category)}.
 - A duplicate is a listing of the same business at the same airport already in existingListings (minor spelling differences count).
 Verdicts:
-- approve: appropriate and plausibly correct. Small differences (formatting, a slightly different price tier, missing details) are fine. Don't block because you can't find a small local place online if nothing contradicts it.
+- approve: appropriate and plausibly correct. Small differences (formatting, a suite number, a neighboring city or suburb name, a slightly different price tier or distance, hours, missing details) are fine; approve and say nothing. If the business and address check out, approve. Don't block because you can't find a small local place online if nothing contradicts it.
 - review: likely incorrect, a probable duplicate, wrong airport or city, closed permanently, or not a real place. A person will look.
 - reject: clearly inappropriate or spam.
 reason: one or two short polite sentences (under 250 characters) addressed to the poster saying exactly what to fix (empty when approving). No emojis or exclamation points.`;
@@ -221,7 +221,10 @@ reason: one or two short polite sentences (under 250 characters) addressed to th
     openStreetMapTags: osm || {},
     officialWebsiteText: site?.text.slice(0, 3500) || (s.website ? "(website could not be loaded)" : ""),
   });
-  return normalize(await callModel<Verdict>(system, user, { search: true, schema: VERDICT_SCHEMA, timeoutMs: 90_000 }));
+  const v = normalize(await callModel<Verdict>(system, user, { search: true, schema: VERDICT_SCHEMA, timeoutMs: 90_000 }));
+  // editing an existing listing never makes it the duplicate; a newer copy would be
+  if (ctx.isEdit && v.problem === "duplicate" && v.verdict === "review" && String((ctx.previous as any)?.name || "").trim().toLowerCase() === String(s.name || "").trim().toLowerCase()) return { verdict: "approve", problem: "none", reason: "" };
+  return v;
 }
 
 export async function checkReview(r: { rating: number; comment: string; costLevel?: number | null }, spot: { name: string; category: string; icao: string }): Promise<Verdict> {
@@ -253,7 +256,8 @@ problem "none" + verdict approve when fine. reason: one short sentence when reje
 
 function normalize(v: Verdict): Verdict {
   if (!["approve", "review", "reject"].includes(v.verdict)) v.verdict = "review";
-  let reason = (v.reason || "").replace(/!/g, ".").trim();
+  // drop inline citations like ([site](url)) and turn [text](url) into text
+  let reason = (v.reason || "").replace(/\s*\(\[[^\]]*\]\([^)]*\)\)/g, "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/https?:\/\/\S+/g, "").replace(/!/g, ".").replace(/\s{2,}/g, " ").trim();
   if (reason.length > 360) { const cut = reason.slice(0, 360); reason = cut.slice(0, Math.max(cut.lastIndexOf(". ") + 1, 200)).trim(); }
   v.reason = reason;
   if (v.verdict !== "approve" && !v.reason) v.reason = v.verdict === "reject" ? "This doesn't meet the community guidelines." : "A moderator will double-check this before it goes live.";

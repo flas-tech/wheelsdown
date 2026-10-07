@@ -464,6 +464,10 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
   // ---- admin ----
   if (path.startsWith("/api/admin")) admin();
   if (method === "POST" && path === "/api/admin/login") return { ok: true };
+  // the demo has no AI; show the moderation panel in its "off" state
+  if (method === "GET" && path === "/api/admin/moderation") return { ai: false, manual: false, spots: [], reviews: [], log: [],
+    status: { lastRunAt: 0, lastError: "", lastErrorAt: 0, checking: 0, held: 0, approved24h: 0, held24h: 0, errors24h: 0, overrides24h: 0 } };
+  if (method === "PUT" && path === "/api/admin/moderation/settings") return { manual: false };
   if (method === "GET" && path === "/api/admin/stats") {
     return {
       spots: db.spots.filter((s) => s.status === "live").length, pending: db.spots.filter((s) => s.status === "pending").length,

@@ -492,86 +492,207 @@ function UsersAdmin() {
 
 type ModSpot = SpotWithStats & { modState: string; modNote: string; pendingEdit: string | null };
 type ModReview = { id: number; spotId: number; spotName: string; icao: string; rating: number; comment: string; author: string; status: string; modState: string; modNote: string; pendingEdit: string | null; createdAt: number };
+type LogRow = { id: number; kind: "spot" | "review"; targetId: number; actor: string; action: string; problem: string; reason: string; isEdit: number; before: string | null; after: string | null; createdAt: number;
+  latest: boolean; exists: boolean; name: string; icao: string; spotId: number | null; by: string; status: string; modState: string; hasPendingEdit: boolean };
+type ModData = { ai: boolean; manual: boolean; spots: ModSpot[]; reviews: ModReview[]; log: LogRow[];
+  status: { lastRunAt: number; lastError: string; lastErrorAt: number; checking: number; held: number; approved24h: number; held24h: number; errors24h: number; overrides24h: number } };
 const PROBLEM = (note: string) => /^\[([a-z_]+)\]/.exec(note)?.[1]?.replace(/_/g, " ") || "";
-const NOTE = (note: string) => note.replace(/^\[[a-z_]+\]\s*/, "");
+const NOTE = (note: string) => note.replace(/^\[[a-z_]+\]\s*/, "").replace(/\s*\(\[[^\]]*\]\([^)]*\)\)/g, "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1");
+const FIELD: Record<string, string> = { name: "Name", description: "Description", address: "Address", website: "Website", costLevel: "Price", pace: "Pace", minutesNeeded: "Time needed", milesFromField: "Miles from field", crewTip: "Crew tip", tags: "Tags", category: "Category", icao: "Airport", rating: "Rating", comment: "Comment", lat: "Latitude", lng: "Longitude", placeRef: "Map place" };
+const ago = (t: number) => { const s = Math.max(0, Math.round((Date.now() - t) / 1000)); return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : s < 86400 ? `${Math.round(s / 3600)}h ago` : `${Math.round(s / 86400)}d ago`; };
+const parse = (j: string | null) => { try { return j ? JSON.parse(j) : null; } catch { return null; } };
+const fmtVal = (v: unknown) => (v === null || v === undefined || v === "" ? "–" : typeof v === "string" && v.startsWith("[") ? (parse(v) || []).join(", ") || "–" : String(v));
 
-/** AI-held listings, ratings and edits. Approve publishes (or applies the edit); Reject keeps it off the site (or discards the edit). */
-function ModerationQueue() {
-  const { toast } = useToast();
-  const { data, isLoading } = useQuery<{ ai: boolean; spots: ModSpot[]; reviews: ModReview[] }>({ queryKey: ["/api/admin/moderation"], queryFn: admGet("/api/admin/moderation"), refetchInterval: 8000 });
-  const act = useMutation({
-    mutationFn: async (a: { kind: "spot" | "review"; id: number; action: "approve" | "reject" | "recheck" }) => (await adm("POST", `/api/admin/moderation/${a.kind}/${a.id}`, { action: a.action })).json(),
-    onSuccess: (_r, a) => { queryClient.invalidateQueries({ queryKey: ["/api/admin/moderation"] }); invalidateAll(); toast({ title: a.action === "approve" ? "Approved" : a.action === "reject" ? "Rejected" : "Checking again" }); },
-    onError: (e: Error) => toast({ title: "Didn't go through", description: e.message, variant: "destructive" }),
-  });
-  if (isLoading) return <Skeleton className="h-32 rounded-xl" />;
-  const spots = (data?.spots || []).filter((s) => s.status !== "rejected");
-  const reviews = (data?.reviews || []).filter((r) => r.status !== "rejected");
-  const Actions = ({ kind, id, edit }: { kind: "spot" | "review"; id: number; edit: boolean }) => (
-    <div className="flex flex-wrap gap-1.5">
-      <button className={btnPrimary} disabled={act.isPending} onClick={() => act.mutate({ kind, id, action: "approve" })} data-testid={`button-mod-approve-${kind}-${id}`}>{edit ? "Apply edit" : "Approve"}</button>
-      <button className={btn} disabled={act.isPending} onClick={() => act.mutate({ kind, id, action: "reject" })} data-testid={`button-mod-reject-${kind}-${id}`}>{edit ? "Discard edit" : "Reject"}</button>
-      <button className={btn} disabled={act.isPending} onClick={() => act.mutate({ kind, id, action: "recheck" })} data-testid={`button-mod-recheck-${kind}-${id}`}>Re-run AI</button>
+function Diff({ before, after }: { before: Record<string, any> | null; after: Record<string, any> | null }) {
+  const keys = Array.from(new Set([...Object.keys(before || {}), ...Object.keys(after || {})]));
+  if (!keys.length) return null;
+  return (
+    <div className="rounded-lg bg-muted/50 p-2 text-xs space-y-1" data-testid="mod-diff">
+      {keys.map((k) => <p key={k} className="break-words"><span className="font-semibold">{FIELD[k] || k}:</span> {before && <><span className="line-through text-muted-foreground">{fmtVal(before[k])}</span> → </>}{fmtVal(after?.[k])}</p>)}
     </div>
   );
-  const State = ({ state, status, edit }: { state: string; status: string; edit: boolean }) => (
-    <span className={cn("rounded-md px-1.5 py-0.5 text-[11px] font-semibold", state === "checking" ? "bg-primary/20" : "bg-orange-500/15 text-orange-700 dark:text-orange-300")}>
-      {state === "checking" ? "AI checking" : state === "flagged" ? (edit ? "Edit held" : "Held by AI") : status === "pending" ? "Pending" : state || status}
-    </span>
-  );
+}
+
+/** Current state of the item, in words. */
+function StateChip({ status, modState, hasPendingEdit }: { status: string; modState: string; hasPendingEdit: boolean }) {
+  const [label, tone] = status === "deleted" ? ["Deleted", "muted"]
+    : modState === "checking" ? ["AI checking", "blue"]
+    : hasPendingEdit ? [modState === "awaiting" ? "Edit waiting for you" : "Edit held", "orange"]
+    : status === "live" ? ["Live", "green"]
+    : status === "rejected" ? ["Removed", "muted"]
+    : modState === "awaiting" ? ["Waiting for you", "orange"]
+    : status === "pending" ? ["Not public", "orange"] : [status, "muted"];
+  return <span className={cn("rounded-md px-1.5 py-0.5 text-[11px] font-semibold", tone === "green" ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" : tone === "orange" ? "bg-orange-500/15 text-orange-700 dark:text-orange-300" : tone === "blue" ? "bg-primary/20" : "bg-muted text-muted-foreground")} data-testid="chip-mod-state">{label}</span>;
+}
+function VerdictChip({ actor, action }: { actor: string; action: string }) {
+  const ai = actor === "ai";
+  const label = ai ? { approve: "AI approved", hold: "AI held", error: "AI couldn't check" }[action] || `AI ${action}`
+    : { approve: "You approved", reject: "You denied", revert: "You undid edit", recheck: "You re-ran AI" }[action] || action;
+  const good = action === "approve";
+  return <span className={cn("rounded-md px-1.5 py-0.5 text-[11px] font-semibold", ai ? (good ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-orange-500/10 text-orange-700 dark:text-orange-300") : "bg-foreground text-background")}>{label}</span>;
+}
+
+const approveBtn = "inline-flex items-center justify-center gap-1.5 h-10 min-w-[104px] rounded-lg px-4 text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-35 disabled:hover:bg-emerald-600";
+const denyBtn = "inline-flex items-center justify-center gap-1.5 h-10 min-w-[104px] rounded-lg px-4 text-sm font-semibold bg-red-600 text-white hover:bg-red-700 disabled:opacity-35 disabled:hover:bg-red-600";
+
+/** Admin view of AI moderation: live status, what's waiting, every decision, and Approve / Deny overrides. */
+function ModerationQueue() {
+  const { toast } = useToast();
+  const [view, setView] = useState<"needs" | "all">("needs");
+  const [filter, setFilter] = useState<"all" | "ai_ok" | "ai_held" | "mine">("all");
+  const { data, isLoading } = useQuery<ModData>({ queryKey: ["/api/admin/moderation"], queryFn: admGet("/api/admin/moderation"), refetchInterval: 6000 });
+  const done = () => { queryClient.invalidateQueries({ queryKey: ["/api/admin/moderation"] }); invalidateAll(); };
+  const act = useMutation({
+    mutationFn: async (a: { kind: "spot" | "review"; id: number; action: "approve" | "reject" | "recheck" }) => (await adm("POST", `/api/admin/moderation/${a.kind}/${a.id}`, { action: a.action })).json(),
+    onSuccess: (_r, a) => { done(); toast({ title: a.action === "approve" ? "Approved: it's live" : a.action === "reject" ? "Denied: it's off the site" : "Checking again" }); },
+    onError: (e: Error) => toast({ title: "Didn't go through", description: e.message, variant: "destructive" }),
+  });
+  const revert = useMutation({
+    mutationFn: async (logId: number) => (await adm("POST", `/api/admin/moderation/revert/${logId}`)).json(),
+    onSuccess: () => { done(); toast({ title: "Edit undone", description: "The previous version is back." }); },
+    onError: (e: Error) => toast({ title: "Couldn't undo", description: e.message, variant: "destructive" }),
+  });
+  const setManual = useMutation({
+    mutationFn: async (manual: boolean) => (await adm("PUT", "/api/admin/moderation/settings", { manual })).json(),
+    onSuccess: (r: { manual: boolean }) => { done(); toast({ title: r.manual ? "AI approvals now wait for you" : "AI approvals publish automatically" }); },
+  });
+  if (isLoading || !data) return <Skeleton className="h-32 rounded-xl" />;
+  const st = data.status;
+  const busy = act.isPending || revert.isPending;
+  const spots = data.spots.filter((s) => s.status !== "rejected");
+  const reviews = data.reviews.filter((r) => r.status !== "rejected");
+  const needs = spots.length + reviews.length;
+  const log = data.log.filter((r) => filter === "all" || (filter === "ai_ok" ? r.actor === "ai" && r.action === "approve" : filter === "ai_held" ? r.actor === "ai" && r.action !== "approve" : r.actor === "admin"));
+
+  // Buttons for a decision row. Only the newest row per item acts on the item; older rows are history.
+  const rowButtons = (r: LogRow) => {
+    if (!r.latest || !r.exists || r.modState === "checking") return null;
+    const editApplied = !!r.isEdit && r.action === "approve" && !!r.before && !r.hasPendingEdit && r.modState !== "awaiting";
+    const isLive = r.status === "live" && !r.hasPendingEdit;
+    return (
+      <div className="flex flex-wrap gap-2">
+        <button className={approveBtn} disabled={busy || isLive} onClick={() => act.mutate({ kind: r.kind, id: r.targetId, action: "approve" })} data-testid={`button-log-approve-${r.id}`}>Approve</button>
+        {editApplied
+          ? <button className={denyBtn} disabled={busy} onClick={() => revert.mutate(r.id)} data-testid={`button-log-revert-${r.id}`}>Deny: undo edit</button>
+          : <button className={denyBtn} disabled={busy || (r.status === "rejected" && !r.hasPendingEdit)} onClick={() => act.mutate({ kind: r.kind, id: r.targetId, action: "reject" })} data-testid={`button-log-deny-${r.id}`}>{r.hasPendingEdit ? "Deny edit" : "Deny"}</button>}
+        <button className={btn} disabled={busy || !data.ai} onClick={() => act.mutate({ kind: r.kind, id: r.targetId, action: "recheck" })}>Re-run AI</button>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-4 pt-3" data-testid="panel-moderation">
-      <p className="text-xs text-muted-foreground">{data?.ai ? "AI moderation is on. New listings, ratings and edits stay unpublished until they pass; anything it holds lands here." : "AI moderation is off (no OPENAI_API_KEY on the server). New posts publish as before."}</p>
-      <section className="space-y-2">
-        <h3 className="text-sm font-semibold">Listings and edits ({spots.length})</h3>
-        {!spots.length && <p className="text-sm text-muted-foreground">Nothing waiting.</p>}
-        {spots.map((s) => {
-          let edit: Record<string, any> | null = null; try { edit = s.pendingEdit ? JSON.parse(s.pendingEdit) : null; } catch { /* ignore */ }
-          const changed = edit ? Object.keys(edit).filter((k) => String((edit as any)[k] ?? "") !== String((s as any)[k] ?? "")) : [];
-          return (
-            <article key={s.id} className="rounded-xl border border-card-border bg-card p-3 space-y-2" data-testid={`mod-spot-${s.id}`}>
-              <div className="flex flex-wrap items-center gap-2 text-sm">
-                <span className="font-code text-xs font-bold">{s.icao}</span>
-                <a href={`#/spot/${s.id}`} className="font-medium underline-offset-2 hover:underline">{s.name}</a>
-                <span className="text-xs text-muted-foreground">{s.category} · by {s.submittedBy}</span>
-                <State state={s.modState} status={s.status} edit={!!edit} />
-                {PROBLEM(s.modNote) && <span className="rounded-md bg-muted px-1.5 py-0.5 text-[11px]">{PROBLEM(s.modNote)}</span>}
-              </div>
-              {s.modNote && <p className="text-xs">{NOTE(s.modNote)}</p>}
-              {edit ? (
-                <div className="rounded-lg bg-muted/50 p-2 text-xs space-y-1">
-                  {changed.length ? changed.map((k) => <p key={k}><span className="font-semibold">{k}:</span> <span className="line-through text-muted-foreground">{String((s as any)[k] ?? "") || "–"}</span> → {String(edit![k] ?? "") || "–"}</p>) : <p className="text-muted-foreground">No visible changes.</p>}
+      {/* status */}
+      <div className="rounded-xl border border-card-border bg-card p-3 space-y-3" data-testid="mod-status">
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold", data.ai ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" : "bg-muted text-muted-foreground")}>
+            <span className={cn("h-2 w-2 rounded-full", data.ai ? "bg-emerald-500" : "bg-muted-foreground")} />AI moderation {data.ai ? "on" : "off"}
+          </span>
+          {data.ai && <span className="text-xs text-muted-foreground">Checker last ran {st.lastRunAt ? ago(st.lastRunAt) : "not yet since restart"}</span>}
+        </div>
+        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+          {([["Checking now", st.checking], ["Needs you", needs], ["AI approved 24h", st.approved24h], ["AI held 24h", st.held24h], ["AI errors 24h", st.errors24h], ["Your overrides 24h", st.overrides24h]] as const).map(([l, v]) => (
+            <div key={l} className="rounded-lg border border-card-border px-2.5 py-2"><p className="text-[10.5px] text-muted-foreground leading-tight">{l}</p><p className="font-code text-base font-bold tabular">{v}</p></div>
+          ))}
+        </div>
+        {st.lastError && Date.now() - st.lastErrorAt < 6 * 3600_000 && <p className="text-xs text-orange-700 dark:text-orange-300">Last AI error {ago(st.lastErrorAt)}: {st.lastError}</p>}
+        <label className="flex items-start justify-between gap-3 rounded-lg bg-muted/40 p-2.5">
+          <span className="text-sm"><span className="font-semibold">Hold AI approvals for me</span><br /><span className="text-xs text-muted-foreground">On: nothing publishes until you tap Approve; the AI only recommends. Off: AI approvals go live on their own, and you can still Deny them later.</span></span>
+          <Switch checked={data.manual} onCheckedChange={(v) => setManual.mutate(v)} data-testid="switch-mod-manual" />
+        </label>
+      </div>
+
+      <div className="inline-flex rounded-lg border border-border p-0.5">
+        {([["needs", `Needs you (${needs})`], ["all", "All decisions"]] as const).map(([k, l]) => (
+          <button key={k} onClick={() => setView(k)} className={cn("h-8 rounded-md px-3 text-sm font-medium", view === k ? "bg-foreground text-background" : "text-muted-foreground")} data-testid={`button-mod-view-${k}`}>{l}</button>
+        ))}
+      </div>
+
+      {view === "needs" ? (
+        <div className="space-y-2">
+          {!needs && <p className="text-sm text-muted-foreground">Nothing is waiting. Everything the AI approved is live; check All decisions to review or undo any of it.</p>}
+          {spots.map((s) => {
+            const edit = parse(s.pendingEdit);
+            const changed = edit ? Object.fromEntries(Object.keys(edit).filter((k) => String(edit[k] ?? "") !== String((s as any)[k] ?? "")).map((k) => [k, edit[k]])) : null;
+            const before = changed ? Object.fromEntries(Object.keys(changed).map((k) => [k, (s as any)[k]])) : null;
+            return (
+              <article key={`s${s.id}`} className="rounded-xl border border-card-border bg-card p-3 space-y-2" data-testid={`mod-spot-${s.id}`}>
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="text-[11px] font-semibold uppercase text-muted-foreground">{edit ? "Listing edit" : "New listing"}</span>
+                  <span className="font-code text-xs font-bold">{s.icao}</span>
+                  <a href={`#/spot/${s.id}`} className="font-medium underline-offset-2 hover:underline">{s.name}</a>
+                  <span className="text-xs text-muted-foreground">{s.category} · by {s.submittedBy}</span>
+                  <StateChip status={s.status} modState={s.modState} hasPendingEdit={!!edit} />
+                  {PROBLEM(s.modNote) && <span className="rounded-md bg-muted px-1.5 py-0.5 text-[11px]">AI: {PROBLEM(s.modNote)}</span>}
                 </div>
-              ) : (
-                <p className="text-xs text-muted-foreground line-clamp-3">{s.description || "No description"}{s.address ? ` · ${s.address}` : ""}{s.website ? ` · ${s.website}` : ""}</p>
-              )}
-              {s.modState !== "checking" && <Actions kind="spot" id={s.id} edit={!!edit} />}
-            </article>
-          );
-        })}
-      </section>
-      <section className="space-y-2">
-        <h3 className="text-sm font-semibold">Ratings and edits ({reviews.length})</h3>
-        {!reviews.length && <p className="text-sm text-muted-foreground">Nothing waiting.</p>}
-        {reviews.map((r) => {
-          let edit: { rating: number; comment: string } | null = null; try { edit = r.pendingEdit ? JSON.parse(r.pendingEdit) : null; } catch { /* ignore */ }
-          const shown = edit || r;
-          return (
-            <article key={r.id} className="rounded-xl border border-card-border bg-card p-3 space-y-2" data-testid={`mod-review-${r.id}`}>
-              <div className="flex flex-wrap items-center gap-2 text-sm">
-                <span className="font-code text-xs font-bold">{r.icao}</span>
-                <a href={`#/spot/${r.spotId}`} className="font-medium underline-offset-2 hover:underline">{r.spotName}</a>
-                <span className="text-xs text-muted-foreground">by {r.author} · {shown.rating === 0 ? "Go around" : `${shown.rating}/5`}</span>
-                <State state={r.modState} status={r.status} edit={!!edit} />
-                {PROBLEM(r.modNote) && <span className="rounded-md bg-muted px-1.5 py-0.5 text-[11px]">{PROBLEM(r.modNote)}</span>}
-              </div>
-              {r.modNote && <p className="text-xs">{NOTE(r.modNote)}</p>}
-              <p className="rounded-lg bg-muted/50 p-2 text-xs">{shown.comment || "No comment"}</p>
-              {r.modState !== "checking" && <Actions kind="review" id={r.id} edit={!!edit} />}
-            </article>
-          );
-        })}
-      </section>
+                {s.modNote && <p className="text-xs"><span className="font-semibold">AI says:</span> {NOTE(s.modNote)}</p>}
+                {edit ? <Diff before={before} after={changed} /> : <p className="text-xs text-muted-foreground line-clamp-3">{s.description || "No description"}{s.address ? ` · ${s.address}` : ""}{s.website ? ` · ${s.website}` : ""}</p>}
+                {s.modState !== "checking" && (
+                  <div className="flex flex-wrap gap-2">
+                    <button className={approveBtn} disabled={busy} onClick={() => act.mutate({ kind: "spot", id: s.id, action: "approve" })} data-testid={`button-mod-approve-spot-${s.id}`}>Approve</button>
+                    <button className={denyBtn} disabled={busy} onClick={() => act.mutate({ kind: "spot", id: s.id, action: "reject" })} data-testid={`button-mod-reject-spot-${s.id}`}>{edit ? "Deny edit" : "Deny"}</button>
+                    <button className={btn} disabled={busy || !data.ai} onClick={() => act.mutate({ kind: "spot", id: s.id, action: "recheck" })}>Re-run AI</button>
+                  </div>
+                )}
+              </article>
+            );
+          })}
+          {reviews.map((r) => {
+            const edit = parse(r.pendingEdit);
+            const shown = edit || r;
+            return (
+              <article key={`r${r.id}`} className="rounded-xl border border-card-border bg-card p-3 space-y-2" data-testid={`mod-review-${r.id}`}>
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="text-[11px] font-semibold uppercase text-muted-foreground">{edit ? "Rating edit" : "New rating"}</span>
+                  <span className="font-code text-xs font-bold">{r.icao}</span>
+                  <a href={`#/spot/${r.spotId}`} className="font-medium underline-offset-2 hover:underline">{r.spotName}</a>
+                  <span className="text-xs text-muted-foreground">by {r.author} · {shown.rating === 0 ? "Go around" : `${shown.rating}/5`}</span>
+                  <StateChip status={r.status} modState={r.modState} hasPendingEdit={!!edit} />
+                  {PROBLEM(r.modNote) && <span className="rounded-md bg-muted px-1.5 py-0.5 text-[11px]">AI: {PROBLEM(r.modNote)}</span>}
+                </div>
+                {r.modNote && <p className="text-xs"><span className="font-semibold">AI says:</span> {NOTE(r.modNote)}</p>}
+                {edit ? <Diff before={{ rating: r.rating, comment: r.comment }} after={{ rating: edit.rating, comment: edit.comment }} /> : <p className="rounded-lg bg-muted/50 p-2 text-xs">{r.comment || "No comment"}</p>}
+                {r.modState !== "checking" && (
+                  <div className="flex flex-wrap gap-2">
+                    <button className={approveBtn} disabled={busy} onClick={() => act.mutate({ kind: "review", id: r.id, action: "approve" })} data-testid={`button-mod-approve-review-${r.id}`}>Approve</button>
+                    <button className={denyBtn} disabled={busy} onClick={() => act.mutate({ kind: "review", id: r.id, action: "reject" })} data-testid={`button-mod-reject-review-${r.id}`}>{edit ? "Deny edit" : "Deny"}</button>
+                    <button className={btn} disabled={busy || !data.ai} onClick={() => act.mutate({ kind: "review", id: r.id, action: "recheck" })}>Re-run AI</button>
+                  </div>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-1.5">
+            {([["all", "Everything"], ["ai_ok", "AI approved"], ["ai_held", "AI held"], ["mine", "Your overrides"]] as const).map(([k, l]) => (
+              <button key={k} onClick={() => setFilter(k)} className={cn("h-8 rounded-full border px-3 text-xs font-medium", filter === k ? "border-primary bg-primary/10" : "border-border text-muted-foreground")} data-testid={`button-mod-filter-${k}`}>{l}</button>
+            ))}
+          </div>
+          {!log.length && <p className="text-sm text-muted-foreground">No decisions yet.</p>}
+          {log.map((r) => {
+            const before = parse(r.before), after = parse(r.after);
+            return (
+              <article key={r.id} className={cn("rounded-xl border bg-card p-3 space-y-2", r.latest ? "border-card-border" : "border-dashed border-border opacity-75")} data-testid={`mod-log-${r.id}`}>
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <VerdictChip actor={r.actor} action={r.action} />
+                  <span className="text-[11px] font-semibold uppercase text-muted-foreground">{r.kind === "spot" ? "Listing" : "Rating"}{r.isEdit ? " edit" : ""}</span>
+                  {r.icao && <span className="font-code text-xs font-bold">{r.icao}</span>}
+                  {r.spotId ? <a href={`#/spot/${r.spotId}`} className="font-medium underline-offset-2 hover:underline">{r.name}</a> : <span className="font-medium">{r.name}</span>}
+                  {r.by && <span className="text-xs text-muted-foreground">by {r.by}</span>}
+                  <span className="text-xs text-muted-foreground">· {ago(r.createdAt)}</span>
+                  {r.latest ? <StateChip status={r.status} modState={r.modState} hasPendingEdit={r.hasPendingEdit} /> : <span className="text-[11px] text-muted-foreground">earlier decision</span>}
+                </div>
+                {(r.problem && r.problem !== "none" || r.reason) && <p className="text-xs">{r.problem && r.problem !== "none" && <span className="mr-1 rounded bg-muted px-1 py-px text-[11px]">{r.problem.replace(/_/g, " ")}</span>}{NOTE(r.reason)}</p>}
+                {r.isEdit ? <Diff before={before} after={after} /> : after && r.kind === "review" ? <p className="rounded-lg bg-muted/50 p-2 text-xs">{after.rating === 0 ? "Go around" : `${after.rating}/5`} · {after.comment || "No comment"}</p>
+                  : after && r.kind === "spot" ? <p className="text-xs text-muted-foreground line-clamp-2">{after.description || "No description"}{after.address ? ` · ${after.address}` : ""}</p> : null}
+                {rowButtons(r)}
+              </article>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

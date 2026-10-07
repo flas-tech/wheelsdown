@@ -42,6 +42,9 @@ if [[ "$AI" == "true" ]]; then
 fi
 check "config"             '"ai":'          "$(curl -s $BASE/api/config)"
 check "admin moderation"   '"reviews"'      "$(curl -s $BASE/api/admin/moderation -H "x-admin-key: $ADMIN_KEY")"
+check "moderation status+log" '"log":'       "$(curl -s $BASE/api/admin/moderation -H "x-admin-key: $ADMIN_KEY")"
+check "revert guard"       'Only an approved edit' "$(curl -s -XPOST $BASE/api/admin/moderation/revert/0 -H "x-admin-key: $ADMIN_KEY")"
+check "settings need admin" 'Admin key'     "$(curl -s -XPUT $BASE/api/admin/moderation/settings -H "$J" -d '{"manual":true}')"
 check "autofill needs login" 'Sign in'      "$(curl -s -XPOST $BASE/api/ai/autofill -H "$J" -d '{"icao":"KMIA","category":"eat","name":"x"}')"
 check "vote up"           '"ok":true'      "$(curl -s -XPOST $BASE/api/spots/$SID/vote -H "$A" -H "$J" -d '{"value":1}')"
 check "rate + comment"    '"rating":5'     "$(curl -s -XPOST $BASE/api/spots/$SID/reviews -H "$A" -H "$J" -d '{"rating":5,"comment":"Smoke test review with enough characters to count as detailed."}')"

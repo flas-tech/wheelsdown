@@ -145,7 +145,7 @@ export default function ProfilePage() {
         {contrib?.spots.map((s) => (
           <Link key={s.id} href={`/spot/${s.id}`} className="flex items-center justify-between gap-3 rounded-xl border border-card-border bg-card px-3 py-2.5 hover-elevate" data-testid={`link-my-spot-${s.id}`}>
             <span className="min-w-0"><span className="font-code text-xs font-bold mr-2">{s.icao}</span><span className="text-sm font-medium">{s.name}</span></span>
-            {s.mod?.state === "checking" ? <ModChip kind="checking" /> : s.mod?.state === "flagged" ? <ModChip kind={s.mod.editPending ? "edit_held" : "held"} /> : s.status === "pending" ? <ModChip kind="waiting" /> : <VetBadge vet={s.vet} />}
+            {s.mod?.state === "checking" ? <ModChip kind="checking" /> : s.mod?.state === "flagged" ? <ModChip kind={s.mod.editPending ? "edit_held" : "held"} /> : s.status === "rejected" ? <ModChip kind="removed" /> : s.status === "pending" || s.mod?.state === "awaiting" ? <ModChip kind="waiting" /> : <VetBadge vet={s.vet} />}
           </Link>
         ))}
       </section>
@@ -156,7 +156,7 @@ export default function ProfilePage() {
             <Link key={r.id} href={`/spot/${r.spotId}`} className="block rounded-xl border border-card-border bg-card px-3 py-2.5 hover-elevate">
               <p className="text-sm font-medium">{r.spotName} {r.rating === 0 ? <span className="text-orange-600 dark:text-orange-400 text-xs font-semibold">Go around</span> : <span className="text-primary">{"★".repeat(r.rating)}</span>}</p>
               {r.comment && <p className="text-xs text-muted-foreground line-clamp-1">{r.comment}</p>}
-              {(r.modState === "checking" || r.modState === "flagged") && <span className="mt-1 inline-block"><ModChip kind={r.modState === "checking" ? "checking" : r.pendingEdit ? "edit_held" : "held"} /></span>}
+              {(r.modState === "checking" || r.modState === "flagged" || r.modState === "awaiting" || r.status === "rejected") && <span className="mt-1 inline-block"><ModChip kind={r.status === "rejected" ? "removed" : r.modState === "checking" ? "checking" : r.modState === "awaiting" ? "waiting" : r.pendingEdit ? "edit_held" : "held"} /></span>}
             </Link>
           ))}
         </section>
@@ -332,7 +332,7 @@ function DeleteAccount() {
   );
 }
 
-function ModChip({ kind }: { kind: "checking" | "held" | "edit_held" | "waiting" }) {
-  const label = { checking: "Being checked", held: "On hold: tap to see why", edit_held: "Edit on hold", waiting: "Awaiting moderator" }[kind];
+function ModChip({ kind }: { kind: "checking" | "held" | "edit_held" | "waiting" | "removed" }) {
+  const label = { checking: "Being checked", held: "On hold: tap to see why", edit_held: "Edit on hold", waiting: "Awaiting moderator", removed: "Removed by moderator" }[kind];
   return <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold", kind === "checking" ? "bg-primary/15 text-primary" : "bg-orange-500/15 text-orange-700 dark:text-orange-300")} data-testid={`chip-mod-${kind}`}>{label}</span>;
 }

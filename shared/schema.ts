@@ -123,6 +123,23 @@ export type SpotWithStats = Spot & {
 /** A rating of 0 means "Go around": the crew member says avoid this place. */
 export const GO_AROUND = 0;
 
+// ---- Moderation decisions (AI and admin), newest first in the admin console ----
+export const modLog = pgTable("mod_log", {
+  id: serial("id").primaryKey(),
+  kind: text("kind").notNull(), // spot | review
+  targetId: integer("target_id").notNull(),
+  actor: text("actor").notNull(), // ai | admin | system
+  action: text("action").notNull(), // approve | hold | reject | error | revert | recheck
+  problem: text("problem").notNull().default(""),
+  reason: text("reason").notNull().default(""),
+  isEdit: integer("is_edit").notNull().default(0),
+  before: text("before"), // JSON of the values replaced (edits), so an approval can be undone
+  after: text("after"), // JSON of what was checked
+  createdAt: bigint("created_at", { mode: "number" }).notNull().default(0),
+});
+export type ModLog = typeof modLog.$inferSelect;
+export const appSettings = pgTable("app_settings", { key: text("key").primaryKey(), value: text("value").notNull().default("") });
+
 // ---- Favorites (per crew member; always included in their trip briefings) ----
 export const favorites = pgTable("favorites", {
   userId: integer("user_id").notNull(),

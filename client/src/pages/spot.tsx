@@ -26,7 +26,7 @@ export default function SpotPage() {
   const { data, isLoading, isError } = useQuery<{ spot: SpotWithStats; reviews: ReviewWithVotes[]; mod?: ModInfo }>({
     queryKey: ["/api/spots", id],
     // poll while the automatic check is running on something the viewer posted
-    refetchInterval: (q) => { const d = q.state.data; return d && (d.mod?.state === "checking" || d.reviews.some((r) => r.modState === "checking" && r.userId === me?.id)) ? 4000 : false; },
+    refetchInterval: (q) => { const d = q.state.data; return d && (d.mod?.state === "checking" || d.mod?.state === "awaiting" || d.reviews.some((r) => (r.modState === "checking" || r.modState === "awaiting") && r.userId === me?.id)) ? 4000 : false; },
   });
 
   if (isLoading) return <div className="space-y-4"><Skeleton className="h-8 w-40" /><Skeleton className="h-40 rounded-2xl" /><Skeleton className="h-24 rounded-2xl" /></div>;

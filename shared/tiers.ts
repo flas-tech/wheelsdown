@@ -61,7 +61,7 @@ type Data = {
 
 /** A listing earns points unless it was hidden or rejected, or it's new and still waiting on (or held by) the automatic check. */
 const earns = (s: { status: string; modState?: string }) =>
-  s.status !== "hidden" && s.status !== "rejected" && !(s.status === "pending" && (s.modState === "checking" || s.modState === "flagged"));
+  s.status !== "hidden" && s.status !== "rejected" && !(s.status === "pending" && (s.modState === "checking" || s.modState === "flagged" || s.modState === "awaiting"));
 
 /** Points are computed from activity (not stored), so they can never drift from the record. */
 export function computePoints(data: Data, userId: number, bonus = 0): PointsBreakdown {

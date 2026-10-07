@@ -10,6 +10,20 @@ export function ModNotice({ kind, state, status, note, editPending, editHref, cl
 }) {
   const checking = state === "checking";
   const held = state === "flagged";
+  const awaiting = state === "awaiting";
+  const removed = status === "rejected";
+  if (removed) return (
+    <div role="status" data-testid={`notice-mod-${kind}`} className={cn("flex items-start gap-2.5 rounded-xl border border-orange-500/40 bg-orange-500/10 p-3 text-sm", className)}>
+      <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-orange-600 dark:text-orange-400" />
+      <div><p className="font-semibold">A moderator removed this {kind}. Only you can see it.</p>{note && <p className="mt-0.5 text-muted-foreground">{note}</p>}</div>
+    </div>
+  );
+  if (awaiting) return (
+    <div role="status" data-testid={`notice-mod-${kind}`} className={cn("flex items-start gap-2.5 rounded-xl border border-primary/30 bg-primary/10 p-3 text-sm", className)}>
+      <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+      <p><span className="font-semibold">{editPending ? `Your edit to this ${kind}` : `Your ${kind}`} passed the automatic check.</span> A moderator will publish it shortly{editPending ? "; crews still see the current version" : ""}.</p>
+    </div>
+  );
   if (!checking && !held && status === "live") return null;
   if (!checking && !held && status !== "pending") return null;
   const what = editPending ? `Your edit to this ${kind}` : `Your ${kind}`;

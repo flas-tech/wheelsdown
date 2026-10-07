@@ -1,4 +1,4 @@
-import { airports, spots, reviews, ads, votes, users, sessions, passwordResets, briefings, favorites } from "@shared/schema";
+import { airports, spots, reviews, ads, votes, users, sessions, passwordResets, briefings, favorites, modLog, appSettings } from "@shared/schema";
 import type { Briefing, BriefingStop } from "@shared/schema";
 import { crewCost } from "@shared/cost";
 import { refAirport, isCode } from "./airportsData";
@@ -277,11 +277,54 @@ export class DatabaseStorage {
   /** Everything a person should look at: held or checking items and edits. */
   async modReviewList() {
     const d = db();
-    const s = await d.select().from(spots).where(or(eq(spots.status, "pending"), inArray(spots.modState, ["checking", "flagged"]), sql`${spots.pendingEdit} IS NOT NULL`)).orderBy(desc(spots.createdAt)).limit(200);
-    const r = await d.select().from(reviews).where(or(sql`${reviews.status} <> 'live'`, inArray(reviews.modState, ["checking", "flagged"]), sql`${reviews.pendingEdit} IS NOT NULL`)).orderBy(desc(reviews.createdAt)).limit(200);
+    const s = await d.select().from(spots).where(or(eq(spots.status, "pending"), inArray(spots.modState, ["checking", "flagged", "awaiting"]), sql`${spots.pendingEdit} IS NOT NULL`)).orderBy(desc(spots.createdAt)).limit(200);
+    const r = await d.select().from(reviews).where(or(sql`${reviews.status} <> 'live'`, inArray(reviews.modState, ["checking", "flagged", "awaiting"]), sql`${reviews.pendingEdit} IS NOT NULL`)).orderBy(desc(reviews.createdAt)).limit(200);
     const names = new Map((r.length ? await d.select({ id: spots.id, name: spots.name, icao: spots.icao }).from(spots).where(inArray(spots.id, r.map((x) => x.spotId))) : []).map((x) => [x.id, x]));
     return { spots: s, reviews: r.map((x) => ({ ...x, spotName: names.get(x.spotId)?.name || "", icao: names.get(x.spotId)?.icao || "" })) };
   }
+  async logMod(e: { kind: "spot" | "review"; targetId: number; actor: "ai" | "admin" | "system"; action: string; problem?: string; reason?: string; isEdit?: boolean; before?: unknown; after?: unknown }) {
+    await db().insert(modLog).values({ kind: e.kind, targetId: e.targetId, actor: e.actor, action: e.action, problem: e.problem || "", reason: (e.reason || "").slice(0, 600),
+      isEdit: e.isEdit ? 1 : 0, before: e.before === undefined ? null : JSON.stringify(e.before), after: e.after === undefined ? null : JSON.stringify(e.after), createdAt: Date.now() });
+  }
+  async getModLog(id: number) { return Number.isFinite(id) ? (await db().select().from(modLog).where(eq(modLog.id, id)))[0] : undefined; }
+  /** Recent decisions with each item's current state, so the admin can see and override what the AI did. */
+  async listModLog(limit = 150) {
+    const d = db();
+    const rows = await d.select().from(modLog).orderBy(desc(modLog.createdAt)).limit(limit);
+    const sIds = Array.from(new Set(rows.filter((r) => r.kind === "spot").map((r) => r.targetId)));
+    const rIds = Array.from(new Set(rows.filter((r) => r.kind === "review").map((r) => r.targetId)));
+    const ss = sIds.length ? await d.select({ id: spots.id, name: spots.name, icao: spots.icao, status: spots.status, modState: spots.modState, pendingEdit: spots.pendingEdit, by: spots.submittedBy }).from(spots).where(inArray(spots.id, sIds)) : [];
+    const rs = rIds.length ? await d.select({ id: reviews.id, spotId: reviews.spotId, status: reviews.status, modState: reviews.modState, pendingEdit: reviews.pendingEdit, by: reviews.author, rating: reviews.rating }).from(reviews).where(inArray(reviews.id, rIds)) : [];
+    const rSpots = rs.length ? await d.select({ id: spots.id, name: spots.name, icao: spots.icao }).from(spots).where(inArray(spots.id, Array.from(new Set(rs.map((r) => r.spotId))))) : [];
+    const sm = new Map(ss.map((x) => [x.id, x])), rm = new Map(rs.map((x) => [x.id, x])), rsm = new Map(rSpots.map((x) => [x.id, x]));
+    // the newest log row per item is the one whose buttons act on the item; older rows are history
+    const latest = new Set<string>(); const seen = new Set<string>();
+    for (const r of rows) { const k = `${r.kind}:${r.targetId}`; if (!seen.has(k)) { seen.add(k); latest.add(String(r.id)); } }
+    return rows.map((r) => {
+      const t = r.kind === "spot" ? sm.get(r.targetId) : rm.get(r.targetId);
+      const sp = r.kind === "spot" ? sm.get(r.targetId) : rsm.get((t as any)?.spotId);
+      return { ...r, latest: latest.has(String(r.id)), exists: !!t, name: sp?.name || "(deleted)", icao: sp?.icao || "", spotId: r.kind === "spot" ? r.targetId : (t as any)?.spotId ?? null,
+        by: t?.by || "", status: t?.status || "deleted", modState: t?.modState || "", hasPendingEdit: !!t?.pendingEdit };
+    });
+  }
+  async modStats() {
+    const q = async (s: string) => Number(((await db().execute(sql.raw(s))).rows[0] as any).c);
+    const day = Date.now() - 86400_000;
+    const [checking, held, ai24, held24, err24, admin24] = await Promise.all([
+      q("SELECT (SELECT COUNT(*) FROM spots WHERE mod_state='checking') + (SELECT COUNT(*) FROM reviews WHERE mod_state='checking') c"),
+      q("SELECT (SELECT COUNT(*) FROM spots WHERE mod_state IN ('flagged','awaiting') AND (status='pending' OR pending_edit IS NOT NULL)) + (SELECT COUNT(*) FROM reviews WHERE mod_state IN ('flagged','awaiting') AND (status='pending' OR pending_edit IS NOT NULL)) c"),
+      q(`SELECT COUNT(*) c FROM mod_log WHERE actor='ai' AND action='approve' AND created_at > ${day}`),
+      q(`SELECT COUNT(*) c FROM mod_log WHERE actor='ai' AND action='hold' AND created_at > ${day}`),
+      q(`SELECT COUNT(*) c FROM mod_log WHERE actor='ai' AND action='error' AND created_at > ${day}`),
+      q(`SELECT COUNT(*) c FROM mod_log WHERE actor='admin' AND created_at > ${day}`),
+    ]);
+    return { checking, held, approved24h: ai24, held24h: held24, errors24h: err24, overrides24h: admin24 };
+  }
+  async getSetting(key: string) { return (await db().select().from(appSettings).where(eq(appSettings.key, key)))[0]?.value; }
+  async setSetting(key: string, value: string) {
+    await db().insert(appSettings).values({ key, value }).onConflictDoUpdate({ target: appSettings.key, set: { value } });
+  }
+
   /** Other listings at the same airport, for duplicate checks. */
   async namesAt(icao: string, exceptId?: number) {
     const rows = await db().select({ id: spots.id, name: spots.name, category: spots.category, address: spots.address, lat: spots.lat, lng: spots.lng, status: spots.status })

@@ -103,6 +103,11 @@ CREATE TABLE IF NOT EXISTS favorites (user_id integer NOT NULL, spot_id integer 
 CREATE UNIQUE INDEX IF NOT EXISTS favorites_user_spot_idx ON favorites(user_id, spot_id);
 CREATE INDEX IF NOT EXISTS favorites_spot_idx ON favorites(spot_id);
 CREATE TABLE IF NOT EXISTS password_resets (token_hash text PRIMARY KEY, user_id integer NOT NULL, expires_at bigint NOT NULL, used_at bigint);
+CREATE TABLE IF NOT EXISTS mod_log (id serial PRIMARY KEY, kind text NOT NULL, target_id integer NOT NULL, actor text NOT NULL, action text NOT NULL,
+  problem text NOT NULL DEFAULT '', reason text NOT NULL DEFAULT '', is_edit integer NOT NULL DEFAULT 0, before text, after text, created_at bigint NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS mod_log_target_idx ON mod_log(kind, target_id);
+CREATE INDEX IF NOT EXISTS mod_log_created_idx ON mod_log(created_at);
+CREATE TABLE IF NOT EXISTS app_settings (key text PRIMARY KEY, value text NOT NULL DEFAULT '');
 `;
 
 async function migrate(d: DB) {

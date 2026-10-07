@@ -9,6 +9,22 @@ import type { Review, Spot } from "@shared/schema";
 const MAX_ATTEMPTS = 3;
 const MODERATE_ALL = process.env.MODERATE === "1"; // legacy switch: when on, non-trusted listings still need an admin even after AI approval
 let running = false;
+export const modStatus = { lastRunAt: 0, lastError: "", lastErrorAt: 0 };
+
+/** Admin switch: when on, AI approvals wait for a person instead of publishing ("awaiting"). Cached for 10 s. */
+let manualCache = { at: 0, v: false };
+export async function manualReview() {
+  if (Date.now() - manualCache.at < 10_000) return manualCache.v;
+  manualCache = { at: Date.now(), v: (await storage.getSetting("mod_manual")) === "1" };
+  return manualCache.v;
+}
+export async function setManualReview(on: boolean) { await storage.setSetting("mod_manual", on ? "1" : "0"); manualCache = { at: Date.now(), v: on }; }
+const changedOnly = (cur: Record<string, any>, edit: Record<string, any>) => {
+  const before: Record<string, any> = {}, after: Record<string, any> = {};
+  for (const k of Object.keys(edit)) if (String(cur[k] ?? "") !== String(edit[k] ?? "")) { before[k] = cur[k] ?? null; after[k] = edit[k] ?? null; }
+  return { before, after };
+};
+const spotSnap = (s: Spot) => Object.fromEntries(SPOT_EDIT_FIELDS.map((k) => [k, (s as any)[k] ?? null]));
 let timer: NodeJS.Timeout | null = null;
 
 export const SPOT_EDIT_FIELDS = ["icao", "category", "name", "description", "address", "website", "costLevel", "minutesNeeded", "pace", "milesFromField", "lat", "lng", "placeRef", "crewTip", "tags"] as const;
@@ -44,7 +60,7 @@ async function verdictForSpot(s: Spot, edit: SpotEdit | null): Promise<Verdict> 
     isEdit: !!edit, previous: edit ? s : null,
   });
   // the local duplicate check can only escalate an approval to a human look, never publish something the AI held
-  if (v.verdict === "approve" && dup && (!edit || dup.name.toLowerCase() !== s.name.toLowerCase())) {
+  if (v.verdict === "approve" && dup && (!edit || (!!edit.name && edit.name.trim().toLowerCase() !== s.name.trim().toLowerCase()))) {
     return { verdict: "review", problem: "duplicate", reason: `This looks like ${dup.name}, which is already listed at ${merged.icao}. Rate that listing instead, or explain the difference in the description.` };
   }
   return v;
@@ -63,15 +79,17 @@ async function processSpot(s: Spot) {
   try { v = await verdictForSpot(s, edit); }
   catch (e) { if (await stillSameSpot(s)) await failed("spot", s.id, s.userId, s.modAttempts, String((e as Error).message || e), !!edit); return; }
   if (!(await stillSameSpot(s))) { console.log(`[moderation] spot ${s.id} changed during check; will re-run`); return; }
+  const diff = edit ? changedOnly(s as any, edit as any) : { before: undefined, after: spotSnap(s) };
   if (v.verdict === "approve") {
-    if (edit) { await storage.updateSpot(s.id, edit as any); await storage.setSpotMod(s.id, { pendingEdit: null, modState: "approved", modNote: "", modAttempts: 0 }); }
-    else {
-      const needsAdmin = MODERATE_ALL && !(await isTrusted(s.userId));
-      await storage.setSpotMod(s.id, { status: needsAdmin ? "pending" : "live", modState: needsAdmin ? "flagged" : "approved", modNote: needsAdmin ? "Passed the automatic check. Waiting for a moderator." : "", modAttempts: 0 });
-    }
+    const wait = (await manualReview()) || (!edit && MODERATE_ALL && !(await isTrusted(s.userId)));
+    if (wait) await storage.setSpotMod(s.id, { modState: "awaiting", modNote: "Passed the automatic check. Waiting for a moderator.", modAttempts: 0, ...(edit ? {} : { status: "pending" }) });
+    else if (edit) { await storage.updateSpot(s.id, edit as any); await storage.setSpotMod(s.id, { pendingEdit: null, modState: "approved", modNote: "", modAttempts: 0 }); }
+    else await storage.setSpotMod(s.id, { status: "live", modState: "approved", modNote: "", modAttempts: 0 });
+    await storage.logMod({ kind: "spot", targetId: s.id, actor: "ai", action: "approve", reason: wait ? "Waiting for admin approval" : edit ? "Edit applied" : "Published", isEdit: !!edit, ...diff });
   } else {
     // held: a new listing stays unpublished; a held edit leaves the live version exactly as it was
     await storage.setSpotMod(s.id, { modState: "flagged", modNote: `[${v.problem}] ${v.reason}`, modAttempts: 0, ...(edit ? {} : { status: "pending" }) });
+    await storage.logMod({ kind: "spot", targetId: s.id, actor: "ai", action: "hold", problem: v.problem, reason: v.reason, isEdit: !!edit, ...diff });
   }
   console.log(`[moderation] spot ${s.id}${edit ? " (edit)" : ""}: ${v.verdict} ${v.problem}`);
 }
@@ -85,11 +103,17 @@ async function processReview(r: Review) {
   try { v = await checkReview(edit || r, spot); }
   catch (e) { if (await stillSameReview(r)) await failed("review", r.id, r.userId, r.modAttempts, String((e as Error).message || e), !!edit); return; }
   if (!(await stillSameReview(r))) { console.log(`[moderation] review ${r.id} changed during check; will re-run`); return; }
+  const cur = { rating: r.rating, comment: r.comment, costLevel: r.costLevel };
+  const diff = edit ? changedOnly(cur, edit) : { before: undefined, after: cur };
   if (v.verdict === "approve") {
-    if (edit) await storage.setReviewMod(r.id, { ...edit, pendingEdit: null, modState: "approved", modNote: "", modAttempts: 0 });
+    const wait = await manualReview();
+    if (wait) await storage.setReviewMod(r.id, { modState: "awaiting", modNote: "Passed the automatic check. Waiting for a moderator.", modAttempts: 0, ...(edit ? {} : { status: "pending" }) });
+    else if (edit) await storage.setReviewMod(r.id, { ...edit, pendingEdit: null, modState: "approved", modNote: "", modAttempts: 0 });
     else await storage.setReviewMod(r.id, { status: "live", modState: "approved", modNote: "", modAttempts: 0 });
+    await storage.logMod({ kind: "review", targetId: r.id, actor: "ai", action: "approve", reason: wait ? "Waiting for admin approval" : edit ? "Edit applied" : "Published", isEdit: !!edit, ...diff });
   } else {
     await storage.setReviewMod(r.id, { modState: "flagged", modNote: `[${v.problem}] ${v.reason}`, modAttempts: 0, ...(edit ? {} : { status: "pending" }) });
+    await storage.logMod({ kind: "review", targetId: r.id, actor: "ai", action: "hold", problem: v.problem, reason: v.reason, isEdit: !!edit, ...diff });
   }
   console.log(`[moderation] review ${r.id}${edit ? " (edit)" : ""}: ${v.verdict} ${v.problem}`);
 }
@@ -97,14 +121,17 @@ async function processReview(r: Review) {
 /** AI errors: retry, then hold for a person. Nothing is published without a check. */
 async function failed(kind: "spot" | "review", id: number, _userId: number | null, attempts: number, err: string, isEdit: boolean) {
   console.warn(`[moderation] ${kind} ${id} check failed (${attempts + 1}/${MAX_ATTEMPTS}): ${err.slice(0, 160)}`);
+  modStatus.lastError = err.slice(0, 200); modStatus.lastErrorAt = Date.now();
   const set = kind === "spot" ? storage.setSpotMod.bind(storage) : storage.setReviewMod.bind(storage);
   if (attempts + 1 < MAX_ATTEMPTS) { await set(id, { modAttempts: attempts + 1 }); return; }
   await set(id, { modState: "flagged", modAttempts: attempts + 1, modNote: "[unavailable] The automatic check couldn't run, so a moderator will review this shortly.", ...(isEdit ? {} : { status: "pending" }) });
+  await storage.logMod({ kind, targetId: id, actor: "ai", action: "error", problem: "unavailable", reason: err.slice(0, 300), isEdit });
 }
 
 async function tick() {
   if (running) return;
   running = true;
+  modStatus.lastRunAt = Date.now();
   try {
     for (let round = 0; round < 5; round++) {
       const q = await storage.modQueue(3);

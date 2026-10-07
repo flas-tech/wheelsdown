@@ -15,7 +15,7 @@ import { suggestPicks } from "@shared/briefing";
 import { refAirport, nearestAirports, isCode } from "./airportsData";
 import { searchPlaces, nearbyPlaces } from "./places";
 import { AI_ENABLED, autofill, checkName } from "./ai";
-import { startModerator, kickModerator, findDuplicate, SPOT_EDIT_FIELDS } from "./moderator";
+import { startModerator, kickModerator, findDuplicate, SPOT_EDIT_FIELDS, manualReview, setManualReview, modStatus } from "./moderator";
 import { z } from "zod";
 
 const PROD = process.env.NODE_ENV === "production";
@@ -515,11 +515,32 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   // ---------- admin ----------
   app.post("/api/admin/login", authLimit, requireAdmin, (_req, res) => res.json({ ok: true }));
-  app.get("/api/admin/moderation", requireAdmin, async (_req, res) => res.json({ ai: AI_ENABLED, ...(await storage.modReviewList()) }));
-  /** approve = publish (or apply the held edit), reject = keep it off the site (or discard the edit), recheck = run the AI again */
+  app.get("/api/admin/moderation", requireAdmin, async (_req, res) => {
+    const [queue, log, stats, manual] = await Promise.all([storage.modReviewList(), storage.listModLog(150), storage.modStats(), manualReview()]);
+    res.json({ ai: AI_ENABLED, manual, status: { ...modStatus, ...stats }, ...queue, log });
+  });
+  app.put("/api/admin/moderation/settings", requireAdmin, async (req, res) => {
+    await setManualReview(!!req.body?.manual);
+    res.json({ manual: await manualReview() });
+  });
+  /** Undo an edit the AI approved: put back the values it replaced. */
+  app.post("/api/admin/moderation/revert/:logId", requireAdmin, async (req, res) => {
+    const e = await storage.getModLog(Number(req.params.logId));
+    if (!e || !e.isEdit || e.action !== "approve" || !e.before) return res.status(400).json({ message: "Only an approved edit can be reverted" });
+    const before = JSON.parse(e.before);
+    if (e.kind === "spot") { if (!(await storage.rawSpot(e.targetId))) return res.status(404).json({ message: "Not found" }); await storage.updateSpot(e.targetId, before); }
+    else { if (!(await storage.getReview(e.targetId))) return res.status(404).json({ message: "Not found" }); await storage.setReviewMod(e.targetId, before); }
+    await storage.logMod({ kind: e.kind as "spot" | "review", targetId: e.targetId, actor: "admin", action: "revert", reason: "Edit reverted", isEdit: true, before: e.after ? JSON.parse(e.after) : undefined, after: before });
+    res.json({ ok: true });
+  });
+  /**
+   * Admin override, whatever the AI decided.
+   * approve = publish it (or apply the waiting edit); reject = take it off the site (or discard the waiting edit); recheck = run the AI again.
+   */
   app.post("/api/admin/moderation/:kind/:id", requireAdmin, async (req, res) => {
     const kind = String(req.params.kind), action = String(req.body?.action || "");
     if (!["spot", "review"].includes(kind) || !["approve", "reject", "recheck"].includes(action)) return res.status(400).json({ message: "kind spot|review, action approve|reject|recheck" });
+    const note = String(req.body?.note || "").slice(0, 300);
     if (kind === "spot") {
       const s = await storage.rawSpot(id(req));
       if (!s) return res.status(404).json({ message: "Not found" });
@@ -527,15 +548,19 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (action === "recheck") { await storage.setSpotMod(s.id, { modState: "checking", modAttempts: 0 }); kickModerator(); }
       else if (action === "approve") {
         if (edit) await storage.updateSpot(s.id, edit);
-        await storage.setSpotMod(s.id, { status: edit ? s.status : "live", pendingEdit: null, modState: "approved", modNote: "", modAttempts: 0 });
-      } else await storage.setSpotMod(s.id, edit ? { pendingEdit: null, modState: "approved", modNote: "" } : { status: "rejected", modState: "flagged" });
+        await storage.setSpotMod(s.id, { status: "live", pendingEdit: null, modState: "approved", modNote: "", modAttempts: 0 });
+      } else await storage.setSpotMod(s.id, edit ? { pendingEdit: null, modState: "approved", modNote: "" } : { status: "rejected", modState: "rejected", modNote: note ? `[admin] ${note}` : "[admin] Removed by a moderator." });
+      const before = edit && action === "approve" ? Object.fromEntries(Object.keys(edit).map((k) => [k, (s as any)[k] ?? null])) : undefined;
+      await storage.logMod({ kind: "spot", targetId: s.id, actor: "admin", action, reason: note || (edit ? (action === "approve" ? "Edit applied" : action === "reject" ? "Edit discarded" : "") : ""), isEdit: !!edit, before, after: edit || undefined });
     } else {
       const r = await storage.getReview(id(req));
       if (!r) return res.status(404).json({ message: "Not found" });
       let edit: any = null; try { edit = r.pendingEdit ? JSON.parse(r.pendingEdit) : null; } catch { /* ignore */ }
       if (action === "recheck") { await storage.setReviewMod(r.id, { modState: "checking", modAttempts: 0 }); kickModerator(); }
-      else if (action === "approve") await storage.setReviewMod(r.id, { ...(edit || {}), status: edit ? r.status : "live", pendingEdit: null, modState: "approved", modNote: "", modAttempts: 0 });
-      else await storage.setReviewMod(r.id, edit ? { pendingEdit: null, modState: "approved", modNote: "" } : { status: "rejected", modState: "flagged" });
+      else if (action === "approve") await storage.setReviewMod(r.id, { ...(edit || {}), status: "live", pendingEdit: null, modState: "approved", modNote: "", modAttempts: 0 });
+      else await storage.setReviewMod(r.id, edit ? { pendingEdit: null, modState: "approved", modNote: "" } : { status: "rejected", modState: "rejected", modNote: note ? `[admin] ${note}` : "[admin] Removed by a moderator." });
+      const before = edit && action === "approve" ? { rating: r.rating, comment: r.comment, costLevel: r.costLevel } : undefined;
+      await storage.logMod({ kind: "review", targetId: r.id, actor: "admin", action, reason: note || (edit ? (action === "approve" ? "Edit applied" : action === "reject" ? "Edit discarded" : "") : ""), isEdit: !!edit, before, after: edit || undefined });
     }
     res.json({ ok: true });
   });
