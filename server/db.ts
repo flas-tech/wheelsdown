@@ -86,6 +86,8 @@ ALTER TABLE spots ADD COLUMN IF NOT EXISTS lng double precision;
 ALTER TABLE spots ADD COLUMN IF NOT EXISTS place_ref text;
 ALTER TABLE reviews ADD COLUMN IF NOT EXISTS cost_level integer;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS aircraft text NOT NULL DEFAULT '';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS bio text NOT NULL DEFAULT '';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS interests text NOT NULL DEFAULT '[]';
 ALTER TABLE spots ADD COLUMN IF NOT EXISTS mod_state text NOT NULL DEFAULT '';
 ALTER TABLE spots ADD COLUMN IF NOT EXISTS mod_note text NOT NULL DEFAULT '';
 ALTER TABLE spots ADD COLUMN IF NOT EXISTS mod_attempts integer NOT NULL DEFAULT 0;
@@ -107,6 +109,9 @@ CREATE TABLE IF NOT EXISTS mod_log (id serial PRIMARY KEY, kind text NOT NULL, t
   problem text NOT NULL DEFAULT '', reason text NOT NULL DEFAULT '', is_edit integer NOT NULL DEFAULT 0, before text, after text, created_at bigint NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS mod_log_target_idx ON mod_log(kind, target_id);
 CREATE INDEX IF NOT EXISTS mod_log_created_idx ON mod_log(created_at);
+CREATE TABLE IF NOT EXISTS follows (follower_id integer NOT NULL, followee_id integer NOT NULL, created_at bigint NOT NULL DEFAULT 0);
+CREATE UNIQUE INDEX IF NOT EXISTS follows_pair_idx ON follows(follower_id, followee_id);
+CREATE INDEX IF NOT EXISTS follows_followee_idx ON follows(followee_id);
 CREATE TABLE IF NOT EXISTS app_settings (key text PRIMARY KEY, value text NOT NULL DEFAULT '');
 `;
 

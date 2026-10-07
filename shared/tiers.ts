@@ -109,8 +109,9 @@ export const publicName = (u: { displayName: string; crewRole: string; anonymous
 export type PublicUser = {
   id: number; handle: string; displayName: string; crewRole: string; homeBase: string; anonymous: boolean; participation: number;
   points: number; tierId: TierId; createdAt: number; aircraft: string;
+  bio: string; interests: string[]; // empty for anonymous members
 };
-export type Me = PublicUser & { breakdown: PointsBreakdown; email?: string };
+export type Me = PublicUser & { breakdown: PointsBreakdown; email?: string; follows?: { followers: number; following: number } };
 
 // Demo crew members so the leaderboard has range (bonus = legacy points for the demo only)
 export const SEED_USERS = [

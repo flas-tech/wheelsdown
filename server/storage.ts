@@ -1,4 +1,5 @@
-import { airports, spots, reviews, ads, votes, users, sessions, passwordResets, briefings, favorites, modLog, appSettings } from "@shared/schema";
+import { airports, spots, reviews, ads, votes, users, sessions, passwordResets, briefings, favorites, modLog, appSettings, follows } from "@shared/schema";
+import { parseInterests } from "@shared/interests";
 import type { Briefing, BriefingStop } from "@shared/schema";
 import { crewCost } from "@shared/cost";
 import { refAirport, isCode } from "./airportsData";
@@ -354,9 +355,10 @@ export class DatabaseStorage {
     }).returning())[0];
   }
   /** Update profile; re-labels the member's existing posts so the anonymous preference applies everywhere. */
-  async updateUser(id: number, patch: { displayName?: string; crewRole?: string; homeBase?: string; anonymous?: boolean; email?: string; aircraft?: string }) {
+  async updateUser(id: number, patch: { displayName?: string; crewRole?: string; homeBase?: string; anonymous?: boolean; email?: string; aircraft?: string; bio?: string; interests?: string[] }) {
     const d = db();
     const set: any = { ...patch };
+    if (patch.interests !== undefined) set.interests = JSON.stringify(Array.from(new Set(patch.interests)));
     if (patch.anonymous !== undefined) set.anonymous = patch.anonymous ? 1 : 0;
     if (patch.email !== undefined) {
       set.email = patch.email || null;
@@ -383,6 +385,7 @@ export class DatabaseStorage {
     await d.update(spots).set({ userId: null, submittedBy: "Former crew member" }).where(eq(spots.userId, id));
     await d.delete(briefings).where(eq(briefings.userId, id));
     await d.delete(favorites).where(eq(favorites.userId, id));
+    await d.delete(follows).where(or(eq(follows.followerId, id), eq(follows.followeeId, id)));
     await d.delete(sessions).where(eq(sessions.userId, id));
     await d.delete(passwordResets).where(eq(passwordResets.userId, id));
     await d.delete(users).where(eq(users.id, id));
@@ -451,6 +454,7 @@ export class DatabaseStorage {
       return {
         id: u.id, handle: anon && !admin ? "" : u.handle, displayName: admin ? u.displayName : publicName(u), crewRole: u.crewRole, homeBase: u.homeBase || "",
         anonymous: anon, participation: b.participation, points: b.total, tierId: tierFor(b.total).tier.id, createdAt: u.createdAt, aircraft: u.aircraft || "",
+        bio: anon && !admin ? "" : u.bio || "", interests: anon && !admin ? [] : parseInterests(u.interests),
         ...(admin ? { email: u.email } : {}),
       };
     }).sort((a, b) => b.points - a.points);
@@ -501,6 +505,7 @@ export class DatabaseStorage {
     return {
       id: u.id, handle: u.handle, email: u.email || "", displayName: u.displayName, crewRole: u.crewRole, homeBase: u.homeBase || "", anonymous: !!u.anonymous,
       participation: b.participation, points: b.total, tierId: tierFor(b.total).tier.id, createdAt: u.createdAt, aircraft: u.aircraft || "", breakdown: b,
+      bio: u.bio || "", interests: parseInterests(u.interests), follows: await this.followCounts(u.id),
     };
   }
   async userContributions(userId: number) {
@@ -513,22 +518,64 @@ export class DatabaseStorage {
     return { spots: mySpots, reviews: rs.map((r) => ({ ...r, modNote: r.modNote.replace(/^\[[a-z_]+\]\s*/, ""), spotName: names.get(r.spotId) || "" })), activity: recentActivity(await this.loadActivity(), userId) };
   }
   /** Public crew profile. Anonymous members show stats only, so their posts cannot be traced back to them. */
-  async crewProfile(userId: number) {
+  async crewProfile(userId: number, viewerId?: number) {
     const pub = (await this.publicUsers()).find((u) => u.id === userId);
     if (!pub) return undefined;
     const rank = (await this.publicUsers()).findIndex((u) => u.id === userId) + 1;
     const u = (await db().select().from(users).where(eq(users.id, userId)))[0];
     const c = await this.userContributions(userId);
     const counts = { listings: c.spots.filter((s) => s.status === "live").length, reviews: c.reviews.filter((r) => r.status === "live").length };
-    if (u?.anonymous) return { user: pub, rank, counts, spots: [], reviews: [], hidden: true };
+    // anonymous members can't be followed, so their follower counts aren't shown either
+    const follow = u?.anonymous ? null : { ...(await this.followCounts(userId)), isFollowing: viewerId ? await this.isFollowing(viewerId, userId) : false };
+    if (u?.anonymous) return { user: pub, rank, counts, follow, spots: [], reviews: [], hidden: true };
     const live = new Set(c.spots.filter((s) => s.status === "live").map((s) => s.id));
     const liveIds = (await db().select({ id: spots.id }).from(spots).where(eq(spots.status, "live"))).map((x) => x.id);
     const liveAll = new Set(liveIds);
     return {
-      user: pub, rank, counts, hidden: false,
+      user: pub, rank, counts, follow, hidden: false,
       spots: c.spots.filter((s) => live.has(s.id)).map(({ mod: _m, ...s }) => s),
       reviews: c.reviews.filter((r) => liveAll.has(r.spotId) && r.status === "live").map(({ userId: _u, pendingEdit: _p, modNote: _n, ...r }) => r),
     };
+  }
+
+  // ---- following ----
+  async followCounts(userId: number) {
+    const anon = new Set((await db().select({ id: users.id }).from(users).where(eq(users.anonymous, 1))).map((x) => x.id));
+    const ers = await db().select({ id: follows.followerId }).from(follows).where(eq(follows.followeeId, userId));
+    const ing = await db().select({ id: follows.followeeId }).from(follows).where(eq(follows.followerId, userId));
+    return { followers: ers.length, following: ing.filter((x) => !anon.has(x.id)).length };
+  }
+  async isFollowing(followerId: number, followeeId: number) {
+    return !!(await db().select().from(follows).where(and(eq(follows.followerId, followerId), eq(follows.followeeId, followeeId))))[0];
+  }
+  async setFollow(followerId: number, followeeId: number, on: boolean) {
+    if (on) await db().insert(follows).values({ followerId, followeeId, createdAt: Date.now() }).onConflictDoNothing();
+    else await db().delete(follows).where(and(eq(follows.followerId, followerId), eq(follows.followeeId, followeeId)));
+  }
+  /** People you follow (or who follow you). Anonymous members are left out of both lists. */
+  async followList(userId: number, which: "following" | "followers") {
+    const rows = which === "following"
+      ? await db().select({ id: follows.followeeId, at: follows.createdAt }).from(follows).where(eq(follows.followerId, userId))
+      : await db().select({ id: follows.followerId, at: follows.createdAt }).from(follows).where(eq(follows.followeeId, userId));
+    const at = new Map(rows.map((r) => [r.id, r.at]));
+    return (await this.publicUsers()).filter((u) => at.has(u.id) && !u.anonymous).sort((a, b) => (at.get(b.id) || 0) - (at.get(a.id) || 0));
+  }
+  /** New live listings and ratings from people you follow, newest first. */
+  async followFeed(userId: number, limit = 40) {
+    const d = db();
+    const ids = (await this.followList(userId, "following")).map((u) => u.id);
+    if (!ids.length) return [];
+    const ppl = new Map((await this.publicUsers()).map((u) => [u.id, u]));
+    const ss = await d.select().from(spots).where(and(inArray(spots.userId, ids), eq(spots.status, "live"))).orderBy(desc(spots.createdAt)).limit(limit);
+    const rs = await d.select().from(reviews).where(and(inArray(reviews.userId, ids), eq(reviews.status, "live"))).orderBy(desc(reviews.createdAt)).limit(limit);
+    const rSpots = rs.length ? await d.select({ id: spots.id, name: spots.name, icao: spots.icao, category: spots.category, status: spots.status }).from(spots).where(inArray(spots.id, Array.from(new Set(rs.map((r) => r.spotId))))) : [];
+    const sm = new Map(rSpots.map((x) => [x.id, x]));
+    const who = (id: number | null) => { const u = id ? ppl.get(id) : undefined; return u ? { id: u.id, displayName: u.displayName, aircraft: u.aircraft, tierId: u.tierId } : null; };
+    const items = [
+      ...ss.map((s) => ({ kind: "spot" as const, at: s.createdAt, user: who(s.userId), spot: { id: s.id, name: s.name, icao: s.icao, category: s.category }, description: s.description.slice(0, 200) })),
+      ...rs.filter((r) => sm.get(r.spotId)?.status === "live").map((r) => { const sp = sm.get(r.spotId)!; return { kind: "review" as const, at: r.createdAt, user: who(r.userId), spot: { id: sp.id, name: sp.name, icao: sp.icao, category: sp.category }, rating: r.rating, comment: r.comment.slice(0, 280) }; }),
+    ].filter((x) => x.user);
+    return items.sort((a, b) => b.at - a.at).slice(0, limit);
   }
 
   // ---- trip briefings ----

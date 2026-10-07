@@ -1,4 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { InterestChips } from "@/lib/interests";
+import { useToast } from "@/hooks/use-toast";
+import { UserPlus, UserCheck } from "lucide-react";
 import { Link, useRoute } from "wouter";
 import { ArrowLeft, EyeOff, MessageSquare, MapPin } from "lucide-react";
 import type { Review, SpotWithStats } from "@shared/schema";
@@ -13,12 +17,22 @@ import { SpotCard } from "./home";
 type CrewProfile = {
   user: PublicUser; rank: number; hidden: boolean; counts: { listings: number; reviews: number };
   spots: SpotWithStats[]; reviews: (Omit<Review, "userId"> & { spotName: string })[];
+  follow: { followers: number; following: number; isFollowing: boolean } | null;
 };
 
 export default function CrewProfilePage() {
   const [, params] = useRoute("/crew/:id");
-  const { me } = useAuth();
-  const { data, isLoading, isError } = useQuery<CrewProfile>({ queryKey: ["/api/crew", params?.id] });
+  const { me, openAuth } = useAuth();
+  const { toast } = useToast();
+  const { data, isLoading, isError } = useQuery<CrewProfile>({ queryKey: ["/api/crew", params?.id, me?.id ?? 0], queryFn: async () => (await apiRequest("GET", `/api/crew/${params?.id}`)).json() });
+  const follow = useMutation({
+    mutationFn: async (on: boolean) => (await apiRequest(on ? "POST" : "DELETE", `/api/crew/${params?.id}/follow`)).json(),
+    onSuccess: (r: { isFollowing: boolean; followers: number; following: number }) => {
+      queryClient.setQueryData(["/api/crew", params?.id, me?.id ?? 0], (old: CrewProfile | undefined) => old && { ...old, follow: { followers: r.followers, following: r.following, isFollowing: r.isFollowing } });
+      queryClient.invalidateQueries({ queryKey: ["/api/me/following"] }); queryClient.invalidateQueries({ queryKey: ["/api/me/feed"] }); queryClient.invalidateQueries({ queryKey: ["/api/me"] });
+    },
+    onError: (e: Error) => toast({ title: "Couldn't update", description: e.message.replace(/^\d+:\s*/, ""), variant: "destructive" }),
+  });
 
   if (isLoading) return <div className="space-y-4"><Skeleton className="h-48 rounded-3xl" /><Skeleton className="h-24 rounded-2xl" /></div>;
   if (isError || !data) return <p className="text-sm text-muted-foreground">This crew member isn't available. <Link href="/crew" className="text-primary underline">Back to the leaderboard</Link></p>;
@@ -36,6 +50,28 @@ export default function CrewProfilePage() {
         <Stat label="Ratings" value={counts.reviews} />
         <Stat label="Contributions" value={u.participation} />
       </div>
+      {(u.bio || u.interests?.length > 0 || data.follow) && (
+        <section className="space-y-3" data-testid="section-crew-about">
+          {u.bio && <p className="text-sm whitespace-pre-line" data-testid="text-crew-bio">{u.bio}</p>}
+          <InterestChips ids={u.interests || []} />
+          {data.follow && (
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="text-sm text-muted-foreground" data-testid="text-follow-counts">
+                <span className="font-semibold text-foreground tabular">{data.follow.followers}</span> {data.follow.followers === 1 ? "follower" : "followers"}
+                <span className="mx-2">·</span><span className="font-semibold text-foreground tabular">{data.follow.following}</span> following
+              </p>
+              {!isMe && (me ? (
+                <button onClick={() => follow.mutate(!data.follow!.isFollowing)} disabled={follow.isPending} aria-pressed={data.follow.isFollowing} data-testid="button-follow"
+                  className={data.follow.isFollowing ? "inline-flex h-10 items-center gap-1.5 rounded-full border border-border px-4 text-sm font-semibold hover-elevate" : "inline-flex h-10 items-center gap-1.5 rounded-full taxi-sign px-4 text-sm font-semibold hover-elevate"}>
+                  {data.follow.isFollowing ? <><UserCheck className="h-4 w-4" />Following</> : <><UserPlus className="h-4 w-4" />Follow</>}
+                </button>
+              ) : (
+                <button onClick={() => openAuth()} className="inline-flex h-10 items-center gap-1.5 rounded-full border border-border px-4 text-sm font-semibold" data-testid="button-follow-signin"><UserPlus className="h-4 w-4" />Sign in to follow</button>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
       {isMe && <p className="text-xs text-muted-foreground">This is how other crews see you. <Link href="/me" className="text-primary underline">Edit your profile</Link></p>}
 
       {data.hidden ? (

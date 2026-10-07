@@ -14,7 +14,7 @@ import { isValidCost, costOptions, milesBetween, isPace, paceMinutes } from "@sh
 import { suggestPicks } from "@shared/briefing";
 import { refAirport, nearestAirports, isCode } from "./airportsData";
 import { searchPlaces, nearbyPlaces } from "./places";
-import { AI_ENABLED, autofill, checkName } from "./ai";
+import { AI_ENABLED, autofill, checkName, checkBio } from "./ai";
 import { startModerator, kickModerator, findDuplicate, SPOT_EDIT_FIELDS, manualReview, setManualReview, modStatus } from "./moderator";
 import { z } from "zod";
 
@@ -151,6 +151,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (!p.success) return res.status(400).json({ message: msg(p.error) });
     if (p.data.displayName && p.data.displayName !== (req as any).user.displayName) {
       const bad = await checkName(p.data.displayName);
+      if (bad) return res.status(400).json({ message: bad });
+    }
+    if (p.data.bio && p.data.bio !== (req as any).user.bio) {
+      const bad = await checkBio(p.data.bio);
       if (bad) return res.status(400).json({ message: bad });
     }
     try { res.json(await storage.me(await storage.updateUser((req as any).user.id, p.data))); }
@@ -416,9 +420,29 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   // ---------- crew profiles ----------
   app.get("/api/crew/:id", async (req, res) => {
-    const p = await storage.crewProfile(id(req));
+    const viewer = await userOf(req);
+    const p = await storage.crewProfile(id(req), viewer?.id);
     p ? res.json(p) : res.status(404).json({ message: "Not found" });
   });
+  // ---------- following (no points; anonymous members can't be followed) ----------
+  const followLimit = rateLimit({ windowMs: 60_000, limit: 60, standardHeaders: true, legacyHeaders: false, message: { message: "Too many follow changes. Try again in a minute." } });
+  app.post("/api/crew/:id/follow", requireUser, followLimit, async (req, res) => {
+    const me = (req as any).user as User, target = id(req);
+    if (target === me.id) return res.status(400).json({ message: "You can't follow yourself" });
+    const t = (await storage.publicUsers()).find((u) => u.id === target);
+    if (!t) return res.status(404).json({ message: "Not found" });
+    if (t.anonymous) return res.status(400).json({ message: "This member posts anonymously, so they can't be followed" });
+    await storage.setFollow(me.id, target, true);
+    res.json({ isFollowing: true, ...(await storage.followCounts(target)) });
+  });
+  app.delete("/api/crew/:id/follow", requireUser, followLimit, async (req, res) => {
+    const me = (req as any).user as User;
+    await storage.setFollow(me.id, id(req), false);
+    res.json({ isFollowing: false, ...(await storage.followCounts(id(req))) });
+  });
+  app.get("/api/me/following", requireUser, async (req, res) => res.json(await storage.followList((req as any).user.id, "following")));
+  app.get("/api/me/followers", requireUser, async (req, res) => res.json(await storage.followList((req as any).user.id, "followers")));
+  app.get("/api/me/feed", requireUser, async (req, res) => res.json(await storage.followFeed((req as any).user.id)));
 
   // ---------- trip briefings (signed-in crew; no points) ----------
   async function sponsorFor(icao: string) {

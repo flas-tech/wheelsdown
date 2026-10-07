@@ -1,4 +1,6 @@
 import { AircraftPicker, CrewAvatar } from "@/lib/aircraft";
+import { InterestPicker, InterestChips } from "@/lib/interests";
+import { BIO_MAX } from "@shared/interests";
 import { aircraftById } from "@shared/aircraft";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -99,6 +101,19 @@ export default function ProfilePage() {
   return (
     <div className="space-y-5">
       <TierCard points={me.points} name={me.displayName} sub={`@${me.handle} · ${me.crewRole}${me.homeBase ? " · " + me.homeBase : ""}`} tierId={me.tierId} aircraft={me.aircraft || ""} />
+      {(me.bio || me.interests?.length || me.follows) && (
+        <div className="space-y-2.5" data-testid="section-my-about">
+          {me.bio && <p className="text-sm whitespace-pre-line" data-testid="text-my-bio">{me.bio}</p>}
+          <InterestChips ids={me.interests || []} />
+          {me.follows && !me.anonymous && (
+            <p className="text-sm text-muted-foreground">
+              <Link href="/following" className="hover:text-foreground" data-testid="link-my-following"><span className="font-semibold text-foreground tabular">{me.follows.following}</span> following</Link>
+              <span className="mx-2">·</span>
+              <Link href="/followers" className="hover:text-foreground" data-testid="link-my-followers"><span className="font-semibold text-foreground tabular">{me.follows.followers}</span> followers</Link>
+            </p>
+          )}
+        </div>
+      )}
 
       <Participation b={b} />
 
@@ -195,11 +210,12 @@ function Participation({ b }: { b: { participation: number; listings: number; re
 function ProfileSettings() {
   const { me } = useAuth();
   const { toast } = useToast();
-  const [f, setF] = useState({ displayName: "", crewRole: "Pilot", homeBase: "", anonymous: false, email: "", aircraft: "" });
-  useEffect(() => { if (me) setF({ displayName: me.displayName, crewRole: me.crewRole, homeBase: me.homeBase, anonymous: me.anonymous, email: me.email || "", aircraft: me.aircraft || "" }); }, [me?.id, me?.displayName, me?.crewRole, me?.homeBase, me?.anonymous, me?.email, me?.aircraft]);
-  const dirty = !!me && (f.displayName !== me.displayName || f.crewRole !== me.crewRole || f.homeBase !== me.homeBase || f.anonymous !== me.anonymous || f.email !== (me.email || "") || f.aircraft !== (me.aircraft || ""));
+  const [f, setF] = useState({ displayName: "", crewRole: "Pilot", homeBase: "", anonymous: false, email: "", aircraft: "", bio: "", interests: [] as string[] });
+  const meInterests = (me?.interests || []).join(",");
+  useEffect(() => { if (me) setF({ displayName: me.displayName, crewRole: me.crewRole, homeBase: me.homeBase, anonymous: me.anonymous, email: me.email || "", aircraft: me.aircraft || "", bio: me.bio || "", interests: me.interests || [] }); }, [me?.id, me?.displayName, me?.crewRole, me?.homeBase, me?.anonymous, me?.email, me?.aircraft, me?.bio, meInterests]);
+  const dirty = !!me && (f.displayName !== me.displayName || f.crewRole !== me.crewRole || f.homeBase !== me.homeBase || f.anonymous !== me.anonymous || f.email !== (me.email || "") || f.aircraft !== (me.aircraft || "") || f.bio.trim() !== (me.bio || "") || f.interests.join(",") !== meInterests);
   const m = useMutation({
-    mutationFn: async () => (await apiRequest("PATCH", "/api/me", f)).json(),
+    mutationFn: async () => (await apiRequest("PATCH", "/api/me", { ...f, bio: f.bio.trim() })).json(),
     onSuccess: (next) => {
       queryClient.setQueryData(["/api/me"], next);
       queryClient.invalidateQueries();
@@ -233,6 +249,20 @@ function ProfileSettings() {
         <div className="mt-1"><AircraftPicker value={f.aircraft} onChange={(a) => setF({ ...f, aircraft: a })} /></div>
       </div>
       <label className="block">
+        <span className="flex items-baseline justify-between text-xs font-medium text-muted-foreground">
+          <span>About you <span className="font-normal">· public, shown on your crew profile</span></span>
+          <span className={cn("font-normal tabular", f.bio.length > BIO_MAX - 20 && "text-foreground")}>{f.bio.length}/{BIO_MAX}</span>
+        </span>
+        <textarea value={f.bio} onChange={(e) => setF({ ...f, bio: e.target.value.slice(0, BIO_MAX) })} rows={3} maxLength={BIO_MAX} data-testid="input-profile-bio"
+          placeholder="CJ3 captain out of OPF. Always hunting the best slice near the FBO."
+          className="mt-1 w-full rounded-xl border border-input bg-background px-3 py-2.5 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none" />
+        <span className="text-[11px] text-muted-foreground">No links, phone numbers or emails. It's checked before it's saved.</span>
+      </label>
+      <div>
+        <span className="text-xs font-medium text-muted-foreground">Your expertise <span className="font-normal">· pick up to 5 badges for your profile</span></span>
+        <div className="mt-1.5"><InterestPicker value={f.interests} onChange={(v) => setF({ ...f, interests: v })} /></div>
+      </div>
+      <label className="block">
         <span className="text-xs font-medium text-muted-foreground">Home base (optional)</span>
         <input value={f.homeBase} onChange={(e) => setF({ ...f, homeBase: e.target.value.toUpperCase().slice(0, 4) })} placeholder="KMIA" data-testid="input-profile-base" className={inputCls + " mt-1 font-code uppercase w-32"} />
       </label>
@@ -245,6 +275,7 @@ function ProfileSettings() {
         {m.isPending ? "Saving…" : "Save profile"}
       </button>
       {f.anonymous !== me.anonymous && <p className="text-[11px] text-muted-foreground">Changing this also updates the name on everything you've already posted.</p>}
+      {f.anonymous && <p className="text-[11px] text-muted-foreground">While you post anonymously, your bio, badges and followers stay hidden and nobody can follow you.</p>}
     </section>
   );
 }

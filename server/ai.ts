@@ -254,6 +254,23 @@ problem "none" + verdict approve when fine. reason: one short sentence when reje
   } catch { return null; }
 }
 
+/** Profile "about me": contact details are never allowed; the AI catches anything offensive. Returns a message to show, or null when fine. */
+export async function checkBio(bio: string): Promise<string | null> {
+  const t = bio.trim();
+  if (!t) return null;
+  if (/https?:\/\/|www\.|\b[a-z0-9-]+\.(com|net|org|io|co|biz|info|me|app)\b/i.test(t)) return "Leave links out of your bio. Crews can find you through your profile.";
+  if (/[\w.+-]+@[\w-]+\.[\w.]+/.test(t) || /(\+?\d[\s().-]?){9,}/.test(t)) return "Leave phone numbers and emails out of your bio, since it's public.";
+  if (!AI_ENABLED) return null;
+  try {
+    const mod = await moderationEndpoint(t);
+    if (mod?.flagged) return "Your bio has language that isn't allowed. Keep it friendly; it's public.";
+    const v = normalize(await callModel<Verdict>(`You check short public profile bios on a site for airline and charter flight crews. ${SAFETY}
+Reject bios that are offensive, hateful, sexual, harassing, advertise a business or service, solicit, or share personal contact details or another person's private info. Normal self-descriptions, jobs, home towns, food opinions and jokes are fine.
+problem "none" + verdict approve when fine. reason: one short polite sentence telling them what to change when rejecting.`, JSON.stringify({ bio: t }), { schema: VERDICT_SCHEMA, timeoutMs: 10_000, effort: "minimal" }));
+    return v.verdict === "reject" ? v.reason || "Please reword your bio; it's public." : null;
+  } catch { return null; }
+}
+
 function normalize(v: Verdict): Verdict {
   if (!["approve", "review", "reject"].includes(v.verdict)) v.verdict = "review";
   // drop inline citations like ([site](url)) and turn [text](url) into text

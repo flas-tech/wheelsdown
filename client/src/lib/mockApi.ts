@@ -6,6 +6,7 @@ import { computeVet, seedVotesFor, shouldAutoHold } from "@shared/vetting";
 import { computePoints, recentActivity, publicName, tierFor, SEED_USERS, SEED_PASSWORD } from "@shared/tiers";
 import { CREW_ROLES } from "@shared/schema";
 import { aircraftById } from "@shared/aircraft";
+import { BIO_MAX, INTERESTS, MAX_INTERESTS } from "@shared/interests";
 import { buildHighlights } from "@shared/highlights";
 import { crewCost, costOptions, isValidCost, milesBetween, isPace, paceMinutes } from "@shared/cost";
 import { suggestPicks } from "@shared/briefing";
@@ -15,9 +16,9 @@ import type { BriefingStop } from "@shared/schema";
 export const DEMO_ADMIN_KEY = "wheelsdown-admin";
 const STORE_KEY = "wheelsdown-demo-v4";
 
-type DemoUser = { id: number; handle: string; displayName: string; crewRole: string; homeBase: string; anonymous: boolean; email?: string; aircraft?: string; pw: string; bonusPoints: number; createdAt: number };
+type DemoUser = { id: number; handle: string; displayName: string; crewRole: string; homeBase: string; anonymous: boolean; email?: string; aircraft?: string; bio?: string; interests?: string[]; pw: string; bonusPoints: number; createdAt: number };
 type DemoBriefing = { id: number; userId: number; title: string; stops: BriefingStop[]; shareToken: string; createdAt: number; updatedAt: number };
-type DB = { airports: Airport[]; spots: Spot[]; reviews: Review[]; ads: Ad[]; votes: Vote[]; users: DemoUser[]; sessions: Record<string, number>; briefings?: DemoBriefing[]; favorites?: { userId: number; spotId: number; at: number }[];
+type DB = { airports: Airport[]; spots: Spot[]; reviews: Review[]; ads: Ad[]; votes: Vote[]; users: DemoUser[]; sessions: Record<string, number>; briefings?: DemoBriefing[]; favorites?: { userId: number; spotId: number; at: number }[]; follows?: { a: number; b: number; at: number }[];
   seq: { spot: number; review: number; ad: number; vote: number; user: number } };
 // Demo only: not a secure hash. The server build uses scrypt.
 const demoHash = (pw: string) => { let h = 5381; for (let i = 0; i < pw.length; i++) h = ((h << 5) + h + pw.charCodeAt(i)) | 0; return "demo:" + (h >>> 0).toString(36); };
@@ -135,12 +136,17 @@ export function exportCsv() {
 function meOf(u: DemoUser) {
   const b = computePoints(db, u.id, u.bonusPoints);
   return { id: u.id, handle: u.handle, displayName: u.displayName, crewRole: u.crewRole, homeBase: u.homeBase, anonymous: !!u.anonymous, email: u.email || "",
-    participation: b.participation, points: b.total, tierId: tierFor(b.total).tier.id, createdAt: u.createdAt, aircraft: u.aircraft || "", breakdown: b };
+    participation: b.participation, points: b.total, tierId: tierFor(b.total).tier.id, createdAt: u.createdAt, aircraft: u.aircraft || "", breakdown: b,
+    bio: u.bio || "", interests: u.interests || [], follows: followCounts(u.id) };
+}
+const fl = () => (db.follows ||= []);
+function followCounts(id: number) {
+  return { followers: fl().filter((f) => f.b === id).length, following: fl().filter((f) => f.a === id && !db.users.find((u) => u.id === f.b)?.anonymous).length };
 }
 function publicUsers(admin = false) {
   return db.users.map((u) => {
-    const { breakdown, ...rest } = meOf(u);
-    return admin || !u.anonymous ? rest : { ...rest, handle: "", displayName: publicName(u) };
+    const { breakdown, follows: _f, ...rest } = meOf(u);
+    return admin || !u.anonymous ? rest : { ...rest, handle: "", displayName: publicName(u), bio: "", interests: [] };
   }).sort((a, b) => b.points - a.points);
 }
 function relabel(u: DemoUser) {
@@ -193,6 +199,8 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
     if (body.anonymous !== undefined) u.anonymous = !!body.anonymous;
     if (body.email !== undefined) u.email = String(body.email).trim().toLowerCase();
     if (body.aircraft !== undefined) { if (body.aircraft && !aircraftById(String(body.aircraft))) throw new HttpError(400, "Pick an aircraft"); u.aircraft = String(body.aircraft); }
+    if (body.bio !== undefined) { const t = String(body.bio).trim(); if (/https?:\/\/|www\.|@\w+\.\w/.test(t)) throw new HttpError(400, "Leave links and emails out of your bio."); u.bio = t.slice(0, BIO_MAX); }
+    if (body.interests !== undefined) u.interests = (Array.isArray(body.interests) ? body.interests : []).filter((i: string) => i in INTERESTS).slice(0, MAX_INTERESTS);
     relabel(u); save();
     return meOf(u);
   }
@@ -379,9 +387,38 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
     const mySpots = withStats(db.spots.filter((s) => s.userId === uid && s.status === "live")).sort((a, b) => b.createdAt - a.createdAt);
     const myRevs = db.reviews.filter((r) => r.userId === uid && liveIds.has(r.spotId)).sort((a, b) => b.createdAt - a.createdAt);
     const counts = { listings: mySpots.length, reviews: myRevs.length };
-    if (du.anonymous) return { user: list[idx], rank: idx + 1, counts, spots: [], reviews: [], hidden: true };
-    return { user: list[idx], rank: idx + 1, counts, hidden: false, spots: mySpots,
+    const follow = du.anonymous ? null : { ...followCounts(uid), isFollowing: !!user && fl().some((f) => f.a === user.id && f.b === uid) };
+    if (du.anonymous) return { user: list[idx], rank: idx + 1, counts, follow, spots: [], reviews: [], hidden: true };
+    return { user: list[idx], rank: idx + 1, counts, follow, hidden: false, spots: mySpots,
       reviews: myRevs.map(({ userId: _u, ...r }) => ({ ...r, spotName: db.spots.find((s) => s.id === r.spotId)?.name || "" })) };
+  }
+
+  // ---- following ----
+  if ((m = path.match(/^\/api\/crew\/(\d+)\/follow$/)) && (method === "POST" || method === "DELETE")) {
+    const u = needUser(), uid = Number(m[1]);
+    const t = db.users.find((x) => x.id === uid);
+    if (!t) throw new HttpError(404, "Not found");
+    if (uid === u.id) throw new HttpError(400, "You can't follow yourself");
+    if (method === "POST") { if (t.anonymous) throw new HttpError(400, "This member posts anonymously, so they can't be followed"); if (!fl().some((f) => f.a === u.id && f.b === uid)) fl().push({ a: u.id, b: uid, at: Date.now() }); }
+    else db.follows = fl().filter((f) => !(f.a === u.id && f.b === uid));
+    save();
+    return { isFollowing: method === "POST", ...followCounts(uid) };
+  }
+  if (method === "GET" && (path === "/api/me/following" || path === "/api/me/followers")) {
+    const u = needUser();
+    const ids = path.endsWith("following") ? fl().filter((f) => f.a === u.id).map((f) => f.b) : fl().filter((f) => f.b === u.id).map((f) => f.a);
+    return publicUsers().filter((p) => ids.includes(p.id) && !p.anonymous);
+  }
+  if (method === "GET" && path === "/api/me/feed") {
+    const u = needUser();
+    const ids = new Set(fl().filter((f) => f.a === u.id && !db.users.find((x) => x.id === f.b)?.anonymous).map((f) => f.b));
+    const ppl = new Map(publicUsers().map((p) => [p.id, p]));
+    const who = (id: number | null) => { const p = id ? ppl.get(id) : undefined; return p ? { id: p.id, displayName: p.displayName, aircraft: p.aircraft, tierId: p.tierId } : null; };
+    const live = new Map(db.spots.filter((s) => s.status === "live").map((s) => [s.id, s]));
+    return [
+      ...db.spots.filter((s) => s.userId && ids.has(s.userId) && s.status === "live").map((s) => ({ kind: "spot", at: s.createdAt, user: who(s.userId), spot: { id: s.id, name: s.name, icao: s.icao, category: s.category }, description: s.description.slice(0, 200) })),
+      ...db.reviews.filter((r) => r.userId && ids.has(r.userId) && live.has(r.spotId)).map((r) => { const s = live.get(r.spotId)!; return { kind: "review", at: r.createdAt, user: who(r.userId), spot: { id: s.id, name: s.name, icao: s.icao, category: s.category }, rating: r.rating, comment: r.comment.slice(0, 280) }; }),
+    ].sort((a, b) => b.at - a.at).slice(0, 40);
   }
 
   // ---- trip briefings ----

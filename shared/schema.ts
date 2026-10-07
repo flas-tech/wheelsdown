@@ -1,4 +1,5 @@
 import { AIRCRAFT_IDS } from "./aircraft";
+import { BIO_MAX, INTEREST_IDS, MAX_INTERESTS } from "./interests";
 import { pgTable, text, integer, serial, bigint, doublePrecision, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -140,6 +141,13 @@ export const modLog = pgTable("mod_log", {
 export type ModLog = typeof modLog.$inferSelect;
 export const appSettings = pgTable("app_settings", { key: text("key").primaryKey(), value: text("value").notNull().default("") });
 
+// ---- Following other crew (no points involved) ----
+export const follows = pgTable("follows", {
+  followerId: integer("follower_id").notNull(),
+  followeeId: integer("followee_id").notNull(),
+  createdAt: bigint("created_at", { mode: "number" }).notNull().default(0),
+}, (t) => [uniqueIndex("follows_pair_idx").on(t.followerId, t.followeeId), index("follows_followee_idx").on(t.followeeId)]);
+
 // ---- Favorites (per crew member; always included in their trip briefings) ----
 export const favorites = pgTable("favorites", {
   userId: integer("user_id").notNull(),
@@ -217,6 +225,8 @@ export const users = pgTable("users", {
   bonusPoints: integer("bonus_points").notNull().default(0),
   anonymous: integer("anonymous").notNull().default(0),
   aircraft: text("aircraft").notNull().default(""), // profile icon, see shared/aircraft.ts
+  bio: text("bio").notNull().default(""), // short public "about me"
+  interests: text("interests").notNull().default("[]"), // JSON ids from shared/interests.ts
   createdAt: bigint("created_at", { mode: "number" }).notNull().default(0),
 });
 export type User = typeof users.$inferSelect;
@@ -251,6 +261,8 @@ export const updateMeSchema = z.object({
   anonymous: z.boolean().optional(),
   email: z.union([z.literal(""), z.string().trim().toLowerCase().email("That email doesn't look right")]).optional(),
   aircraft: z.string().refine((v) => v === "" || (AIRCRAFT_IDS as readonly string[]).includes(v), "Pick an aircraft from the list").optional(),
+  bio: z.string().trim().max(BIO_MAX, `Keep it to ${BIO_MAX} characters`).optional(),
+  interests: z.array(z.string().refine((v) => INTEREST_IDS.includes(v), "Pick from the list")).max(MAX_INTERESTS, `Pick up to ${MAX_INTERESTS}`).optional(),
 });
 export const loginSchema = z.object({ handle: z.string().trim().toLowerCase(), password: z.string() });
 export const forgotSchema = z.object({ email: z.string().trim().toLowerCase().email("Enter the email on your account") });

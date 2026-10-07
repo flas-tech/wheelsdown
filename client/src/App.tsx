@@ -17,6 +17,7 @@ import CrewPage from "@/pages/crew";
 import ResetPage from "@/pages/reset";
 import LegalPage from "@/pages/legal";
 import CrewProfilePage from "@/pages/crewProfile";
+import FollowingPage from "./pages/following";
 import { BriefListPage, BriefEditorPage, SharedBriefPage } from "@/pages/brief";
 import { AuthProvider, useAuth, Insignia } from "@/lib/auth";
 import { CrewAvatar } from "@/lib/aircraft";
@@ -81,6 +82,8 @@ function Shell() {
           <Route path="/admin" component={AdminPage} />
           <Route path="/me" component={ProfilePage} />
           <Route path="/crew" component={CrewPage} />
+          <Route path="/following" component={FollowingPage} />
+          <Route path="/followers" component={FollowingPage} />
           <Route path="/crew/:id" component={CrewProfilePage} />
           <Route path="/brief" component={BriefListPage} />
           <Route path="/brief/new" component={BriefEditorPage} />

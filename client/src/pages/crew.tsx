@@ -44,6 +44,14 @@ export default function CrewPage() {
       <header>
         <h1 className="text-xl font-semibold">Crew leaderboard</h1>
         <p className="text-sm text-muted-foreground mt-1">Everyone keeping the network vetted, ranked by points. Search for a person or a home base.</p>
+        {me && (
+          <div className="mt-3 inline-flex rounded-full border border-border p-0.5" role="tablist">
+            {([["/crew", "Leaderboard"], ["/following", "Following"], ["/followers", "Followers"]] as const).map(([href, label]) => (
+              <Link key={href} href={href} role="tab" aria-selected={href === "/crew"} data-testid={`tab-${label.toLowerCase()}`}
+                className={cn("inline-flex h-9 items-center rounded-full px-4 text-sm font-medium", href === "/crew" ? "bg-foreground text-background" : "text-muted-foreground")}>{label}</Link>
+            ))}
+          </div>
+        )}
       </header>
 
       {albatrosses.length > 0 && (
