@@ -6,6 +6,7 @@ import { computeVet, seedVotesFor, shouldAutoHold } from "@shared/vetting";
 import { computePoints, recentActivity, publicName, tierFor, SEED_USERS, SEED_PASSWORD } from "@shared/tiers";
 import { CREW_ROLES } from "@shared/schema";
 import { SERVICES } from "@shared/services";
+import type { FeedbackItem } from "@shared/feedback";
 import { achievementProgress, type AchStats } from "@shared/achievements";
 import { validAircraftList } from "@shared/aircraft";
 import { BIO_MAX, INTERESTS, MAX_INTERESTS } from "@shared/interests";
@@ -21,7 +22,7 @@ const STORE_KEY = "wheelsdown-demo-v4";
 
 type DemoUser = { id: number; handle: string; displayName: string; crewRole: string; homeBase: string; anonymous: boolean; email?: string; aircraft?: string; bio?: string; interests?: string[]; wrightNo?: number | null; pw: string; bonusPoints: number; createdAt: number };
 type DemoBriefing = { id: number; userId: number; title: string; stops: BriefingStop[]; shareToken: string; createdAt: number; updatedAt: number };
-type DB = { airports: Airport[]; spots: Spot[]; reviews: Review[]; ads: Ad[]; votes: Vote[]; users: DemoUser[]; sessions: Record<string, number>; briefings?: DemoBriefing[]; favorites?: { userId: number; spotId: number; at: number }[]; follows?: { a: number; b: number; at: number }[]; wrightTaken?: number;
+type DB = { airports: Airport[]; spots: Spot[]; reviews: Review[]; ads: Ad[]; votes: Vote[]; users: DemoUser[]; sessions: Record<string, number>; briefings?: DemoBriefing[]; favorites?: { userId: number; spotId: number; at: number }[]; follows?: { a: number; b: number; at: number }[]; wrightTaken?: number; feedback?: FeedbackItem[];
   seq: { spot: number; review: number; ad: number; vote: number; user: number } };
 // Demo only: not a secure hash. The server build uses scrypt.
 const demoHash = (pw: string) => { let h = 5381; for (let i = 0; i < pw.length; i++) h = ((h << 5) + h + pw.charCodeAt(i)) | 0; return "demo:" + (h >>> 0).toString(36); };
@@ -533,6 +534,29 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
     status: { lastRunAt: 0, lastError: "", lastErrorAt: 0, checking: 0, held: 0, approved24h: 0, held24h: 0, errors24h: 0, overrides24h: 0 } };
   if (method === "PUT" && path === "/api/admin/moderation/settings") return { manual: false };
   // the demo records no traffic; the report shows its real ad, audience and content numbers with empty traffic
+  // ---- feedback (demo: stored in this browser) ----
+  const fb = () => (db.feedback ||= []);
+  if (method === "POST" && path === "/api/feedback") {
+    const b = body || {}; const msg = String(b.message || "").trim();
+    if (msg.length < 5) throw new HttpError(400, "Tell us a little more");
+    if (b.website) return { ok: true };
+    const now = Date.now();
+    fb().unshift({ id: (fb()[0]?.id || 0) + 1, kind: String(b.kind || "other"), message: msg.slice(0, 2000), contact: user ? "" : String(b.contact || "").slice(0, 120), page: String(b.page || ""), device: "Demo browser",
+      status: "new", adminNote: "", createdAt: now, updatedAt: now, userId: user?.id ?? null, userName: user?.displayName ?? null, handle: user?.handle ?? null });
+    return { ok: true };
+  }
+  if (method === "GET" && path === "/api/admin/feedback") {
+    admin();
+    const st = query.get("status") || "open";
+    const items = fb().filter((f) => st === "all" || (st === "open" ? f.status === "new" || f.status === "reviewing" : f.status === st));
+    const counts: Record<string, number> = {}; fb().forEach((f) => { counts[f.status] = (counts[f.status] || 0) + 1; });
+    return { items, counts };
+  }
+  if ((m = path.match(/^\/api\/admin\/feedback\/(\d+)$/))) {
+    admin(); const f = fb().find((x) => x.id === Number(m![1])); if (!f) throw new HttpError(404, "Not found");
+    if (method === "PATCH") { if (body?.status) f.status = body.status; if (body?.adminNote !== undefined) f.adminNote = String(body.adminNote); f.updatedAt = Date.now(); return { ok: true }; }
+    if (method === "DELETE") { db.feedback = fb().filter((x) => x.id !== f.id); return { ok: true }; }
+  }
   if (method === "GET" && path === "/api/admin/costs") {
     const z = { calls: 0, failures: 0, input_tokens: 0, cached_tokens: 0, output_tokens: 0, searches: 0, cost: 0 };
     const days = [7, 30, 90].includes(Number(query.get("days"))) ? Number(query.get("days")) : 30;

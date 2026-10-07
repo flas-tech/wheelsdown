@@ -69,6 +69,7 @@ function Privacy() {
         <li><b>Contributions:</b> listings, ratings, comments and votes, and the points they earn.</li>
         <li><b>Posting preference:</b> if you choose Anonymous, your name is replaced on your posts and on the public leaderboard. Site administrators can still see which account made a post, for moderation.</li>
         <li><b>Technical:</b> standard server logs (IP address, time, page requested) kept for security and troubleshooting, and counts of ad views and clicks. Ad counts aren't tied to your account.</li>
+        <li><b>Feedback:</b> if you use Send feedback, we keep your message, the page you sent it from, your browser and device type, and your account or the email you choose to give. Only Wheelsdown admins can read it, and it is never posted publicly.</li>
         <li><b>Usage counts:</b> daily totals of visits, pages viewed, airports searched, listings opened, and taps to a business's website or map, so we can show sponsors how much the site is used. We count unique devices with a scrambled, random device code that isn't tied to your name, and report only totals to advertisers, never individual activity.</li>
       </ul>
       <h2>What we don't do</h2>

@@ -2,6 +2,7 @@ import { AircraftPicker, CrewAvatar } from "@/lib/aircraft";
 import { InterestPicker, InterestChips } from "@/lib/interests";
 import { WrightCard } from "@/lib/club";
 import { BadgeProgressGrid } from "@/lib/achievements";
+import { FeedbackCard } from "@/lib/feedback";
 import { InviteCard } from "@/lib/share";
 import { BIO_MAX } from "@shared/interests";
 import { aircraftList } from "@shared/aircraft";
@@ -134,6 +135,7 @@ export default function ProfilePage() {
 
       {me.achievements && <BadgeProgressGrid progress={me.achievements} />}
       <InviteCard />
+      <FeedbackCard />
 
       <ProfileSettings />
 

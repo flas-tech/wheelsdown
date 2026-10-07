@@ -114,6 +114,8 @@ CREATE TABLE IF NOT EXISTS follows (follower_id integer NOT NULL, followee_id in
 CREATE UNIQUE INDEX IF NOT EXISTS follows_pair_idx ON follows(follower_id, followee_id);
 CREATE INDEX IF NOT EXISTS follows_followee_idx ON follows(followee_id);
 CREATE TABLE IF NOT EXISTS metrics_daily (day text NOT NULL, kind text NOT NULL, key text NOT NULL DEFAULT '', n integer NOT NULL DEFAULT 0, PRIMARY KEY (day, kind, key));
+CREATE TABLE IF NOT EXISTS feedback (id serial PRIMARY KEY, user_id integer, kind text NOT NULL DEFAULT 'other', message text NOT NULL, contact text NOT NULL DEFAULT '', page text NOT NULL DEFAULT '', device text NOT NULL DEFAULT '', status text NOT NULL DEFAULT 'new', admin_note text NOT NULL DEFAULT '', created_at bigint NOT NULL DEFAULT 0, updated_at bigint NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS feedback_status_idx ON feedback (status, created_at);
 CREATE TABLE IF NOT EXISTS ai_usage_daily (day text NOT NULL, purpose text NOT NULL, calls integer NOT NULL DEFAULT 0, failures integer NOT NULL DEFAULT 0, input_tokens bigint NOT NULL DEFAULT 0, cached_tokens bigint NOT NULL DEFAULT 0, output_tokens bigint NOT NULL DEFAULT 0, searches integer NOT NULL DEFAULT 0, PRIMARY KEY (day, purpose));
 CREATE TABLE IF NOT EXISTS visitors_daily (day text NOT NULL, vid text NOT NULL, signed_in integer NOT NULL DEFAULT 0, PRIMARY KEY (day, vid));
 CREATE TABLE IF NOT EXISTS app_settings (key text PRIMARY KEY, value text NOT NULL DEFAULT '');

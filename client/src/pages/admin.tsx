@@ -18,6 +18,7 @@ import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { FEEDBACK_LABEL, type FeedbackItem } from "@shared/feedback";
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 
 const inputCls = "w-full h-9 rounded-lg border border-input bg-background px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring";
@@ -65,6 +66,8 @@ function Login({ onOk }: { onOk: () => void }) {
 
 function Console({ onLogout, viaAccount = false }: { onLogout: () => void; viaAccount?: boolean }) {
   const { data: stats } = useQuery<Record<string, number>>({ queryKey: ["/api/admin/stats"], queryFn: admGet("/api/admin/stats") });
+  const { data: fbOpen } = useQuery<{ counts: Record<string, number> }>({ queryKey: ["/api/admin/feedback", "open"], queryFn: admGet("/api/admin/feedback?status=open"), refetchInterval: 30000 });
+  const fbNew = fbOpen?.counts?.new || 0;
   const ctr = stats && stats.impressions ? ((stats.clicks / stats.impressions) * 100).toFixed(1) + "%" : "—";
   return (
     <div className="space-y-5">
@@ -89,6 +92,7 @@ function Console({ onLogout, viaAccount = false }: { onLogout: () => void; viaAc
       <Tabs defaultValue="mod">
         <TabsList className="print:hidden">
           <TabsTrigger value="mod" data-testid="tab-mod">Moderation</TabsTrigger>
+          <TabsTrigger value="feedback" data-testid="tab-feedback">Feedback{fbNew > 0 && <span className="ml-1.5 rounded-full bg-primary px-1.5 font-code text-[10px] font-bold text-primary-foreground tabular" data-testid="badge-feedback-new">{fbNew}</span>}</TabsTrigger>
           <TabsTrigger value="adv" data-testid="tab-advertisers">Advertisers</TabsTrigger>
           <TabsTrigger value="costs" data-testid="tab-costs">Costs</TabsTrigger>
           <TabsTrigger value="spots" data-testid="tab-spots">Spots</TabsTrigger>
@@ -98,6 +102,7 @@ function Console({ onLogout, viaAccount = false }: { onLogout: () => void; viaAc
           <TabsTrigger value="users" data-testid="tab-users">Crew</TabsTrigger>
         </TabsList>
         <TabsContent value="mod"><ModerationQueue /></TabsContent>
+        <TabsContent value="feedback"><FeedbackInbox /></TabsContent>
         <TabsContent value="adv"><AdvertiserReport /></TabsContent>
         <TabsContent value="costs"><CostsPanel /></TabsContent>
         <TabsContent value="spots"><SpotsTable /></TabsContent>
@@ -1005,5 +1010,86 @@ function CostsPanel() {
         </div>
       </section>
     </div>
+  );
+}
+
+// ---------- Feedback from crews (private) ----------
+const FB_FILTERS = [["open", "Open"], ["new", "New"], ["reviewing", "Reviewing"], ["done", "Done"], ["archived", "Archived"], ["all", "All"]] as const;
+const FB_TONE: Record<string, string> = { idea: "bg-primary/15 text-foreground", bug: "bg-destructive/15 text-destructive", listing: "bg-[#2E6BE6]/15 text-[#2E6BE6] dark:text-[#8FB3FF]", praise: "bg-[#1F9D55]/15 text-[#1F7A45] dark:text-[#7BD8A3]", other: "bg-muted text-muted-foreground" };
+const fbAgo = (t: number) => { const m = Math.round((Date.now() - t) / 60000); return m < 1 ? "just now" : m < 60 ? `${m}m ago` : m < 1440 ? `${Math.round(m / 60)}h ago` : new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }); };
+
+function FeedbackInbox() {
+  const { toast } = useToast();
+  const [filter, setFilter] = useState<string>("open");
+  const [del, setDel] = useState<FeedbackItem | null>(null);
+  const { data, isLoading } = useQuery<{ items: FeedbackItem[]; counts: Record<string, number> }>({ queryKey: ["/api/admin/feedback", filter], queryFn: admGet(`/api/admin/feedback?status=${filter}`), refetchInterval: 30000 });
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ["/api/admin/feedback"] });
+  const update = useMutation({ mutationFn: async (v: { id: number; status?: string; adminNote?: string }) => (await adm("PATCH", `/api/admin/feedback/${v.id}`, v)).json(), onSuccess: refresh });
+  const remove = useMutation({ mutationFn: async (id: number) => (await adm("DELETE", `/api/admin/feedback/${id}`)).json(), onSuccess: () => { refresh(); toast({ title: "Feedback deleted" }); } });
+  const c = data?.counts || {};
+  const countFor = (k: string) => k === "open" ? (c.new || 0) + (c.reviewing || 0) : k === "all" ? Object.values(c).reduce((a, b) => a + b, 0) : c[k] || 0;
+  return (
+    <div className="space-y-3" data-testid="panel-feedback">
+      <div>
+        <h2 className="text-lg font-semibold">Feedback</h2>
+        <p className="text-xs text-muted-foreground">Sent from the "Send feedback" link in the footer and on the Logbook. Private: only admins see it.</p>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {FB_FILTERS.map(([k, l]) => (
+          <button key={k} onClick={() => setFilter(k)} data-testid={`filter-feedback-${k}`} className={cn("h-8 rounded-full border px-3 text-xs font-semibold", filter === k ? "border-primary bg-primary text-primary-foreground" : "border-border text-muted-foreground")}>
+            {l} <span className="font-code tabular opacity-80">{countFor(k)}</span>
+          </button>
+        ))}
+      </div>
+      {isLoading ? <Skeleton className="h-40 rounded-xl" /> : !data?.items.length ? (
+        <p className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">Nothing here. New feedback shows up as soon as it's sent.</p>
+      ) : (
+        <ul className="space-y-2.5">
+          {data.items.map((f) => <FeedbackRow key={f.id} f={f} onStatus={(status) => update.mutate({ id: f.id, status })} onNote={(adminNote) => update.mutate({ id: f.id, adminNote }, { onSuccess: () => toast({ title: "Note saved" }) })} onDelete={() => setDel(f)} />)}
+        </ul>
+      )}
+      <AlertDialog open={!!del} onOpenChange={(o) => !o && setDel(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader><AlertDialogTitle>Delete this feedback?</AlertDialogTitle><AlertDialogDescription>It's removed for good. Archive it instead if you might want it later.</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => { if (del) remove.mutate(del.id); setDel(null); }} data-testid="button-confirm-delete-feedback">Delete</AlertDialogAction></AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
+function FeedbackRow({ f, onStatus, onNote, onDelete }: { f: FeedbackItem; onStatus: (s: string) => void; onNote: (n: string) => void; onDelete: () => void }) {
+  const [note, setNote] = useState(f.adminNote);
+  const email = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.contact) ? f.contact : "";
+  return (
+    <li className={cn("rounded-xl border bg-card p-4", f.status === "new" ? "border-primary/50" : "border-card-border")} data-testid={`row-feedback-${f.id}`}>
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <span className={cn("rounded-full px-2 py-0.5 font-semibold", FB_TONE[f.kind] || FB_TONE.other)}>{FEEDBACK_LABEL[f.kind] || f.kind}</span>
+        {f.status === "new" && <span className="rounded-full bg-primary px-2 py-0.5 font-semibold text-primary-foreground">New</span>}
+        {f.status === "reviewing" && <span className="rounded-full border border-border px-2 py-0.5 font-semibold">Reviewing</span>}
+        {f.status === "done" && <span className="rounded-full border border-border px-2 py-0.5 font-semibold text-muted-foreground">Done</span>}
+        {f.status === "archived" && <span className="rounded-full border border-border px-2 py-0.5 text-muted-foreground">Archived</span>}
+        <span className="text-muted-foreground">{fbAgo(f.createdAt)}</span>
+      </div>
+      <p className="mt-2 whitespace-pre-line text-sm" data-testid={`text-feedback-${f.id}`}>{f.message}</p>
+      <p className="mt-2 text-xs text-muted-foreground">
+        From {f.userId ? <a href={`#/crew/${f.userId}`} className="font-semibold text-foreground underline">{f.userName}{f.handle ? ` (@${f.handle})` : ""}</a> : <span className="font-semibold text-foreground">a guest</span>}
+        {email ? <> · <a href={`mailto:${email}?subject=${encodeURIComponent("Your Wheelsdown feedback")}`} className="text-primary underline">{email}</a></> : f.contact ? ` · ${f.contact}` : ""}
+        {f.page && <> · on <a href={`#${f.page}`} className="underline">{f.page}</a></>}
+        {f.device && ` · ${f.device}`}
+      </p>
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Private note (what you did about it)" maxLength={1000} data-testid={`input-feedback-note-${f.id}`}
+          className="h-9 flex-1 rounded-lg border border-input bg-background px-3 text-sm" />
+        {note !== f.adminNote && <button className={btn} onClick={() => onNote(note)} data-testid={`button-feedback-note-${f.id}`}>Save note</button>}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {f.status !== "reviewing" && f.status !== "done" && <button className={btn} onClick={() => onStatus("reviewing")} data-testid={`button-feedback-reviewing-${f.id}`}>Mark reviewing</button>}
+        {f.status !== "done" && <button className={btnPrimary} onClick={() => onStatus("done")} data-testid={`button-feedback-done-${f.id}`}>Done</button>}
+        {f.status !== "archived" && <button className={btn} onClick={() => onStatus("archived")} data-testid={`button-feedback-archive-${f.id}`}>Archive</button>}
+        {(f.status === "done" || f.status === "archived") && <button className={btn} onClick={() => onStatus("new")} data-testid={`button-feedback-reopen-${f.id}`}>Reopen</button>}
+        <button className={cn(btn, "ml-auto text-destructive")} onClick={onDelete} aria-label="Delete feedback" data-testid={`button-feedback-delete-${f.id}`}><Trash2 className="h-4 w-4" /></button>
+      </div>
+    </li>
   );
 }
