@@ -1,7 +1,7 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, lazy, Suspense, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "wouter";
-import { ArrowRight, MapPin, Clock, Search, Plus, X, ChevronRight, Lightbulb, ShieldCheck, List, Sparkles, Trophy, LocateFixed, Loader2, Utensils } from "lucide-react";
+import { Link, useLocation } from "wouter";
+import { ArrowRight, Map as MapIcon, SlidersHorizontal, ChevronDown, MapPin, Clock, Search, Plus, X, ChevronRight, Lightbulb, ShieldCheck, List, Sparkles, Trophy, LocateFixed, Loader2, Utensils } from "lucide-react";
 import type { Highlights } from "@shared/highlights";
 import { TIME_BUCKETS, type Category, type SpotWithStats, type Airport } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
@@ -28,16 +28,22 @@ type SearchState = {
   vettedOnly: boolean;
   /** true = user chose to scroll through everything instead of searching a route */
   browse: boolean;
+  /** results as a list or on the map */
+  view: "list" | "map";
+  /** map: open this listing's card (from "See on map" links) */
+  focus: number | null;
 };
 const SearchCtx = createContext<[SearchState, (p: Partial<SearchState>) => void]>([
-  { category: null, route: "", time: null, pace: null, food: null, cost: null, sort: "trusted", vettedOnly: false, browse: false },
+  { category: null, route: "", time: null, pace: null, food: null, cost: null, sort: "trusted", vettedOnly: false, browse: false, view: "list", focus: null },
   () => {},
 ]);
 export function SearchProvider({ children }: { children: React.ReactNode }) {
-  const [s, set] = useState<SearchState>({ category: null, route: "", time: null, pace: null, food: null, cost: null, sort: "trusted", vettedOnly: false, browse: false });
+  const [s, set] = useState<SearchState>({ category: null, route: "", time: null, pace: null, food: null, cost: null, sort: "trusted", vettedOnly: false, browse: false, view: "list", focus: null });
   return <SearchCtx.Provider value={[s, (p) => set((o) => ({ ...o, ...p }))]}>{children}</SearchCtx.Provider>;
 }
 export const useSearch = () => useContext(SearchCtx);
+
+const SpotsMap = lazy(() => import("@/lib/spotsMap"));
 
 type SearchResp = { legs: { code: string; airport: Airport | null }[]; spots: SpotWithStats[] };
 
@@ -125,7 +131,13 @@ function Prompt({ onPick }: { onPick: (c: Category) => void }) {
       <Rail title="Top rated by crews" icon={Trophy} spots={hl?.top.slice(0, 5)} testId="rail-top" />
       <Rail title="Just added" icon={Sparkles} spots={hl?.newest.slice(0, 5)} testId="rail-new" />
 
-      <BrowseButton count={count} onClick={() => set({ category: "eat", browse: true, route: "" })} testId="button-browse-all-home" sub={`Scroll all ${count} picks by category, 10 at a time`} />
+      <BrowseButton count={count} onClick={() => set({ category: "eat", browse: true, route: "", view: "list" })} testId="button-browse-all-home" sub={`Scroll all ${count} picks by category, 10 at a time`} />
+      <button type="button" onClick={() => set({ category: "eat", browse: true, route: "", view: "map", focus: null })} data-testid="button-map-home"
+        className="flex w-full items-center gap-3 rounded-2xl border border-card-border bg-card px-4 py-3.5 text-left hover-elevate">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/15 text-primary"><MapIcon className="h-5 w-5" /></span>
+        <span className="min-w-0 flex-1"><span className="block text-sm font-semibold">See picks on a map</span><span className="block text-xs text-muted-foreground">Every crew pick, by category, with your filters</span></span>
+        <ArrowRight className="h-4 w-4 text-muted-foreground" />
+      </button>
     </div>
   );
 }
@@ -245,85 +257,8 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
   const mode: "choose" | "browse" | "route" = route ? "route" : s.browse ? "browse" : "choose";
   const { data: hl } = useQuery<Highlights>({ queryKey: [`/api/highlights?category=${cat}`], enabled: mode === "choose" });
 
-  return (
-    <div className="space-y-5">
-      {/* Category switcher */}
-      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar -mx-4 px-4">
-        {(Object.keys(CAT_META) as Category[]).map((c) => {
-          const I = CAT_META[c].icon;
-          return (
-            <Chip key={c} active={c === cat} onClick={() => set({ category: c })} testId={`chip-category-${c}`}>
-              <span className="inline-flex items-center gap-1.5"><I className="h-3.5 w-3.5" />{CAT_META[c].label}</span>
-            </Chip>
-          );
-        })}
-      </div>
-
-      {/* Route input */}
-      <div>
-        <label htmlFor="route" className="text-xs font-medium text-muted-foreground">Where are you headed? Enter your route</label>
-        <div className="mt-1.5 flex items-center h-12 rounded-xl border border-input bg-card focus-within:ring-2 focus-within:ring-ring">
-          <Search className="ml-3.5 h-4 w-4 shrink-0 text-muted-foreground" />
-          <input
-            id="route"
-            ref={routeRef}
-            value={s.route}
-            onChange={(e) => set({ route: e.target.value.toUpperCase() })}
-            placeholder="MIA TEB  or  KOPF-KASE"
-            autoCapitalize="characters"
-            autoCorrect="off"
-            spellCheck={false}
-            data-testid="input-route"
-            className="min-w-0 flex-1 h-full bg-transparent px-3 font-code text-base tracking-wider placeholder:text-muted-foreground/60 placeholder:tracking-normal focus:outline-none"
-          />
-          {s.route ? (
-            <button onClick={() => set({ route: "" })} aria-label="Clear route" data-testid="button-clear-route" className="mr-2 h-8 w-8 shrink-0 grid place-items-center rounded-full hover-elevate text-muted-foreground">
-              <X className="h-4 w-4" />
-            </button>
-          ) : (
-            <button onClick={nearMe} disabled={locating} aria-label="Use my location" data-testid="button-near-me"
-              className="mr-1.5 h-9 shrink-0 inline-flex items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-primary hover-elevate disabled:opacity-60">
-              {locating ? <Loader2 className="h-4 w-4 animate-spin" /> : <LocateFixed className="h-4 w-4" />}<span className="hidden min-[380px]:inline">Near me</span>
-            </button>
-          )}
-        </div>
-        {legs.length > 0 && (
-          <div className="mt-2 flex flex-wrap items-center gap-1.5" data-testid="route-legs">
-            {legs.map((l, i) => (
-              <span key={i} className="inline-flex items-center gap-1.5">
-                {i > 0 && <ChevronRight className="h-3 w-3 text-muted-foreground" />}
-                <span
-                  className={cn(
-                    "font-code text-xs font-bold rounded-md px-1.5 py-0.5",
-                    l.airport ? "taxi-sign" : "bg-destructive/15 text-destructive line-through",
-                  )}
-                  title={l.airport ? l.airport.name : "Unknown airport"}
-                  data-testid={`leg-${l.code}`}
-                >
-                  {l.airport ? l.airport.icao : l.code}
-                </span>
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {mode === "choose" ? (
-        <div className="space-y-5" data-testid="section-choose">
-          <Rail title={`Top rated ${M.label.toLowerCase()}`} icon={Trophy} spots={hl?.top.slice(0, 4)} testId="rail-cat-top" />
-          <Rail title="Just added" icon={Sparkles} spots={hl?.newest.slice(0, 4)} testId="rail-cat-new" />
-          <BrowseButton onClick={() => set({ browse: true })} testId="button-browse-all" title={`Browse all ${M.label.toLowerCase()} picks`} sub="No route in mind? Scroll everything, with filters" />
-          <AdBanner slot="footer" icaos={[]} />
-        </div>
-      ) : (<>
-      {mode === "browse" && (
-        <div className="flex items-center justify-between rounded-xl bg-muted/60 px-3.5 py-2.5 text-sm" data-testid="banner-browsing">
-          <span className="flex items-center gap-2"><List className="h-4 w-4 text-primary" />Browsing all {M.label.toLowerCase()} picks</span>
-          <button onClick={() => set({ browse: false })} className="text-xs font-medium text-primary" data-testid="button-exit-browse">Back to highlights</button>
-        </div>
-      )}
-      {/* Filters */}
-      {showTime && (
+  const filtersEl = (<div className="space-y-5">
+            {showTime && (
         <div>
           <p className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" />How much time do you have?</p>
           <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4">
@@ -392,14 +327,101 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
         </span>
       </button>
 
-      <AdBanner slot="top" icaos={icaos} />
+  </div>);
+  const legPts = legs.filter((l) => l.airport?.lat != null && l.airport?.lon != null).map((l) => ({ icao: l.airport!.icao, lat: l.airport!.lat!, lon: l.airport!.lon!, name: l.airport!.name }));
+  const unpinned = filtered.filter((x) => x.lat == null || x.lng == null).length;
+
+  return (
+    <div className="space-y-5">
+      {/* Category switcher */}
+      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar -mx-4 px-4">
+        {(Object.keys(CAT_META) as Category[]).map((c) => {
+          const I = CAT_META[c].icon;
+          return (
+            <Chip key={c} active={c === cat} onClick={() => set({ category: c })} testId={`chip-category-${c}`}>
+              <span className="inline-flex items-center gap-1.5"><I className="h-3.5 w-3.5" />{CAT_META[c].label}</span>
+            </Chip>
+          );
+        })}
+      </div>
+
+      {/* Route input */}
+      <div>
+        <label htmlFor="route" className="text-xs font-medium text-muted-foreground">Where are you headed? Enter your route</label>
+        <div className="mt-1.5 flex items-center h-12 rounded-xl border border-input bg-card focus-within:ring-2 focus-within:ring-ring">
+          <Search className="ml-3.5 h-4 w-4 shrink-0 text-muted-foreground" />
+          <input
+            id="route"
+            ref={routeRef}
+            value={s.route}
+            onChange={(e) => set({ route: e.target.value.toUpperCase() })}
+            placeholder="MIA TEB  or  KOPF-KASE"
+            autoCapitalize="characters"
+            autoCorrect="off"
+            spellCheck={false}
+            data-testid="input-route"
+            className="min-w-0 flex-1 h-full bg-transparent px-3 font-code text-base tracking-wider placeholder:text-muted-foreground/60 placeholder:tracking-normal focus:outline-none"
+          />
+          {s.route ? (
+            <button onClick={() => set({ route: "" })} aria-label="Clear route" data-testid="button-clear-route" className="mr-2 h-8 w-8 shrink-0 grid place-items-center rounded-full hover-elevate text-muted-foreground">
+              <X className="h-4 w-4" />
+            </button>
+          ) : (
+            <button onClick={nearMe} disabled={locating} aria-label="Use my location" data-testid="button-near-me"
+              className="mr-1.5 h-9 shrink-0 inline-flex items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-primary hover-elevate disabled:opacity-60">
+              {locating ? <Loader2 className="h-4 w-4 animate-spin" /> : <LocateFixed className="h-4 w-4" />}<span className="hidden min-[380px]:inline">Near me</span>
+            </button>
+          )}
+        </div>
+        {legs.length > 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5" data-testid="route-legs">
+            {legs.map((l, i) => (
+              <span key={i} className="inline-flex items-center gap-1.5">
+                {i > 0 && <ChevronRight className="h-3 w-3 text-muted-foreground" />}
+                <span
+                  className={cn(
+                    "font-code text-xs font-bold rounded-md px-1.5 py-0.5",
+                    l.airport ? "taxi-sign" : "bg-destructive/15 text-destructive line-through",
+                  )}
+                  title={l.airport ? l.airport.name : "Unknown airport"}
+                  data-testid={`leg-${l.code}`}
+                >
+                  {l.airport ? l.airport.icao : l.code}
+                </span>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <ViewToggle view={s.view} onChange={(v) => set(v === "map" ? { view: "map", browse: true } : { view: "list", focus: null })} />
+
+      {mode === "choose" ? (
+        <div className="space-y-5" data-testid="section-choose">
+          <Rail title={`Top rated ${M.label.toLowerCase()}`} icon={Trophy} spots={hl?.top.slice(0, 4)} testId="rail-cat-top" />
+          <Rail title="Just added" icon={Sparkles} spots={hl?.newest.slice(0, 4)} testId="rail-cat-new" />
+          <BrowseButton onClick={() => set({ browse: true })} testId="button-browse-all" title={`Browse all ${M.label.toLowerCase()} picks`} sub="No route in mind? Scroll everything, with filters" />
+          <AdBanner slot="footer" icaos={[]} />
+        </div>
+      ) : (<>
+      {mode === "browse" && (
+        <div className="flex items-center justify-between rounded-xl bg-muted/60 px-3.5 py-2.5 text-sm" data-testid="banner-browsing">
+          <span className="flex items-center gap-2"><List className="h-4 w-4 text-primary" />Browsing all {M.label.toLowerCase()} picks</span>
+          <button onClick={() => set({ browse: false, view: "list", focus: null })} className="text-xs font-medium text-primary" data-testid="button-exit-browse">Back to highlights</button>
+        </div>
+      )}
+      {s.view === "map" ? (
+        <MapFilters active={[s.time && showTime, s.pace && showPace, s.food && showPace, budget != null, s.vettedOnly].filter(Boolean).length}>{filtersEl}</MapFilters>
+      ) : filtersEl}
+
+      {s.view === "list" && <AdBanner slot="top" icaos={icaos} />}
 
       <div className="flex items-center justify-between pt-1">
         <p className="text-sm text-muted-foreground" data-testid="text-result-count">
-          <span className="font-semibold text-foreground tabular">{filtered.length}</span> {M.label.toLowerCase()} {filtered.length === 1 ? "pick" : "picks"}
+          <span className="font-semibold text-foreground tabular">{filtered.length}</span> {M.label.toLowerCase()} {filtered.length === 1 ? "pick" : "picks"}{s.view === "map" && " on the map"}
           {bucket && <> within {bucket.sub}</>}
         </p>
-        <select
+        {s.view === "list" && <select
           value={s.sort}
           onChange={(e) => set({ sort: e.target.value as SearchState["sort"] })}
           data-testid="select-sort"
@@ -410,10 +432,25 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
           <option value="rating">Top rated</option>
           <option value="close">Closest to field</option>
           <option value="new">Newest</option>
-        </select>
+        </select>}
       </div>
 
-      {isLoading ? (
+      {s.view === "map" ? (
+        isLoading ? <Skeleton className="h-[62vh] min-h-[360px] rounded-2xl" /> : route && icaos.length === 0 ? (
+          <Empty title="No airports matched" body="Try a 3-letter IATA (MIA) or 4-letter ICAO (KMIA) code." />
+        ) : (
+          <div className="space-y-2">
+            <Suspense fallback={<Skeleton className="h-[62vh] min-h-[360px] rounded-2xl" />}>
+              <SpotsMap spots={filtered} legs={legPts} focusId={s.focus} className="h-[62vh] min-h-[360px]" renderCard={(x) => <SpotCard spot={x} />} />
+            </Suspense>
+            {unpinned > 0 && (
+              <p className="text-xs text-muted-foreground" data-testid="text-map-unpinned">
+                {unpinned} of {filtered.length} {filtered.length === 1 ? "pick has" : "picks have"} no map pin yet. <button type="button" onClick={() => set({ view: "list", focus: null })} className="font-medium text-primary underline">See the list</button>
+              </p>
+            )}
+          </div>
+        )
+      ) : isLoading ? (
         <div className="space-y-3">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-28 rounded-2xl" />)}</div>
       ) : route && icaos.length === 0 ? (
         <Empty title="No airports matched" body="Try a 3-letter IATA (MIA) or 4-letter ICAO (KMIA) code. Unknown fields can be added when you submit a spot." />
@@ -532,4 +569,47 @@ export function SpotCard({ spot }: { spot: SpotWithStats }) {
       </div>
     </Link>
   );
+}
+
+/** List | Map switch under the route box. */
+function ViewToggle({ view, onChange }: { view: "list" | "map"; onChange: (v: "list" | "map") => void }) {
+  const b = (v: "list" | "map", label: string, I: typeof List) => (
+    <button type="button" role="tab" aria-selected={view === v} onClick={() => onChange(v)} data-testid={`tab-view-${v}`}
+      className={cn("inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg text-sm font-semibold", view === v ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+      <I className={cn("h-4 w-4", view === v && "text-primary")} />{label}
+    </button>
+  );
+  return <div role="tablist" aria-label="Show results as" className="flex gap-1 rounded-xl bg-muted p-1">{b("list", "List", List)}{b("map", "Map", MapIcon as typeof List)}</div>;
+}
+
+/** On the map, filters fold away so the map stays near the top of the screen. */
+function MapFilters({ active, children }: { active: number; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} data-testid="button-map-filters"
+        className="flex w-full items-center justify-between rounded-xl border border-border bg-card px-3.5 py-2.5 text-sm font-semibold hover-elevate">
+        <span className="inline-flex items-center gap-2"><SlidersHorizontal className="h-4 w-4 text-primary" />Filters{active > 0 && <span className="rounded-full bg-primary px-1.5 text-[11px] text-primary-foreground tabular">{active}</span>}</span>
+        <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", open && "rotate-180")} />
+      </button>
+      {open && <div className="mt-3">{children}</div>}
+    </div>
+  );
+}
+
+/** #/map?cat=eat&icao=KPDK&spot=12 — opens Search on the map (used by "See on map" links). */
+export function MapRoute() {
+  const [, set] = useSearch();
+  const [, navigate] = useLocation();
+  useEffect(() => {
+    // the hash router may put the query before or after the "#"
+    const q = new URLSearchParams(window.location.hash.split("?")[1] || window.location.search.slice(1));
+    if (window.location.search) history.replaceState(null, "", window.location.pathname + window.location.hash.split("?")[0]);
+    const cat = q.get("cat") as Category | null;
+    const spot = Number(q.get("spot")) || null;
+    set({ category: cat && cat in CAT_META ? cat : "eat", route: (q.get("icao") || q.get("route") || "").toUpperCase(), browse: true, view: "map", focus: spot,
+      time: null, pace: null, food: null, cost: null, vettedOnly: false });
+    navigate("/", { replace: true });
+  }, []); // eslint-disable-line
+  return null;
 }

@@ -129,6 +129,8 @@ check "answer needs a real question" '404' "$(curl -s -o /dev/null -w '%{http_co
 check "AI fix needs admin"       '401'      "$(curl -s -o /dev/null -w '%{http_code}' -XPOST $BASE/api/admin/moderation/spot/1/fix)"
 check "ask owner needs admin"    '401'      "$(curl -s -o /dev/null -w '%{http_code}' -XPOST $BASE/api/admin/moderation/spot/1/ask-owner -H "$J" -d '{}')"
 check "duplicate info"           '"duplicates"' "$(curl -s $BASE/api/admin/moderation/extras -H "x-admin-key: $ADMIN_KEY")"
+check "map deep link page"   '<div id="root"' "$(curl -s "$BASE/")"
+check "search has pins"       '"lng"'        "$(curl -s "$BASE/api/search?route=")"
 check "duplicate lookup"         '['        "$(curl -s "$BASE/api/spots/similar?icao=MIA&name=Smoke%20Test%20Caf")"
 check "duplicate lookup too short" '[]'     "$(curl -s "$BASE/api/spots/similar?icao=KMIA&name=ab")"
 check "duplicate lookup bad airport" '[]'   "$(curl -s "$BASE/api/spots/similar?icao=K&name=Versailles")"

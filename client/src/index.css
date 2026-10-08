@@ -324,3 +324,13 @@
 .px-safe { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { scrollbar-width: none; }
+
+/* Search map (Leaflet + OpenStreetMap) */
+.wd-map.leaflet-container { font: inherit; background: hsl(var(--muted)); }
+.dark .wd-map .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.88) saturate(0.7); }
+.wd-map .leaflet-control-attribution { font-size: 10px; background: hsl(var(--card) / 0.88); color: hsl(var(--muted-foreground)); border-top-left-radius: 6px; }
+.wd-map .leaflet-control-attribution a { color: hsl(var(--foreground)); }
+.wd-map .leaflet-bar { border: 1px solid hsl(var(--border)); border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgb(0 0 0 / 0.12); }
+.wd-map .leaflet-bar a { width: 40px; height: 40px; line-height: 40px; background: hsl(var(--card)); color: hsl(var(--foreground)); border-bottom-color: hsl(var(--border)); }
+.wd-map .leaflet-bar a:hover { background: hsl(var(--muted)); }
+.wd-pin, .wd-apt, .wd-cluster { background: transparent; border: 0; }

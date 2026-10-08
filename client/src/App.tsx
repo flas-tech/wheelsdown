@@ -1,6 +1,8 @@
 import { useEffect } from "react";
 import { Switch, Route, Router, Link, useLocation } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
+// match routes on the path only, so links like #/map?route=KPDK still find /map
+const useHashPath = (): [string, (to: string, opts?: { replace?: boolean }) => void] => { const [loc, nav] = useHashLocation(); return [loc.split("?")[0], nav as any]; };
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -8,7 +10,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Search, PlusCircle, Shield, Trophy, BookUser, ClipboardList, Heart } from "lucide-react";
 import FavoritesPage from "@/pages/favorites";
 import NotFound from "@/pages/not-found";
-import Home, { SearchProvider, useSearch } from "@/pages/home";
+import Home, { MapRoute, SearchProvider, useSearch } from "@/pages/home";
 import SpotPage from "@/pages/spot";
 import AddPage from "@/pages/add";
 import AdminPage from "@/pages/admin";
@@ -81,6 +83,7 @@ function Shell() {
       <main className={cn("mx-auto w-full flex-1 px-4 pt-5 pb-28 sm:pb-12", isAdmin ? "max-w-6xl" : "max-w-xl")}>
         <Switch>
           <Route path="/" component={Home} />
+          <Route path="/map" component={MapRoute} />
           <Route path="/spot/:id/edit" component={AddPage} />
           <Route path="/spot/:id" component={SpotPage} />
           <Route path="/favorites" component={FavoritesPage} />
@@ -146,7 +149,7 @@ function App() {
           <SearchProvider>
             <Toaster />
             <AuthProvider>
-              <Router hook={useHashLocation}>
+              <Router hook={useHashPath}>
                 <Shell />
               </Router>
             </AuthProvider>

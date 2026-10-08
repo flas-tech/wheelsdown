@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useRoute } from "wouter";
-import { ArrowLeft, MapPin, Clock, Globe, Lightbulb, User, AlertTriangle, Pencil } from "lucide-react";
+import { ArrowLeft, Map as MapIcon, MapPin, Clock, Globe, Lightbulb, User, AlertTriangle, Pencil } from "lucide-react";
 import { DOWN_REASONS, type Category, type ReviewWithVotes, type SpotWithStats } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { CAT_META, fmtMinutes, totalMinutes, parseTags, Stars, AdBanner, Chip, VetBadge, VoteButtons, timeAgo, GoAroundBadge, GoAroundIcon } from "@/lib/ui";
@@ -92,6 +92,7 @@ export default function SpotPage() {
         <div className="space-y-1.5 text-sm text-muted-foreground">
           {spot.address && <p className="flex items-center gap-2"><MapPin className="h-4 w-4" />
             <a className="hover:text-foreground underline-offset-2 hover:underline" target="_blank" rel="noopener noreferrer" href={`https://maps.apple.com/?q=${encodeURIComponent(spot.name + " " + spot.address)}`} onClick={() => trackOut("map")} data-testid="link-map">{spot.address}</a></p>}
+          {spot.lat != null && spot.lng != null && <p className="flex items-center gap-2"><MapIcon className="h-4 w-4" /><Link href={`/map?cat=${spot.category}&icao=${spot.icao}&spot=${spot.id}`} className="font-medium text-primary hover:underline" data-testid="link-see-on-map">See on the {spot.icao} map</Link></p>}
           {spot.website && <p className="flex items-center gap-2"><Globe className="h-4 w-4" /><a className="hover:text-foreground hover:underline" target="_blank" rel="noopener noreferrer" href={spot.website} onClick={() => trackOut("website")} data-testid="link-website">Website</a></p>}
           {spot.category === "do" && <p className="flex items-center gap-2"><Clock className="h-4 w-4" />Time estimate includes ~2 min/mile each way from the field</p>}
         </div>
