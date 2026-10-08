@@ -31,6 +31,8 @@ if (PROD) {
     // OpenStreetMap's tile policy asks for an accurate Referer on tile requests
     referrerPolicy: { policy: "strict-origin-when-cross-origin" },
   }));
+  // public brand images may be shown elsewhere: the logo in emails (Apple Mail loads it directly) and link previews
+  app.use(/^\/(icon-\d+\.png|favicon\.png|og\.png)$/, (_req, res, next) => { res.setHeader("Cross-Origin-Resource-Policy", "cross-origin"); next(); });
 }
 const httpServer = createServer(app);
 
