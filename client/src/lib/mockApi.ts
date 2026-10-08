@@ -86,11 +86,21 @@ function ensureAirport(code: string, city?: string, name?: string) {
   db.airports.push({ icao, iata: /^[A-Z]{3}$/.test(code) ? code : null, name: name || icao, city: city || "Unknown", region: "", country: "", lat: null, lon: null });
   return icao;
 }
+/** Demo only: sample listings have no real coordinates, so put them at their listed distance from the field on a fixed bearing. */
+function demoPin(s: Spot): { lat: number | null; lng: number | null } {
+  if (s.lat != null && s.lng != null) return { lat: s.lat, lng: s.lng };
+  const ap = db.airports.find((a) => a.icao === s.icao);
+  if (ap?.lat == null || ap?.lon == null) return { lat: null, lng: null };
+  const miles = Math.max(0.3, s.milesFromField || 0.5), brg = ((s.id * 137.508) % 360) * Math.PI / 180;
+  const dLat = (miles / 69) * Math.cos(brg), dLng = (miles / (69 * Math.cos(ap.lat * Math.PI / 180))) * Math.sin(brg);
+  return { lat: ap.lat + dLat, lng: ap.lon + dLng };
+}
 function withStats(rows: Spot[], voter = "") {
   return rows.map((s) => {
     const rs = db.reviews.filter((r) => r.spotId === s.id);
     const vs = db.votes.filter((v) => v.targetType === "spot" && v.targetId === s.id);
     const base = { ...({ pace: null, lat: null, lng: null, placeRef: null } as Pick<Spot, "pace" | "lat" | "lng" | "placeRef">), ...s };
+    Object.assign(base, demoPin(base as Spot));
     return { ...base, goArounds: rs.filter((r) => r.rating === 0).length, avgRating: rs.length ? rs.reduce((a, r) => a + r.rating, 0) / rs.length : null, reviewCount: rs.length, airport: db.airports.find((a) => a.icao === s.icao), vet: computeVet(vs, voter),
       ...crewCost(s.category, s.costLevel, rs.map((r) => r.costLevel)) };
   });

@@ -4,7 +4,7 @@ import { Link, useLocation } from "wouter";
 import { ArrowRight, Map as MapIcon, SlidersHorizontal, ChevronDown, MapPin, Clock, Search, Plus, X, ChevronRight, Lightbulb, ShieldCheck, List, Sparkles, Trophy, LocateFixed, Loader2, Utensils } from "lucide-react";
 import type { Highlights } from "@shared/highlights";
 import { TIME_BUCKETS, type Category, type SpotWithStats, type Airport } from "@shared/schema";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, IS_STATIC } from "@/lib/queryClient";
 import { CAT_META, fmtMinutes, totalMinutes, parseTags, Stars, AdBanner, Chip, VetBadge, GoAroundBadge } from "@/lib/ui";
 import { FavoriteButton } from "@/lib/favorites";
 import { CUISINES, cuisinesOf, cuisineLabel } from "@shared/cuisine";
@@ -443,6 +443,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
             <Suspense fallback={<Skeleton className="h-[62vh] min-h-[360px] rounded-2xl" />}>
               <SpotsMap spots={filtered} legs={legPts} focusId={s.focus} className="h-[62vh] min-h-[360px]" renderCard={(x) => <SpotCard spot={x} />} />
             </Suspense>
+            {IS_STATIC && <p className="text-xs text-muted-foreground" data-testid="text-map-demo">Demo: sample pins sit at each listing's distance from the airport, not at real addresses.</p>}
             {unpinned > 0 && (
               <p className="text-xs text-muted-foreground" data-testid="text-map-unpinned">
                 {unpinned} of {filtered.length} {filtered.length === 1 ? "pick has" : "picks have"} no map pin yet. <button type="button" onClick={() => set({ view: "list", focus: null })} className="font-medium text-primary underline">See the list</button>
