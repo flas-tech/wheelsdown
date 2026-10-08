@@ -20,6 +20,7 @@ import { AI_PRICES, costOf, costReport } from "./aiUsage";
 import { registerFeedback } from "./feedback";
 import { registerCheckins } from "./checkins";
 import { registerModFix, closeDuplicateNotices } from "./modfix";
+import { registerSimilar } from "./similar";
 import { dayKey } from "./metrics";
 import { SERVICES } from "@shared/services";
 import { track, visit, pageKey, outboundKey, report, untracked } from "./metrics";
@@ -235,6 +236,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json(buildHighlights(await storage.searchSpots([], false, await voterOf(req)), { category: cat }));
   });
 
+  registerSimilar(app, { userOf });
   app.get("/api/spots/:id", async (req, res) => {
     const v = await voterOf(req);
     const s = await storage.getSpot(id(req), v);

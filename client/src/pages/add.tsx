@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { useSearch } from "./home";
 import { useAuth } from "@/lib/auth";
 import { POINTS } from "@shared/tiers";
+import { DuplicatePrompt, RateInstead, useSimilar, type SimilarSpot } from "@/lib/duplicate";
 import { getPosition, milesBetween, type LatLng, type NearAirport, type PlaceHit } from "@/lib/geo";
 
 const TIME_PRESETS: Record<string, number> = { quick: 30, short: 120, half: 300, day: 600, multi: 1440 };
@@ -101,6 +102,14 @@ export default function AddPage() {
   const placeMiles = place && field ? Math.round(milesBetween({ lat: field.lat, lon: field.lng }, { lat: place.lat, lon: place.lng }) * 10) / 10 : null;
   useEffect(() => { if (placeMiles != null) setMiles(String(placeMiles)); }, [placeMiles]);
   const tooFar = placeMiles != null && placeMiles > FAR_MILES;
+
+  // duplicate check while typing a new listing: offer to rate the existing one instead
+  const similar = useSimilar(resolved?.icao || c, name, place, !!editId);
+  const [notDup, setNotDup] = useState<Set<number>>(new Set());
+  const [pick, setPick] = useState<number | null>(null);
+  const [instead, setInstead] = useState<SimilarSpot | null>(null);
+  const open = similar.filter((x) => !notDup.has(x.id));
+  const dup = open.find((x) => x.id === pick) || open[0];
 
   async function useMyLocation() {
     setLocating(true); setNearMsg("");
@@ -228,7 +237,7 @@ export default function AddPage() {
   if (editId && notOwner) return <p className="text-sm text-muted-foreground">Only the crew member who posted this listing can edit it. <Link href={`/spot/${editId}`} className="text-primary underline">Back to the listing</Link></p>;
 
   return (
-    <form onSubmit={(e) => { e.preventDefault(); if (canSubmit) requireAuth(() => m.mutate(), editId ? "Sign in to edit your listing." : `Sign in to add this spot and earn ${POINTS.listing} points.`); }} className="space-y-6" data-testid="form-add">
+    <form onSubmit={(e) => { e.preventDefault(); if (canSubmit && !instead && !dup) requireAuth(() => m.mutate(), editId ? "Sign in to edit your listing." : `Sign in to add this spot and earn ${POINTS.listing} points.`); }} className="space-y-6" data-testid="form-add">
       <header>
         {editId && <Link href={`/spot/${editId}`} className="mb-3 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground" data-testid="link-back-spot"><ArrowLeft className="h-4 w-4" /> Listing</Link>}
         <h1 className="text-xl font-semibold">{editId ? "Edit your listing" : "Add a spot"}</h1>
@@ -284,13 +293,17 @@ export default function AddPage() {
         <PlaceAutocomplete value={name} onChange={(v) => { setName(v); if (place && v !== place.name) setPlace(null); }} onPick={choosePlace}
           anchor={anchor} category={category} here={hereNearField ? here : null} field={field} code={resolved?.icao || c}
           placeholder={category === "fbo" ? "e.g. Signature Aviation OPF" : category === "stay" ? "e.g. Hampton Inn Miami Lakes" : "e.g. Versailles Restaurant"} />
+        {dup && !instead && (
+          <DuplicatePrompt match={dup} others={open.filter((x) => x.id !== dup.id)} code={resolved?.icao || c} onPick={(x) => setPick(x.id)}
+            onSame={() => setInstead(dup)} onDifferent={() => setNotDup((sx) => new Set(sx).add(dup.id))} />
+        )}
         {place && (
           <p className="mt-1.5 text-xs text-muted-foreground inline-flex items-start gap-1" data-testid="text-add-place">
             <MapPin className="h-3.5 w-3.5 mt-0.5 shrink-0 text-primary" />
             <span>{place.address || "Location set"}{placeMiles != null ? ` · ${placeMiles} mi from ${resolved?.icao || c}` : ""}</span>
           </p>
         )}
-        {aiOn && (me || !editId) && (
+        {aiOn && !instead && (me || !editId) && (
           <AutofillPanel state={ai.state} result={ai.result} error={ai.error} filled={ai.filled} name={name}
             canRun={!!me && name.trim().length >= 2 && c.length >= 3 && ai.state !== "busy"} onRun={() => requireAuth(() => runAutofill(), "Sign in to use AI autofill.")} />
         )}
@@ -302,6 +315,10 @@ export default function AddPage() {
         )}
       </Field>
 
+      {instead ? (
+        <RateInstead match={instead} onBack={() => { setNotDup((sx) => new Set(sx).add(instead.id)); setInstead(null); }}
+          initial={{ rating: avoid ? 0 : null, costLevel, comment: [avoid ? why.trim() : "", description.trim(), crewTip.trim() ? `Crew tip: ${crewTip.trim()}` : ""].filter(Boolean).join("\n\n") }} />
+      ) : <>
       {needsCost && (
         <Field n={4} label="Price" hint={costUnit(category)} ai={aiFields.has("cost")}>
           <div className="flex gap-2 flex-wrap">
@@ -384,13 +401,15 @@ export default function AddPage() {
         )}
       </div>
 
-      <div className="sticky bottom-20 sm:bottom-4 z-10">
-        {!canSubmit && (name || code) && <p className="mb-2 text-center text-xs text-muted-foreground" data-testid="text-add-missing">Still needed: {missing.join(", ")}</p>}
-        <button type="submit" disabled={!canSubmit || m.isPending} data-testid="button-submit-spot"
+      <div className={cn("z-10", dup ? "relative" : "sticky bottom-20 sm:bottom-4")}>
+        {dup && <p className="mb-2 text-center text-xs text-muted-foreground" data-testid="text-add-dup-first">First tell us if it's the same place as {dup.name} (under Name).</p>}
+        {!dup && !canSubmit && (name || code) && <p className="mb-2 text-center text-xs text-muted-foreground" data-testid="text-add-missing">Still needed: {missing.join(", ")}</p>}
+        <button type="submit" disabled={!canSubmit || !!dup || m.isPending} data-testid="button-submit-spot"
           className="w-full h-12 rounded-full taxi-sign text-base font-semibold shadow-lg disabled:opacity-50 hover-elevate">
           {m.isPending ? (editId ? "Saving…" : "Adding…") : editId ? "Save changes" : me ? (avoid ? `Add go-around · +${POINTS.listing + POINTS.review + (why.trim().length >= 40 ? POINTS.reviewDetail : 0)} pts` : `Add spot · +${POINTS.listing} pts`) : "Sign in & add spot"}
         </button>
       </div>
+      </>}
     </form>
   );
 }

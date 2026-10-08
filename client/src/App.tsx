@@ -28,6 +28,7 @@ import { NoticeDot } from "@/lib/notices";
 import { Logo, ThemeProvider, ThemeToggle } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { FeedbackLink } from "@/lib/feedback";
+import { TourHost, TourLink } from "@/lib/tour";
 import { IS_STATIC } from "@/lib/queryClient";
 
 function Shell() {
@@ -113,11 +114,13 @@ function Shell() {
               <Link href="/guidelines" className="hover:text-foreground">Guidelines</Link>
               <Link href="/terms" className="hover:text-foreground">Terms</Link>
               <Link href="/privacy" className="hover:text-foreground">Privacy</Link>
+              <TourLink className="hover:text-foreground" />
               <FeedbackLink className="font-semibold text-foreground hover:text-primary" />
             </nav>
           </footer>
         )}
       </main>
+      <TourHost />
 
       {/* iOS-style tab bar */}
       {!isAdmin && (

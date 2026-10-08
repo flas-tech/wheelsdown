@@ -1,5 +1,7 @@
 import { AircraftPicker, CrewAvatar } from "@/lib/aircraft";
 import { InterestPicker, InterestChips } from "@/lib/interests";
+import { ProfileChecklist } from "@/lib/profileGaps";
+import { TourLink } from "@/lib/tour";
 import { WrightCard } from "@/lib/club";
 import { BadgeProgressGrid } from "@/lib/achievements";
 import { FeedbackCard } from "@/lib/feedback";
@@ -109,6 +111,7 @@ export default function ProfilePage() {
     <div className="space-y-5">
       <TierCard points={me.points} name={me.displayName} sub={`@${me.handle} · ${me.crewRole}${me.homeBase ? " · " + me.homeBase : ""}`} tierId={me.tierId} aircraft={me.aircraft || ""} />
       <NoticeCards />
+      <ProfileChecklist />
       {me.wrightNo && <WrightCard no={me.wrightNo} />}
       {(me.bio || me.interests?.length || me.follows) && (
         <div className="space-y-2.5" data-testid="section-my-about">
@@ -144,6 +147,7 @@ export default function ProfilePage() {
       {me.achievements && <BadgeProgressGrid progress={me.achievements} />}
       <InviteCard refId={me.id} referrals={b.referrals || 0} />
       <FeedbackCard />
+      <p className="text-center text-xs text-muted-foreground">New here, or forgot where something is? <TourLink className="font-semibold text-foreground underline hover:text-primary" /></p>
 
       <ProfileSettings />
 
@@ -272,11 +276,11 @@ function ProfileSettings() {
           ))}
         </div>
       </div>
-      <div>
+      <div id="pf-aircraft" className="scroll-mt-24">
         <span className="text-xs font-medium text-muted-foreground">Aircraft you fly <span className="font-normal">· shown on your profile; your avatar appears next to your name</span></span>
         <div className="mt-1"><AircraftPicker value={f.aircraft} onChange={(a) => setF({ ...f, aircraft: a })} /></div>
       </div>
-      <label className="block">
+      <label className="block scroll-mt-24" id="pf-bio">
         <span className="flex items-baseline justify-between text-xs font-medium text-muted-foreground">
           <span>About you <span className="font-normal">· public, shown on your crew profile</span></span>
           <span className={cn("font-normal tabular", f.bio.length > BIO_MAX - 20 && "text-foreground")}>{f.bio.length}/{BIO_MAX}</span>
@@ -286,16 +290,16 @@ function ProfileSettings() {
           className="mt-1 w-full rounded-xl border border-input bg-background px-3 py-2.5 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none" />
         <span className="text-[11px] text-muted-foreground">No links, phone numbers or emails. It's checked before it's saved.</span>
       </label>
-      <div>
+      <div id="pf-interests" className="scroll-mt-24">
         <span className="text-xs font-medium text-muted-foreground">Your expertise <span className="font-normal">· pick up to 5 badges for your profile</span></span>
         <div className="mt-1.5"><InterestPicker value={f.interests} onChange={(v) => setF({ ...f, interests: v })} /></div>
       </div>
-      <label className="block">
+      <label className="block scroll-mt-24" id="pf-base">
         <span className="text-xs font-medium text-muted-foreground">Home base (optional)</span>
         <input value={f.homeBase} onChange={(e) => setF({ ...f, homeBase: e.target.value.toUpperCase().slice(0, 4) })} placeholder="KMIA" data-testid="input-profile-base" className={inputCls + " mt-1 font-code uppercase w-32"} />
         <span className="mt-1 block text-[11px] text-muted-foreground">Any code works (OPF, MIA). It's saved as the 4-letter ICAO code so every crew uses the same one.</span>
       </label>
-      <label className="block">
+      <label className="block scroll-mt-24" id="pf-email">
         <span className="text-xs font-medium text-muted-foreground">Email (private, for password reset)</span>
         <input type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value.trim() })} placeholder="you@example.com" autoComplete="email" data-testid="input-profile-email" className={inputCls + " mt-1"} />
       </label>

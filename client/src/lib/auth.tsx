@@ -1,3 +1,4 @@
+import { startTourForNewMember } from "@/lib/tour";
 import { pendingRef, clearRef } from "@/lib/referral";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -171,6 +172,7 @@ function AuthDialog({ open, onOpenChange, reason, onAuthed }: { open: boolean; o
       setPassword("");
       if (mode === "signup") clearRef();
       onAuthed();
+      if (mode === "signup") startTourForNewMember();
       if (mode === "signup" && me?.wrightNo) {
         clubToast({ title: `Welcome to the ${WRIGHT_NAME}`, description: `You're founding member No. ${me.wrightNo} of ${WRIGHT_SEATS}. Your badge is on your Logbook.` });
       }

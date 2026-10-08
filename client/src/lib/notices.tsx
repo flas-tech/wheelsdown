@@ -1,3 +1,4 @@
+import { useProfileGaps } from "@/lib/profileGaps";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Copy, Loader2 } from "lucide-react";
@@ -16,10 +17,14 @@ export function useNotices() {
   return useQuery<Notice[]>({ queryKey: ["/api/me/notices"], enabled: !!me, refetchInterval: 120_000, staleTime: 30_000 });
 }
 /** Small dot on the Logbook tab when something needs the member's answer. */
+/** Red dot on the Logbook tab: a question waiting for you, or profile items still to fill in. */
 export function NoticeDot() {
   const { data } = useNotices();
-  if (!data?.length) return null;
-  return <span className="absolute -right-1 -top-0.5 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-background" aria-label={`${data.length} waiting for you`} data-testid="dot-notices" />;
+  const { todo } = useProfileGaps();
+  const n = data?.length || 0;
+  if (!n && !todo.length) return null;
+  const label = n ? `${n} waiting for you` : `Profile: ${todo.length} item${todo.length === 1 ? "" : "s"} to finish`;
+  return <span className="absolute -right-1 -top-0.5 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-background" role="status" aria-label={label} title={label} data-testid={n ? "dot-notices" : "dot-profile"} />;
 }
 
 const opt = "flex-1 min-w-[120px] h-10 rounded-full px-3 text-sm font-semibold hover-elevate disabled:opacity-50";

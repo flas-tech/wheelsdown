@@ -1,5 +1,6 @@
 // In-browser demo backend used for the static GitHub Pages build (VITE_STATIC=1).
 // Mirrors server/routes.ts. Data is seeded from shared/seed.ts and saved only in this browser.
+import { similarity, squash } from "@shared/similar";
 import { seedAirports, seedSpots, seedReviews, seedAds } from "@shared/seed";
 import type { Airport, Spot, Review, Ad, Vote } from "@shared/schema";
 import { computeVet, seedVotesFor, shouldAutoHold } from "@shared/vetting";
@@ -297,6 +298,16 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
     const live = db.spots.filter((s) => s.status === "live");
     const rows = codes.length ? live.filter((s) => icaos.includes(s.icao)) : [...live].sort((a, b) => b.createdAt - a.createdAt);
     return { legs, spots: withStats(rows, voter) };
+  }
+  if (method === "GET" && path === "/api/spots/similar") {
+    const name = String(query.get("name") || ""), code = String(query.get("icao") || "");
+    if (code.length < 3 || squash(name).length < 3) return [];
+    const icao = resolve(code)?.icao || code.toUpperCase();
+    const lat = query.get("lat") ? Number(query.get("lat")) : null, lng = query.get("lng") ? Number(query.get("lng")) : null;
+    return db.spots.filter((x) => x.icao === icao && x.status === "live")
+      .map((x) => ({ x, s: similarity({ name, lat, lng, placeRef: query.get("placeRef") }, x as any) })).filter((r) => r.s >= 0.6).sort((a, b) => b.s - a.s).slice(0, 3)
+      .map(({ x, s }) => { const rs = db.reviews.filter((r) => r.spotId === x.id && (r as any).status !== "hidden");
+        return { id: x.id, name: x.name, category: x.category, address: x.address || "", reviewCount: rs.length, avgRating: rs.length ? rs.reduce((t, r) => t + r.rating, 0) / rs.length : null, mine: !!user && rs.some((r) => r.userId === user.id), score: s }; });
   }
   if (method === "GET" && (m = path.match(/^\/api\/spots\/(\d+)$/))) {
     const s = db.spots.find((x) => x.id === Number(m![1]));
