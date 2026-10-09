@@ -16,14 +16,26 @@ export function useNotices() {
   const { me } = useAuth();
   return useQuery<Notice[]>({ queryKey: ["/api/me/notices"], enabled: !!me, refetchInterval: 120_000, staleTime: 30_000 });
 }
-/** Small dot on the Logbook tab when something needs the member's answer. */
-/** Red dot on the Logbook tab: a question waiting for you, or profile items still to fill in. */
+export type FollowNote = {
+  kind: "follow"; at: number; unread: boolean; followingBack: boolean;
+  user: { id: number; displayName: string; aircraft: string; tierId: string; points: number; crewRole: string; homeBase: string };
+};
+/** People who followed you, with unread count since you last opened Notifications. */
+export function useFollowNotes() {
+  const { me } = useAuth();
+  return useQuery<{ seenAt: number; unread: number; items: FollowNote[] }>({ queryKey: ["/api/me/notifications"], enabled: !!me, refetchInterval: 120_000, staleTime: 30_000 });
+}
+/** How many things on the Notifications tab are new: duplicate questions plus unread follows. */
+export function useUnreadCount() {
+  const { data } = useNotices(); const f = useFollowNotes();
+  return (data?.length || 0) + (f.data?.unread || 0);
+}
+/** Red dot on the Logbook tab: a notification, or profile items still to fill in. */
 export function NoticeDot() {
-  const { data } = useNotices();
+  const n = useUnreadCount();
   const { todo } = useProfileGaps();
-  const n = data?.length || 0;
   if (!n && !todo.length) return null;
-  const label = n ? `${n} waiting for you` : `Profile: ${todo.length} item${todo.length === 1 ? "" : "s"} to finish`;
+  const label = n ? `${n} new notification${n === 1 ? "" : "s"}` : `Profile: ${todo.length} item${todo.length === 1 ? "" : "s"} to finish`;
   return <span className="absolute -right-1 -top-0.5 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-background" role="status" aria-label={label} title={label} data-testid={n ? "dot-notices" : "dot-profile"} />;
 }
 

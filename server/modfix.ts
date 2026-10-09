@@ -167,9 +167,9 @@ export function registerModFix(app: Express, o: { requireAdmin: Mw; requireUser:
     await storage.logMod({ kind: "spot", targetId: dup.id, actor: "admin", action: "ask_owner", reason: o.byAdmin(req, `Asked ${owner.displayName} whether this is the same place as ${orig.name}`) });
     let emailed = false;
     if (owner.email) {
-      const link = "https://getwheelsdown.com/#/me";
+      const link = "https://getwheelsdown.com/#/notifications";
       emailed = await sendEmail(owner.email, `Is this the same place as your ${orig.name} listing?`,
-        `Hi ${owner.displayName},\n\nSomeone added "${dup.name}" at ${dup.icao}, which looks like your listing "${orig.name}". You know the place best, so it's your call: same place, or two different places.\n\nOpen your Logbook to decide: ${link}\n\nWheelsdown`).then((r) => !!r).catch(() => false);
+        `Hi ${owner.displayName},\n\nSomeone added "${dup.name}" at ${dup.icao}, which looks like your listing "${orig.name}". You know the place best, so it's your call: same place, or two different places.\n\nOpen your notifications in the Logbook to decide: ${link}\n\nWheelsdown`).then((r) => !!r).catch(() => false);
     }
     res.json({ ok: true, id: row.id, owner: owner.displayName, emailed });
   });

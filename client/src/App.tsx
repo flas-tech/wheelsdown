@@ -27,6 +27,7 @@ import { AuthProvider, useAuth, Insignia } from "@/lib/auth";
 import { CrewAvatar } from "@/lib/aircraft";
 import { tierFor } from "@shared/tiers";
 import { NoticeDot } from "@/lib/notices";
+import NotificationsPage from "@/pages/notifications";
 import { Logo, ThemeProvider, ThemeToggle } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { FeedbackLink } from "@/lib/feedback";
@@ -47,7 +48,7 @@ function Shell() {
     { href: "/favorites", label: "Favorites", icon: Heart, active: loc.startsWith("/favorites") },
     { href: "/brief", label: "Brief", icon: ClipboardList, active: loc.startsWith("/brief") || loc.startsWith("/b/") },
     { href: "/crew", label: "Crew", icon: Trophy, active: loc.startsWith("/crew") },
-    { href: "/me", label: "Logbook", icon: BookUser, active: loc.startsWith("/me") },
+    { href: "/me", label: "Logbook", icon: BookUser, active: loc.startsWith("/me") || loc.startsWith("/notifications") },
   ];
   return (
     <div className="min-h-[100dvh] flex flex-col">
@@ -91,6 +92,7 @@ function Shell() {
           <Route path="/add/:icao" component={AddPage} />
           <Route path="/admin" component={AdminPage} />
           <Route path="/me" component={ProfilePage} />
+          <Route path="/notifications" component={NotificationsPage} />
           <Route path="/crew" component={CrewPage} />
           <Route path="/following" component={FollowingPage} />
           <Route path="/followers" component={FollowingPage} />

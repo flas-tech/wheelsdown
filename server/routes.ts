@@ -505,6 +505,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
   app.get("/api/me/following", requireUser, async (req, res) => res.json(await storage.followList((req as any).user.id, "following")));
   app.get("/api/me/followers", requireUser, async (req, res) => res.json(await storage.followList((req as any).user.id, "followers")));
+  app.get("/api/me/notifications", requireUser, async (req, res) => res.json(await storage.followNotifications((req as any).user.id)));
+  app.post("/api/me/notifications/seen", requireUser, async (req, res) => { await storage.markNotificationsSeen((req as any).user.id); res.json({ ok: true }); });
   app.get("/api/me/feed", requireUser, async (req, res) => res.json(await storage.followFeed((req as any).user.id)));
 
   // ---------- trip briefings (signed-in crew; no points) ----------

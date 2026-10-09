@@ -5,7 +5,7 @@ import { TourLink } from "@/lib/tour";
 import { WrightCard } from "@/lib/club";
 import { BadgeProgressGrid } from "@/lib/achievements";
 import { FeedbackCard } from "@/lib/feedback";
-import { NoticeCards } from "@/lib/notices";
+import { LogbookTabs } from "@/pages/notifications";
 import { AirportCheckInCard, CheckInList, ProfileMap } from "@/lib/checkins";
 import { InviteCard } from "@/lib/share";
 import { BIO_MAX } from "@shared/interests";
@@ -109,8 +109,8 @@ export default function ProfilePage() {
   ];
   return (
     <div className="space-y-5">
+      <LogbookTabs />
       <TierCard points={me.points} name={me.displayName} sub={`@${me.handle} · ${me.crewRole}${me.homeBase ? " · " + me.homeBase : ""}`} tierId={me.tierId} aircraft={me.aircraft || ""} />
-      <NoticeCards />
       <ProfileChecklist />
       {me.wrightNo && <WrightCard no={me.wrightNo} />}
       {(me.bio || me.interests?.length || me.follows) && (

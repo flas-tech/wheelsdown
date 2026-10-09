@@ -38,6 +38,15 @@ H2="${H}r"
 R2=$(curl -s -XPOST $BASE/api/auth/signup -H "$J" -d "{\"handle\":\"$H2\",\"password\":\"smoke-pass-123\",\"displayName\":\"Smoke Invitee\",\"crewRole\":\"Pilot\",\"email\":\"$H2@example.com\",\"acceptTerms\":true,\"ref\":$MYID}")
 T2=$(echo "$R2" | jget "d.get('token','')" 2>/dev/null)
 check "invite: points on sign-up" '"referrals":1' "$(curl -s $BASE/api/me -H "$A")"
+B3="authorization: Bearer $T2"; ME1=$(curl -s $BASE/api/me -H "$A" | jget "d['id']"); ME3=$(curl -s $BASE/api/me -H "$B3" | jget "d['id']")
+curl -s -o /dev/null -XPOST $BASE/api/crew/$ME1/follow -H "$B3"
+check "follow notification"   "\"followingBack\":false" "$(curl -s $BASE/api/me/notifications -H "$A")"
+check "notification unread"   '"unread":1'   "$(curl -s $BASE/api/me/notifications -H "$A")"
+curl -s -o /dev/null -XPOST $BASE/api/me/notifications/seen -H "$A"
+check "notifications seen"    '"unread":0'   "$(curl -s $BASE/api/me/notifications -H "$A")"
+curl -s -o /dev/null -XPOST $BASE/api/crew/$ME3/follow -H "$A"
+check "follow back shows"     "\"followingBack\":true" "$(curl -s $BASE/api/me/notifications -H "$A")"
+curl -s -o /dev/null -XDELETE $BASE/api/crew/$ME3/follow -H "$A"; curl -s -o /dev/null -XDELETE $BASE/api/crew/$ME1/follow -H "$B3"
 check "invite: bad ref still signs up" '"token"' "$(curl -s -XPOST $BASE/api/auth/signup -H "$J" -d "{\"handle\":\"${H}x\",\"password\":\"smoke-pass-123\",\"displayName\":\"Smoke X\",\"crewRole\":\"Pilot\",\"acceptTerms\":true,\"ref\":\"abc\"}" | tee /tmp/smx.json)"
 TX=$(jget "d.get('token','')" < /tmp/smx.json 2>/dev/null); curl -s -o /dev/null -XDELETE $BASE/api/me -H "authorization: Bearer $TX" -H "$J" -d "{\"confirm\":\"${H}x\"}"
 curl -s -o /dev/null -XDELETE $BASE/api/me -H "authorization: Bearer $T2" -H "$J" -d "{\"confirm\":\"$H2\"}"

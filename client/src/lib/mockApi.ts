@@ -602,6 +602,14 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
 
   // ---- moderation fixes and owner questions need the live server ----
   if (method === "GET" && path === "/api/me/notices") return [];
+  if (method === "GET" && path === "/api/me/notifications") {
+    const u = needUser(); const seenAt = (db as any).notifSeen?.[u.id] || 0;
+    const back = new Set(fl().filter((f) => f.a === u.id).map((f) => f.b)); const pu = new Map(publicUsers().map((p) => [p.id, p]));
+    const items = fl().filter((f) => f.b === u.id).sort((x, y) => y.at - x.at).map((f) => ({ f, p: pu.get(f.a) })).filter((x) => x.p && !x.p.anonymous)
+      .map(({ f, p }) => ({ kind: "follow", at: f.at, unread: f.at > seenAt, followingBack: back.has(f.a), user: { id: p!.id, displayName: p!.displayName, aircraft: p!.aircraft, tierId: p!.tierId, points: p!.points, crewRole: p!.crewRole, homeBase: p!.homeBase } }));
+    return { seenAt, unread: items.filter((i) => i.unread).length, items };
+  }
+  if (method === "POST" && path === "/api/me/notifications/seen") { const u = needUser(); ((db as any).notifSeen ||= {})[u.id] = Date.now(); save(); return { ok: true }; }
   if (method === "GET" && path === "/api/admin/moderation/extras") { admin(); return { duplicates: {} }; }
   if (method === "POST" && /^\/api\/admin\/moderation\/(spot|review)\/\d+\/(fix|fix\/apply|ask-owner)$/.test(path)) { admin(); throw new HttpError(400, "AI fixes and owner questions only work on the live site."); }
 

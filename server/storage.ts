@@ -625,6 +625,20 @@ export class DatabaseStorage {
     const at = new Map(rows.map((r) => [r.id, r.at]));
     return (await this.publicUsers()).filter((u) => at.has(u.id) && !u.anonymous).sort((a, b) => (at.get(b.id) || 0) - (at.get(a.id) || 0));
   }
+  /** Notifications: who followed you (newest first) and whether you follow them back. Anonymous followers are left out, they can't be followed. */
+  async followNotifications(userId: number, limit = 60) {
+    const d = db();
+    const ers = await d.select({ id: follows.followerId, at: follows.createdAt }).from(follows).where(eq(follows.followeeId, userId)).orderBy(desc(follows.createdAt)).limit(limit * 2);
+    const back = new Set((await d.select({ id: follows.followeeId }).from(follows).where(eq(follows.followerId, userId))).map((x) => x.id));
+    const ppl = new Map((await this.publicUsers()).map((u) => [u.id, u]));
+    const seenAt = Number((await this.getSetting(`notif_seen:${userId}`)) || 0);
+    const items = ers.map((r) => ({ r, u: ppl.get(r.id) })).filter((x) => x.u && !x.u.anonymous).slice(0, limit).map(({ r, u }) => ({
+      kind: "follow" as const, at: r.at, unread: r.at > seenAt, followingBack: back.has(r.id),
+      user: { id: u!.id, displayName: u!.displayName, aircraft: u!.aircraft, tierId: u!.tierId, points: u!.points, crewRole: u!.crewRole, homeBase: u!.homeBase },
+    }));
+    return { seenAt, unread: items.filter((i) => i.unread).length, items };
+  }
+  async markNotificationsSeen(userId: number) { await this.setSetting(`notif_seen:${userId}`, String(Date.now())); }
   /** New live listings and ratings from people you follow, newest first. */
   async followFeed(userId: number, limit = 40) {
     const d = db();
