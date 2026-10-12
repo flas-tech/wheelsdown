@@ -5,12 +5,15 @@ import { IS_STATIC } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { trackShare } from "@/lib/metrics";
 import { POINTS } from "@shared/tiers";
+import { useAuth } from "@/lib/auth";
 
 const SITE = "https://getwheelsdown.com";
 /** Public link to a page. The demo build shares its own address; the live site always shares getwheelsdown.com. */
-export function shareUrl(path = "/") {
-  const base = IS_STATIC ? window.location.href.split("#")[0] : SITE + "/";
-  return path === "/" ? base : `${base}#${path}`;
+export function shareUrl(path = "/", refId?: number) {
+  const base = IS_STATIC ? window.location.href.split("#")[0].split("?")[0] : SITE + "/";
+  // signed-in members' shares carry their invite code, so anyone who joins from any shared link credits them
+  const withRef = refId ? `${base}?ref=${refId}` : base;
+  return path === "/" ? withRef : `${withRef}#${path}`;
 }
 const isApple = () => /iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent);
 /** Messages link with the text filled in. iOS and macOS use "&body=", Android and others "?body=". */
@@ -58,12 +61,13 @@ export function ShareDialog({ open, onOpenChange, title = "Share Wheelsdown", me
 /** Round header button. */
 export function ShareButton({ className, ...p }: Props & { className?: string }) {
   const [open, setOpen] = useState(false);
+  const { me } = useAuth();
   return (
     <>
       <button onClick={() => setOpen(true)} aria-label="Share Wheelsdown" data-testid="button-share" className={cn("inline-flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground hover-elevate", className)}>
         <Share2 className="h-[18px] w-[18px]" />
       </button>
-      <ShareDialog open={open} onOpenChange={setOpen} {...p} />
+      <ShareDialog open={open} onOpenChange={setOpen} {...p} url={p.url || (me ? shareUrl(p.path || "/", me.id) : undefined)} />
     </>
   );
 }

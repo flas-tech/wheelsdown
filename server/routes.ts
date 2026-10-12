@@ -135,7 +135,14 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (bad) return res.status(400).json({ message: bad });
     try {
       const u = await storage.createUser(p.data);
-      if (!isTestSignup(u.handle, u.email)) track(req, "signup");
+      if (!isTestSignup(u.handle, u.email)) {
+        track(req, "signup");
+        // one line per sign-up so a missing referral can be traced later
+        const inv = (u as any).referredBy as number | null;
+        logChange({ actor: `@${u.handle}`, actorId: u.id, kind: "system", action: "signup", entity: "user", entityId: u.id,
+          summary: `New member @${u.handle} signed up${inv ? ` with invite from member #${inv}` : p.data.ref ? ` (invite #${p.data.ref} not found)` : " (no invite link)"}`,
+          detail: { refSent: p.data.ref ?? null, referredBy: inv ?? null, ua: String(req.headers["user-agent"] || "").slice(0, 160) } });
+      }
       res.status(201).json({ token: await storage.createSession(u.id), me: await storage.me(u) });
     } catch (e: any) { res.status(e.status || 500).json({ message: e.message }); }
   });

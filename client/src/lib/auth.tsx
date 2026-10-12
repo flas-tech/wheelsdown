@@ -164,7 +164,7 @@ function AuthDialog({ open, onOpenChange, reason, onAuthed }: { open: boolean; o
         const r = await (await apiRequest("POST", "/api/auth/forgot", { email })).json();
         setNotice(r.message); setBusy(false); return;
       }
-      const body = mode === "signup" ? { handle, password, displayName, crewRole, homeBase, anonymous, email, acceptTerms: true, ref: pendingRef() } : { handle, password };
+      const body = mode === "signup" ? { handle, password, displayName, crewRole, homeBase, anonymous, email, acceptTerms: true, ref: pendingRef() ?? refId } : { handle, password };
       const res = await apiRequest("POST", mode === "signup" ? "/api/auth/signup" : "/api/auth/login", body);
       const { token, me } = await res.json();
       setAuthToken(token);
