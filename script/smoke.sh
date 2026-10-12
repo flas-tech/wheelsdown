@@ -99,7 +99,7 @@ BID=$(curl -s -XPOST $BASE/api/briefings -H "$A" -H "$J" -d '{"title":"Smoke","s
 [[ -n "$BID" ]] && ok "save briefing" || bad "save briefing" "no id"
 check "briefing ai status"  '"aiStatus"'     "$(curl -s $BASE/api/briefings/$BID -H "$A")"
 check "ai picks need cat"   'required'       "$(curl -s "$BASE/api/ai-picks?icao=KMIA")"
-check "ai picks defer crew" '"status":"crew"' "$(curl -s "$BASE/api/ai-picks?icao=KMIA&cat=eat")"
+check "ai picks defer crew" '"status":"crew"' "$(curl -s "$BASE/api/ai-picks?icao=KPNS&cat=eat")"
 check "delete briefing"    '"ok":true'      "$(curl -s -XDELETE $BASE/api/briefings/$BID -H "$A")"
 check "briefing gone"      'Not found'      "$(curl -s $BASE/api/briefings/$BID -H "$A")"
 check "delete again 404"   'Not found'      "$(curl -s -XDELETE $BASE/api/briefings/$BID -H "$A")"
