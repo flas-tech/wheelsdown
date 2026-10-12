@@ -1,17 +1,28 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
-import { ArrowLeft, ArrowRight, ClipboardList, Heart, MapPin, MessageSquare, PlaneLanding, Search, Share2, Star, UserRound } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ClipboardList, Coffee, Heart, Hotel, List, Map as MapIcon, MapPin, MessageSquare, PlaneLanding, Search, Share2, Sparkles, Star, UserPlus, UserRound, Users, UtensilsCrossed } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { POINTS, TIERS } from "@shared/tiers";
-import { Insignia } from "@/lib/auth";
+import { Insignia, useAuth } from "@/lib/auth";
 import { GoAroundIcon, Logo } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 
 const DONE_KEY = "wheelsdown-tour-done";
+const VERSION_KEY = "wheelsdown-tour-v";
+/** Bump when steps are added; members who saw an older tour get a short "What's new" version once. */
+const TOUR_VERSION = 2;
 const EVENT = "wheelsdown:tour";
 
 /** Open the tour from anywhere (Logbook link, right after sign-up). */
-export function startTour() { window.dispatchEvent(new Event(EVENT)); }
+export function startTour(mode: "full" | "new" = "full") { window.dispatchEvent(new CustomEvent(EVENT, { detail: mode })); }
+/** Signed-in members who finished an older version of the tour on this device see what's new, once. */
+export function maybeShowWhatsNew() {
+  try {
+    if (!localStorage.getItem(DONE_KEY)) return;
+    if (Number(localStorage.getItem(VERSION_KEY) || 1) >= TOUR_VERSION) return;
+  } catch { return; }
+  setTimeout(() => startTour("new"), 1200);
+}
 /** Called once a new account is created: show the tour unless they've already seen it on this device. */
 export function startTourForNewMember() {
   try { if (localStorage.getItem(DONE_KEY)) return; } catch { /* private mode: still show it */ }
@@ -26,36 +37,64 @@ const Band = ({ children }: { children: React.ReactNode }) => (
   </div>
 );
 
-const STEPS: { key: string; title: string; body: string; art: React.ReactNode }[] = [
+const STEPS: { key: string; title: string; body: string; art: React.ReactNode; isNew?: boolean }[] = [
   {
     key: "welcome", title: "Welcome to Wheelsdown",
     body: "Layover picks from crews who've actually been there: where to eat, what to do, where to stay and which FBOs treat you right. Here's a one-minute tour.",
     art: <div className="flex flex-col items-center gap-3"><Logo className="h-16 w-16" /><p className="text-lg font-bold tracking-tight">Wheels<span className="text-primary">down</span></p><p className="text-xs text-white/60">Crew-vetted layover guide</p></div>,
   },
   {
-    key: "search", title: "Search your whole route",
-    body: "Type the airport codes for every stop, three or four letters each (OPF or KOPF). Then filter by how much time you have, the price, and Grab & go or Sit-down.",
+    key: "search", title: "Search your whole route", isNew: true,
+    body: "Type the airport codes for every stop, three or four letters each (OPF or KOPF). Filter by time, price, Grab & go or Sit-down, and food type, then switch to Map to see every pick along the route.",
     art: <div className="space-y-2.5">
-      <div className="flex items-center gap-2 rounded-xl bg-white px-3 py-2.5 text-[#0B1222]"><Search className="h-4 w-4 text-[#0B1222]/50" /><span className="font-code text-sm tracking-widest">KOPF KTEB KASE</span></div>
-      <div className="flex flex-wrap gap-1.5"><span className={chip}>Under 1 hr</span><span className={chip}>$$</span><span className={cn(chip, "bg-primary text-[#0B1222]")}>Grab &amp; go</span><span className={chip}>Sit-down</span></div>
+      <div className="flex items-center gap-2 rounded-xl bg-white px-3 py-2.5 text-[#0B1222]"><Search className="h-4 w-4 text-[#0B1222]/50" /><span className="flex-1 font-code text-sm tracking-widest">KOPF KTEB KASE</span>
+        <span className="inline-flex overflow-hidden rounded-full border border-[#0B1222]/15 text-[10px] font-semibold"><span className="inline-flex items-center gap-0.5 px-1.5 py-0.5"><List className="h-3 w-3" />List</span><span className="inline-flex items-center gap-0.5 bg-[#0B1222] px-1.5 py-0.5 text-white"><MapIcon className="h-3 w-3" />Map</span></span></div>
+      <div className="flex flex-wrap gap-1.5"><span className={chip}>Under 1 hr</span><span className={chip}>$$</span><span className={cn(chip, "bg-primary text-[#0B1222]")}>Grab &amp; go</span><span className={chip}>Pizza</span><span className={chip}>BBQ</span></div>
     </div>,
   },
   {
-    key: "rate", title: "Rate it, or add what's missing",
-    body: `Been somewhere? Rate it for ${POINTS.review} points, plus ${POINTS.reviewDetail} more for a real comment. Add a place crews haven't found yet for ${POINTS.listing}. If it's a place to avoid, mark it Go around.`,
+    key: "ai", title: "No crew picks yet? Pick with AI", isNew: true,
+    body: "Where crews haven't listed a place, tap Pick with AI for real nearby options, always tagged AI pick so you know they aren't crew-rated. Want more? Choose a food type or Surprise me for what the area is known for. Prefer crew or Prefer AI is in your Logbook.",
+    art: <div className="space-y-2">
+      <div className="flex items-center gap-2.5 rounded-xl bg-white/[0.06] px-3 py-2 ring-1 ring-white/10"><span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/20 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-300"><Users className="h-3 w-3" />Crew pick</span><span className="text-sm font-semibold">Joe's Stone Crab</span></div>
+      <div className="flex items-center gap-2.5 rounded-xl border border-dashed border-violet-300/60 px-3 py-2"><span className="inline-flex items-center gap-1 rounded-full bg-violet-400/20 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-violet-200"><Sparkles className="h-3 w-3" />AI pick</span><span className="text-sm font-semibold">Pastrami House</span></div>
+      <div className="flex gap-1.5"><span className="inline-flex items-center gap-1 rounded-full bg-violet-600 px-2.5 py-1 text-[11px] font-semibold"><Sparkles className="h-3 w-3" />Surprise me</span><span className={chip}>Sushi</span><span className={chip}>Breakfast</span></div>
+    </div>,
+  },
+  {
+    key: "rate", title: "Rate it, or add what's missing", isNew: true,
+    body: `Been somewhere? Rate it for ${POINTS.review} points, plus ${POINTS.reviewDetail} more for a real comment. Add a place crews haven't found yet for ${POINTS.listing}. Tried an AI pick? Add it, and the first crew member to rate it earns +10 more. Places to avoid get a Go around.`,
     art: <div className="rounded-xl bg-white/[0.06] p-3.5 ring-1 ring-white/10">
       <p className="text-sm font-semibold">Versailles Restaurant</p>
       <div className="mt-1.5 flex items-center gap-1">{[1, 2, 3, 4, 5].map((i) => <Star key={i} className={cn("h-5 w-5", i <= 4 ? "fill-primary text-primary" : "text-white/25")} />)}<span className="ml-2 text-xs text-white/60">+{POINTS.review} pts</span></div>
-      <div className="mt-2.5 inline-flex items-center gap-1.5 rounded-full border border-orange-400/60 px-2.5 py-1 text-[11px] font-semibold text-orange-300"><GoAroundIcon className="h-3.5 w-3.5" />Go around</div>
+      <div className="mt-2.5 flex flex-wrap gap-1.5"><span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-400/20 px-2.5 py-1 text-[11px] font-semibold text-emerald-300"><Sparkles className="h-3.5 w-3.5" />First to rate an AI pick +10</span>
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-orange-400/60 px-2.5 py-1 text-[11px] font-semibold text-orange-300"><GoAroundIcon className="h-3.5 w-3.5" />Go around</span></div>
     </div>,
   },
   {
-    key: "brief", title: "Favorites become trip briefings",
-    body: "Tap the heart on anything you like. Build a trip briefing for your route and your favorites are always included, with a map and a printable PDF to share with the crew.",
-    art: <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+    key: "brief", title: "Trip briefings plan every stop", isNew: true,
+    body: "Build a briefing for your route. Overnights get breakfast, lunch, dinner, things to do and a hotel. Your favorites are always included, Pick more with AI adds options, and it all comes with a map and a printable PDF for the crew.",
+    art: <div className="grid grid-cols-[1fr_auto_1.3fr] items-center gap-3">
       <div className="rounded-xl bg-white/[0.06] p-3 text-center ring-1 ring-white/10"><Heart className="mx-auto h-7 w-7 fill-rose-500 text-rose-500" /><p className="mt-1.5 text-[11px] text-white/70">Favorites</p></div>
       <ArrowRight className="h-4 w-4 text-white/40" />
-      <div className="rounded-xl bg-white p-3 text-center text-[#0B1222]"><ClipboardList className="mx-auto h-7 w-7" /><p className="mt-1.5 text-[11px] font-semibold">Map + PDF</p></div>
+      <div className="rounded-xl bg-white p-2.5 text-[#0B1222]">
+        <p className="flex items-center gap-1 text-[11px] font-bold"><ClipboardList className="h-3.5 w-3.5" />KSBN · Overnight</p>
+        <ul className="mt-1 space-y-0.5 text-[10px] leading-tight text-[#0B1222]/75">
+          <li className="flex items-center gap-1"><Coffee className="h-3 w-3" />3 meals</li>
+          <li className="flex items-center gap-1"><MapPin className="h-3 w-3" />2 things to do</li>
+          <li className="flex items-center gap-1"><Hotel className="h-3 w-3" />Hotel</li>
+        </ul>
+      </div>
+    </div>,
+  },
+  {
+    key: "hotels", title: "Hotels that earn your points", isNew: true,
+    body: "Filter hotels by rewards program: Hilton, Marriott, IHG, Hyatt, Wyndham, Choice or Best Western. Add the programs you collect under My hotel programs in your Logbook, and those hotels come first in search, AI picks and briefings.",
+    art: <div className="space-y-2.5">
+      <div className="flex flex-wrap gap-1.5">
+        {["Hilton", "Marriott", "IHG", "Hyatt"].map((p, k) => <span key={p} className={cn(chip, "inline-flex items-center gap-1", k === 0 && "bg-sky-500 text-white")}>{k === 0 && <Check className="h-3 w-3" />}{p}</span>)}
+      </div>
+      <div className="flex items-center gap-2.5 rounded-xl bg-white px-3 py-2 text-[#0B1222]"><Hotel className="h-4 w-4 text-sky-600" /><span className="flex-1 text-sm font-semibold">Hampton Inn Bedford</span><span className="rounded-md bg-sky-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">Hilton · yours</span></div>
     </div>,
   },
   {
@@ -69,7 +108,7 @@ const STEPS: { key: string; title: string; body: string; art: React.ReactNode }[
   },
   {
     key: "ranks", title: "Earn points, climb the ratings",
-    body: `Everything you add, rate and vote on earns points, from Student up through Private, Commercial and ATP. Share your invite link from the Logbook and get ${POINTS.referral} points each time someone signs up with it.`,
+    body: `Everything you add, rate and vote on earns points, from Student up through Private, Instrument, Commercial and ATP. Share your invite link from the Logbook and get ${POINTS.referral} points each time someone signs up with it.`,
     art: <div className="space-y-1.5">
       {TIERS.filter((t) => ["private", "commercial", "atp"].includes(t.id)).map((t) => (
         <div key={t.id} className="flex items-center gap-3 rounded-lg bg-white/[0.06] px-3 py-1.5 ring-1 ring-white/10">
@@ -80,12 +119,15 @@ const STEPS: { key: string; title: string; body: string; art: React.ReactNode }[
     </div>,
   },
   {
-    key: "profile", title: "Make it yours, tell us what to fix",
-    body: "Finish your profile so crews know whose picks they're reading. If something's wrong or missing, tap Send feedback at the bottom of any page. It goes straight to the team.",
+    key: "profile", title: "Follow crews, tell us what to fix", isNew: true,
+    body: "Finish your profile so crews know whose picks they're reading, and follow crews you trust to see their new picks. Your Logbook tells you when someone follows you. Something wrong or missing? Tap Send feedback at the bottom of any page.",
     art: <div className="space-y-2.5">
       <div className="flex items-center gap-3 rounded-xl bg-white/[0.06] p-3 ring-1 ring-white/10"><div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-[#0B1222]"><UserRound className="h-5 w-5" /></div>
         <div className="flex-1"><div className="h-2 w-24 rounded bg-white/50" /><div className="mt-1.5 h-1.5 w-full overflow-hidden rounded bg-white/10"><div className="h-full w-3/5 rounded bg-primary" /></div></div></div>
-      <div className="flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-[#0B1222]"><MessageSquare className="h-4 w-4" />Send feedback</div>
+      <div className="flex gap-2">
+        <div className="flex flex-1 items-center gap-2 rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-[#0B1222]"><UserPlus className="h-4 w-4" />Follow</div>
+        <div className="flex flex-1 items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-[#0B1222]"><MessageSquare className="h-4 w-4" />Send feedback</div>
+      </div>
     </div>,
   },
 ];
@@ -94,20 +136,25 @@ const STEPS: { key: string; title: string; body: string; art: React.ReactNode }[
 export function TourHost() {
   const [open, setOpen] = useState(false);
   const [i, setI] = useState(0);
+  const [mode, setMode] = useState<"full" | "new">("full");
+  const steps = mode === "new" ? STEPS.filter((x) => x.isNew) : STEPS;
   const [, navigate] = useLocation();
   const touch = useRef<number | null>(null);
+  const { me } = useAuth();
+  // members who took the earlier tour get the new steps once, after they sign in
+  useEffect(() => { if (me) maybeShowWhatsNew(); }, [me?.id]);
   useEffect(() => {
-    const on = () => { setI(0); setOpen(true); };
+    const on = (e: Event) => { setMode((e as CustomEvent).detail === "new" ? "new" : "full"); setI(0); setOpen(true); };
     window.addEventListener(EVENT, on);
     return () => window.removeEventListener(EVENT, on);
   }, []);
   const finish = (to?: string) => {
-    try { localStorage.setItem(DONE_KEY, String(Date.now())); } catch { /* ignore */ }
+    try { localStorage.setItem(DONE_KEY, String(Date.now())); localStorage.setItem(VERSION_KEY, String(TOUR_VERSION)); } catch { /* ignore */ }
     setOpen(false);
     if (to) navigate(to);
   };
-  const last = i === STEPS.length - 1;
-  const s = STEPS[i];
+  const last = i === steps.length - 1;
+  const s = steps[i];
   const next = () => (last ? finish() : setI(i + 1));
   const back = () => setI(Math.max(0, i - 1));
   return (
@@ -121,11 +168,11 @@ export function TourHost() {
           <button type="button" onClick={() => finish()} className="absolute right-3 top-3 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white/90 hover:bg-white/20" data-testid="button-tour-skip">Skip tour</button>
         </div>
         <div className="p-5 pt-4">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground" data-testid="text-tour-step">{i + 1} of {STEPS.length}</p>
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground" data-testid="text-tour-step">{mode === "new" ? "What's new · " : ""}{i + 1} of {steps.length}</p>
           <DialogTitle className="mt-1 text-lg font-semibold leading-snug" data-testid="text-tour-title">{s.title}</DialogTitle>
           <DialogDescription className="mt-1.5 min-h-[88px] text-sm leading-relaxed text-muted-foreground">{s.body}</DialogDescription>
           <div className="mt-4 flex justify-center gap-1.5" role="tablist" aria-label="Tour steps">
-            {STEPS.map((x, k) => <button key={x.key} type="button" role="tab" aria-selected={k === i} aria-label={`Step ${k + 1}: ${x.title}`} onClick={() => setI(k)}
+            {steps.map((x, k) => <button key={x.key} type="button" role="tab" aria-selected={k === i} aria-label={`Step ${k + 1}: ${x.title}`} onClick={() => setI(k)}
               className={cn("h-2 rounded-full transition-all", k === i ? "w-6 bg-primary" : "w-2 bg-muted-foreground/30 hover:bg-muted-foreground/50")} data-testid={`dot-tour-${k}`} />)}
           </div>
           <div className="mt-4 flex gap-2">
@@ -136,7 +183,7 @@ export function TourHost() {
                 <button type="button" onClick={() => finish("/")} className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-full taxi-sign text-sm font-semibold hover-elevate" data-testid="button-tour-done"><PlaneLanding className="h-4 w-4 shrink-0" />Start exploring</button>
               </>
             ) : (
-              <button type="button" onClick={next} autoFocus className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-full taxi-sign text-sm font-semibold hover-elevate" data-testid="button-tour-next">{i === 0 ? "Show me around" : "Next"}<ArrowRight className="h-4 w-4" /></button>
+              <button type="button" onClick={next} autoFocus className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-full taxi-sign text-sm font-semibold hover-elevate" data-testid="button-tour-next">{i === 0 && mode === "full" ? "Show me around" : "Next"}<ArrowRight className="h-4 w-4" /></button>
             )}
           </div>
         </div>
@@ -147,5 +194,5 @@ export function TourHost() {
 
 /** Small link to replay the tour. */
 export function TourLink({ className }: { className?: string }) {
-  return <button type="button" onClick={startTour} className={className} data-testid="button-take-tour">Take the tour</button>;
+  return <button type="button" onClick={() => startTour()} className={className} data-testid="button-take-tour">Take the tour</button>;
 }
