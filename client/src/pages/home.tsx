@@ -10,6 +10,8 @@ import { FavoriteButton } from "@/lib/favorites";
 import { CUISINES, cuisinesOf, cuisineLabel } from "@shared/cuisine";
 import { COST_LABELS, PACES, costOptions, costRange, costText, paceLabel, paceOf, paceMatches, type PaceId } from "@shared/cost";
 import { CostChoice } from "@/lib/costChip";
+import { PROGRAMS, programOf, type ProgramId } from "@shared/loyalty";
+import { AiPicksPanel, ProgramChip } from "@/lib/aiPicks";
 import { getPosition, type NearAirport } from "@/lib/geo";
 import { useToast } from "@/hooks/use-toast";
 import { trustScore } from "@shared/vetting";
@@ -23,6 +25,8 @@ type SearchState = {
   pace: PaceId | null;
   /** food type (pizza, BBQ…), eat only */
   food: string | null;
+  /** hotel rewards program (Hilton, Marriott…), stay only */
+  rewards: ProgramId | null;
   cost: number | null;
   sort: "trusted" | "rating" | "close" | "new";
   vettedOnly: boolean;
@@ -34,11 +38,11 @@ type SearchState = {
   focus: number | null;
 };
 const SearchCtx = createContext<[SearchState, (p: Partial<SearchState>) => void]>([
-  { category: null, route: "", time: null, pace: null, food: null, cost: null, sort: "trusted", vettedOnly: false, browse: false, view: "list", focus: null },
+  { category: null, route: "", time: null, pace: null, food: null, rewards: null, cost: null, sort: "trusted", vettedOnly: false, browse: false, view: "list", focus: null },
   () => {},
 ]);
 export function SearchProvider({ children }: { children: React.ReactNode }) {
-  const [s, set] = useState<SearchState>({ category: null, route: "", time: null, pace: null, food: null, cost: null, sort: "trusted", vettedOnly: false, browse: false, view: "list", focus: null });
+  const [s, set] = useState<SearchState>({ category: null, route: "", time: null, pace: null, food: null, rewards: null, cost: null, sort: "trusted", vettedOnly: false, browse: false, view: "list", focus: null });
   return <SearchCtx.Provider value={[s, (p) => set((o) => ({ ...o, ...p }))]}>{children}</SearchCtx.Provider>;
 }
 export const useSearch = () => useContext(SearchCtx);
@@ -105,39 +109,26 @@ function Prompt({ onPick }: { onPick: (c: Category) => void }) {
         })}
       </div>
 
-      <AdBanner slot="top" />
-
-      <div className="flex items-center justify-between rounded-2xl border border-card-border bg-card px-4 py-3">
-        <div className="flex gap-6">
-          <div>
-            <p className="font-code text-lg font-bold tabular" data-testid="text-count-spots">{count}</p>
-            <p className="text-xs text-muted-foreground">crew picks</p>
-          </div>
-          <div>
-            <p className="font-code text-lg font-bold tabular" data-testid="text-count-fields">{fields}</p>
-            <p className="text-xs text-muted-foreground">airfields</p>
-          </div>
-        </div>
-        <Link href="/add" data-testid="link-add-home" className="inline-flex items-center gap-1.5 rounded-full taxi-sign px-4 py-2 text-sm font-semibold hover-elevate">
+      {/* one quiet row: map, add, and the size of the guide */}
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={() => set({ category: "eat", browse: true, route: "", view: "map", focus: null })} data-testid="button-map-home"
+          className="inline-flex h-10 items-center gap-1.5 rounded-full border border-card-border bg-card px-4 text-sm font-semibold hover-elevate">
+          <MapIcon className="h-4 w-4 text-primary" /> Map
+        </button>
+        <Link href="/add" data-testid="link-add-home" className="inline-flex h-10 items-center gap-1.5 rounded-full taxi-sign px-4 text-sm font-semibold hover-elevate">
           <Plus className="h-4 w-4" /> Add a spot
         </Link>
-      </div>
-
-      <div className="rounded-2xl bg-muted/50 px-4 py-3 text-sm text-muted-foreground flex gap-3">
-        <Lightbulb className="h-4 w-4 mt-0.5 shrink-0 text-primary" />
-        <p>Search a whole trip at once: type your route like <span className="font-code text-foreground">MIA TEB ASE</span> or <span className="font-code text-foreground">KOPF-KPBI</span>. IATA and ICAO both work.</p>
+        {count > 0 && <p className="ml-auto text-right text-[11px] leading-tight text-muted-foreground" data-testid="text-count-spots"><span className="font-code font-bold text-foreground tabular">{count}</span> picks<br /><span className="font-code font-bold text-foreground tabular" data-testid="text-count-fields">{fields}</span> airfields</p>}
       </div>
 
       <Rail title="Top rated by crews" icon={Trophy} spots={hl?.top.slice(0, 5)} testId="rail-top" />
-      <Rail title="Just added" icon={Sparkles} spots={hl?.newest.slice(0, 5)} testId="rail-new" />
 
-      <BrowseButton count={count} onClick={() => set({ category: "eat", browse: true, route: "", view: "list" })} testId="button-browse-all-home" sub={`Scroll all ${count} picks by category, 10 at a time`} />
-      <button type="button" onClick={() => set({ category: "eat", browse: true, route: "", view: "map", focus: null })} data-testid="button-map-home"
-        className="flex w-full items-center gap-3 rounded-2xl border border-card-border bg-card px-4 py-3.5 text-left hover-elevate">
-        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/15 text-primary"><MapIcon className="h-5 w-5" /></span>
-        <span className="min-w-0 flex-1"><span className="block text-sm font-semibold">See picks on a map</span><span className="block text-xs text-muted-foreground">Every crew pick, by category, with your filters</span></span>
-        <ArrowRight className="h-4 w-4 text-muted-foreground" />
+      <button type="button" onClick={() => set({ category: "eat", browse: true, route: "", view: "list" })} data-testid="button-browse-all-home"
+        className="inline-flex items-center gap-1 text-sm font-medium text-primary">
+        Browse all {count || ""} picks <ArrowRight className="h-3.5 w-3.5" />
       </button>
+
+      <AdBanner slot="top" />
     </div>
   );
 }
@@ -196,6 +187,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
   const showTime = cat === "do";
   const showPace = cat === "eat";
   const showCost = cat !== "fbo";
+  const showRewards = cat === "stay";
   const bucket = TIME_BUCKETS.find((b) => b.id === s.time);
   const budget = s.cost != null && costOptions(cat).includes(s.cost) ? s.cost : null;
   const { toast } = useToast();
@@ -219,6 +211,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
     if (showCost && budget != null) list = list.filter((x) => x.cost != null && x.cost <= budget);
     if (s.vettedOnly) list = list.filter((x) => x.vet.level === "vetted");
     if (showPace && s.food) list = list.filter((x) => cuisinesOf(x).includes(s.food!));
+    if (showRewards && s.rewards) list = list.filter((x) => programOf(x) === s.rewards);
     const sorters = {
       trusted: (a: SpotWithStats, b: SpotWithStats) => trustScore(b.vet) - trustScore(a.vet) || (b.avgRating ?? 0) - (a.avgRating ?? 0),
       rating: (a: SpotWithStats, b: SpotWithStats) => (b.avgRating ?? 0) - (a.avgRating ?? 0) || b.reviewCount - a.reviewCount,
@@ -226,7 +219,13 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
       new: (a: SpotWithStats, b: SpotWithStats) => b.createdAt - a.createdAt,
     };
     return [...list].sort(sorters[s.sort]);
-  }, [data, cat, s.time, s.pace, s.food, budget, s.sort, s.vettedOnly, showTime, showPace, showCost]);
+  }, [data, cat, s.time, s.pace, s.food, s.rewards, budget, s.sort, s.vettedOnly, showTime, showPace, showCost]);
+  // hotels per rewards program in these results (before the program filter)
+  const programCounts = useMemo(() => {
+    const n = new Map<string, number>();
+    if (showRewards) for (const x of data?.spots || []) if (x.category === "stay") { const p = programOf(x); if (p) n.set(p, (n.get(p) || 0) + 1); }
+    return n;
+  }, [data, showRewards]);
   // food types present in these results (before the food filter), most common first
   const foodTypes = useMemo(() => {
     if (!showPace) return [] as { id: string; n: number }[];
@@ -253,7 +252,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
   const PAGE = 10, PER_AIRPORT = 6;
   const [shown, setShown] = useState(PAGE);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  useEffect(() => { setShown(PAGE); setExpanded(new Set()); }, [cat, route, s.time, s.pace, s.food, s.cost, s.vettedOnly, s.sort, s.browse]);
+  useEffect(() => { setShown(PAGE); setExpanded(new Set()); }, [cat, route, s.time, s.pace, s.food, s.rewards, s.cost, s.vettedOnly, s.sort, s.browse]);
   const mode: "choose" | "browse" | "route" = route ? "route" : s.browse ? "browse" : "choose";
   const { data: hl } = useQuery<Highlights>({ queryKey: [`/api/highlights?category=${cat}`], enabled: mode === "choose" });
 
@@ -289,6 +288,19 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
             {foodTypes.map((f) => (
               <Chip key={f.id} active={s.food === f.id} onClick={() => set({ food: s.food === f.id ? null : f.id })} testId={`chip-food-${f.id}`}>
                 {cuisineLabel(f.id)} <span className="ml-1 font-code text-[10px] opacity-70 tabular">{f.n}</span>
+              </Chip>
+            ))}
+          </div>
+        </div>
+      )}
+      {showRewards && (
+        <div data-testid="filter-rewards">
+          <p className="text-xs font-medium text-muted-foreground mb-1.5">Rewards program</p>
+          <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4">
+            <Chip active={!s.rewards} onClick={() => set({ rewards: null })} testId="chip-rewards-any">Any</Chip>
+            {PROGRAMS.map((p) => (
+              <Chip key={p.id} active={s.rewards === p.id} onClick={() => set({ rewards: s.rewards === p.id ? null : p.id })} testId={`chip-rewards-${p.id}`}>
+                {p.short} {programCounts.get(p.id) ? <span className="ml-1 font-code text-[10px] opacity-70 tabular">{programCounts.get(p.id)}</span> : null}
               </Chip>
             ))}
           </div>
@@ -411,7 +423,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
         </div>
       )}
       {s.view === "map" ? (
-        <MapFilters active={[s.time && showTime, s.pace && showPace, s.food && showPace, budget != null, s.vettedOnly].filter(Boolean).length}>{filtersEl}</MapFilters>
+        <MapFilters active={[s.time && showTime, s.pace && showPace, s.food && showPace, s.rewards && showRewards, budget != null, s.vettedOnly].filter(Boolean).length}>{filtersEl}</MapFilters>
       ) : filtersEl}
 
       {s.view === "list" && <AdBanner slot="top" icaos={icaos} />}
@@ -466,11 +478,14 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
               </div>
             )}
             {g.spots.length === 0 ? (
+              <>
               <Empty
-                title={`No ${M.label.toLowerCase()} picks${s.time || s.pace || s.food || budget != null || s.vettedOnly ? " match these filters" : " yet"}`}
+                title={`No ${M.label.toLowerCase()} picks${s.time || s.pace || s.food || s.rewards || budget != null || s.vettedOnly ? " match these filters" : " yet"}`}
                 body="Be the first crew to drop one here."
                 icao={g.icao}
               />
+              {g.icao && !(data?.spots || []).some((x) => x.icao === g.icao && x.category === cat) && <AiPicksPanel icao={g.icao} category={cat} program={showRewards ? s.rewards : null} />}
+              </>
             ) : (
               <>
                 {g.spots.slice(0, mode === "browse" ? shown : expanded.has(g.icao) ? g.spots.length : PER_AIRPORT).map((spot) => {
@@ -563,6 +578,7 @@ export function SpotCard({ spot }: { spot: SpotWithStats }) {
             <span className="inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5"><Clock className="h-3 w-3" />{fmtMinutes(totalMinutes(spot))}</span>
           )}
           {spot.category === "eat" && <span className="rounded-md bg-muted px-1.5 py-0.5" data-testid={`text-pace-${spot.id}`}>{paceLabel(paceOf(spot))}</span>}
+          {spot.category === "stay" && <ProgramChip spot={spot} />}
           {tags.slice(0, spot.category === "fbo" ? 2 : 1).map((t) => (
             <span key={t} className="rounded-md bg-muted px-1.5 py-0.5 hidden xs:inline sm:inline">{t}</span>
           ))}

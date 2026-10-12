@@ -20,6 +20,7 @@ import { AI_PRICES, costOf, costReport } from "./aiUsage";
 import { registerFeedback } from "./feedback";
 import { registerCheckins } from "./checkins";
 import { registerModFix, closeDuplicateNotices } from "./modfix";
+import { registerAiPicks, fillStop } from "./aiPicks";
 import { registerSimilar } from "./similar";
 import { dayKey } from "./metrics";
 import { SERVICES } from "@shared/services";
@@ -528,9 +529,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const airport = (await storage.resolveCode(st.icao)) || (refAirport(st.icao) as any) || null;
       const all = airport?.icao ? await storage.searchSpots([airport.icao]) : [];
       const byId = new Map(all.map((s) => [s.id, s]));
+      const picks = withFavorites(st.picks, all, favs).map((i) => byId.get(i)).filter(Boolean) as SpotWithStats[];
+      const fill = airport?.icao ? await fillStop(airport.icao, st.layover, st.nights, picks, all, airport).catch(() => ({ aiPicks: [], aiStatus: "failed" as const, aiSlots: [] })) : { aiPicks: [], aiStatus: "none" as const, aiSlots: [] };
       out.push({
         icao: airport?.icao || st.icao.toUpperCase(), layover: st.layover, nights: st.nights, airport,
-        picks: withFavorites(st.picks, all, favs).map((i) => byId.get(i)).filter(Boolean) as SpotWithStats[],
+        picks, aiPicks: fill.aiPicks, aiStatus: fill.aiStatus, aiSlots: fill.aiSlots,
         favoriteIds: all.filter((s) => favs.has(s.id)).map((s) => s.id),
         candidates: withCandidates ? all : undefined,
         sponsor: await sponsorFor(airport?.icao || st.icao.toUpperCase()),
@@ -549,7 +552,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const airport = (await storage.resolveCode(st.icao)) || (refAirport(st.icao) as any) || null;
       if (!airport) return res.status(400).json({ message: `Unknown airport ${st.icao.toUpperCase()}. Check the code (KOPF, OPF, X51 and 06FA all work).` });
       const all = await storage.searchSpots([airport.icao]);
-      stops.push({ ...st, icao: airport.icao, picks: suggestPicks(all, st.layover).filter((i) => !favs.has(i)) });
+      stops.push({ ...st, icao: airport.icao, picks: suggestPicks(all, st.layover, st.nights).filter((i) => !favs.has(i)) });
     }
     res.json({ title: p.data.title, stops });
   });
@@ -619,6 +622,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // ---------- admin ----------
   registerFeedback(app, { userOf, requireAdmin });
   registerCheckins(app, { requireUser, userOf });
+  registerAiPicks(app, { requireAdmin });
   registerModFix(app, { requireAdmin, requireUser, ensureAirport: (c) => ensureAirport(c), byAdmin });
   app.get("/api/admin/costs", requireAdmin, async (req, res) => {
     const days = [7, 30, 90].includes(Number(req.query.days)) ? Number(req.query.days) : 30;

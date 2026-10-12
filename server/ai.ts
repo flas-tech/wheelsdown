@@ -333,3 +333,54 @@ function cleanFix(f: FixSuggestion, kind: "spot" | "review"): FixSuggestion {
     .filter((c) => c.field === "crewTip" || c.field === "description" || c.value);
   return { fixable: !!f.fixable && changes.length > 0, summary: String(f.summary || "").slice(0, 300), changes };
 }
+
+// ---------------------------------------------------------------- AI picks (fill-ins where crews haven't posted yet)
+export type AiPickDraft = {
+  category: "eat" | "do" | "stay"; meal: "breakfast" | "lunch" | "dinner" | "none"; name: string; address: string; website: string;
+  description: string; costLevel: number | null; pace: "grab" | "sit" | "both" | null; minutesNeeded: number | null; tags: string[]; sources: string[];
+};
+const PICKS_SCHEMA = { name: "ai_picks", schema: {
+  type: "object", additionalProperties: false, required: ["picks"],
+  properties: { picks: { type: "array", items: {
+    type: "object", additionalProperties: false,
+    required: ["category", "meal", "name", "address", "website", "description", "costLevel", "pace", "minutesNeeded", "tags", "sources"],
+    properties: {
+      category: { type: "string", enum: ["eat", "do", "stay"] }, meal: { type: "string", enum: ["breakfast", "lunch", "dinner", "none"] },
+      name: { type: "string" }, address: { type: "string" }, website: { type: "string" }, description: { type: "string" },
+      costLevel: { type: ["integer", "null"] }, pace: { type: ["string", "null"], enum: ["grab", "sit", "both", null] },
+      minutesNeeded: { type: ["integer", "null"] }, tags: { type: "array", items: { type: "string" } }, sources: { type: "array", items: { type: "string" } },
+    } } } } } };
+
+/** Real, currently open places near an airport for crews on a layover. Used only where crews haven't listed anything yet. */
+export async function suggestAirportPicks(ap: { icao: string; name: string; city: string; region?: string | null; country?: string | null; lat: number | null; lon: number | null }, avoidNames: string[]): Promise<AiPickDraft[]> {
+  const system = `You suggest places for Wheelsdown, a guide for airline, corporate and charter flight crews on layovers. Crews have not listed these yet, so your picks fill the gap.
+Use web search. Only suggest real businesses that are open now, near this airport (hotels and food within about 10 miles if possible, never more than 25). Never invent places, addresses, prices or hours.
+Return about 12 picks:
+- eat: 2 good for breakfast (meal "breakfast"), 2 for lunch ("lunch"), 2 for dinner ("dinner"). Mix grab-and-go and sit-down. Favor local favorites over national chains, but a reliable chain is fine when that is what is near the field.
+- do: 3 things to do (meal "none"): a mix of quick (under 2 hours) and longer options, ideally reachable without a car.
+- stay: 3 hotels crews actually use near the field (meal "none"): at least one from a major rewards program (Hilton, Marriott, IHG, Hyatt, Wyndham, Choice, Best Western) and say the full brand name in name, e.g. "Hampton Inn Bedford-Burlington".
+Fields:
+- name: the business's official name only, no parentheses, alternate names or notes. address: the exact street address, e.g. "5 Wheeler Rd, Burlington, MA 01803", with no notes or ranges (required; skip the place if you can't confirm it). website: official URL or "".
+- description: 1-2 plain sentences (max 220 chars): what it is and why a crew would go. No hype, no emojis, no exclamation points.
+- costLevel: price per ${"person (eat/do) or night (stay)"} using eat ${priceGuide("eat")}; do ${priceGuide("do")}; stay ${priceGuide("stay")}. null if unknown.
+- pace (eat only, else null): grab, sit or both. minutesNeeded (do only, else null): typical visit length.
+- tags: up to 4, ${TAG_HINT}.
+- sources: URLs you relied on.
+Do not repeat any of these places crews already listed: ${avoidNames.slice(0, 60).join("; ") || "(none)"}.`;
+  const user = JSON.stringify({ airport: { code: ap.icao, name: ap.name, city: ap.city, region: ap.region || "", country: ap.country || "", lat: ap.lat, lon: ap.lon } });
+  const v = await callModel<{ picks: AiPickDraft[] }>(system, user, { purpose: "picks", search: true, schema: PICKS_SCHEMA, timeoutMs: 150_000, effort: "low" });
+  return (v.picks || []).map((p) => {
+    const website = p.website && /^https?:\/\//.test(p.website) ? p.website : p.website ? "https://" + p.website : "";
+    let site = ""; try { site = website ? new URL(website).toString() : ""; } catch { site = ""; }
+    return {
+      ...p,
+      name: (p.name || "").trim().slice(0, 120), address: (p.address || "").trim().slice(0, 200), website: site,
+      description: (p.description || "").replace(/!/g, ".").trim().slice(0, 300),
+      costLevel: p.costLevel != null && costOptions(p.category).includes(p.costLevel) ? p.costLevel : null,
+      pace: p.category === "eat" ? p.pace : null, minutesNeeded: p.category === "do" ? p.minutesNeeded : null,
+      meal: p.category === "eat" ? p.meal : "none",
+      tags: (p.tags || []).map((t) => t.toLowerCase().trim().slice(0, 30)).filter(Boolean).slice(0, 4),
+      sources: (p.sources || []).filter((u) => /^https?:\/\//.test(u)).slice(0, 4),
+    };
+  }).filter((p) => p.name && /\d/.test(p.address) && !/[()]|\barea\b|\bsee\b|\bnear\b/i.test(p.address + " " + p.name));
+}

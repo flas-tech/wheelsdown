@@ -2,10 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useRoute } from "wouter";
 import {
-  ArrowLeft, ChevronRight, ClipboardList, FileDown, Link2, Loader2, MapPin, Plus, RefreshCw, Share2, Trash2, X, Plane, Lightbulb, Heart } from "lucide-react";
+  ArrowLeft, ChevronRight, ClipboardList, FileDown, Link2, Loader2, MapPin, Plus, RefreshCw, Share2, Trash2, X, Plane, Lightbulb, Heart, Sparkles, Users, ExternalLink } from "lucide-react";
 import { LAYOVERS, type LayoverId, type SpotWithStats } from "@shared/schema";
 import { costRange, costText, paceLabel, paceOf } from "@shared/cost";
-import { LAYOVER_PLAN } from "@shared/briefing";
+import { LAYOVER_PLAN, MEAL_LABEL } from "@shared/briefing";
 import { apiRequest, queryClient, IS_STATIC } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { CAT_META, Chip, Stars, fmtMinutes, totalMinutes } from "@/lib/ui";
@@ -13,14 +13,18 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { drawStaticMap, PIN_COLORS } from "@/lib/staticMap";
-import { buildBriefPdf, shareOrDownload, stopPins, layoverText, routeText, CAT_NAMES, type BriefFull, type BriefStopFull } from "@/lib/briefPdf";
+import { buildBriefPdf, shareOrDownload, stopPins, layoverText, routeText, CAT_NAMES, isAi, type AiPick, type BriefFull, type BriefStopFull } from "@/lib/briefPdf";
 import { errText } from "./add";
+import { PickTag } from "@/lib/aiPicks";
 
 type StopInput = { icao: string; layover: LayoverId; nights?: number; picks: number[] };
 type BriefSummary = { id: number; title: string; stops: { icao: string; layover: LayoverId }[]; updatedAt: number };
 const parseCodes = (r: string) => r.toUpperCase().split(/[^A-Z0-9]+/).filter((c) => c.length === 3 || c.length === 4).slice(0, 12);
 const appUrl = () => `${window.location.origin}${window.location.pathname}`;
 const toInput = (b: BriefFull): StopInput[] => b.stops.map((s) => ({ icao: s.icao, layover: s.layover as LayoverId, nights: s.nights, picks: s.picks.map((p) => p.id) }));
+
+/** Refetch every few seconds while AI picks are still being found for a stop (they take about a minute). */
+const aiPolling = (q: { state: { data?: BriefFull } }) => (q.state.data?.stops.some((s) => s.aiStatus === "pending") ? 5000 : false);
 
 // ---------------- delete (two taps, no browser pop-up) ----------------
 function useDeleteBriefing(onDone?: () => void) {
@@ -203,7 +207,7 @@ export function BriefEditorPage() {
   const { me, requireAuth, loading } = useAuth();
   const [editRoute, setEditRoute] = useState(false);
 
-  const { data: brief, isLoading } = useQuery<BriefFull>({ queryKey: ["/api/briefings", String(id)], enabled: !!me && !!id });
+  const { data: brief, isLoading } = useQuery<BriefFull>({ queryKey: ["/api/briefings", String(id)], enabled: !!me && !!id, refetchInterval: aiPolling });
 
   const save = useMutation({
     mutationFn: async (p: { title: string; stops: StopInput[]; suggest?: boolean }) => {
@@ -407,7 +411,8 @@ function StopSection({ stop, index, onRemovePick, onAddPick, onMove, onResuggest
       <MapCanvas pins={pins} testId={`map-stop-${index}`} />
       {unmapped > 0 && <p className="text-[11px] text-muted-foreground">{unmapped} pick{unmapped > 1 ? "s aren't" : " isn't"} on the map yet (no location saved). They're still in the list and the PDF.</p>}
 
-      {numbered.length === 0 && (
+      <AiNote stop={stop} />
+      {numbered.length === 0 && stop.aiStatus !== "pending" && (
         <div className="rounded-2xl border border-dashed border-border p-4 text-center">
           <p className="text-sm font-semibold">No crew picks at {stop.icao} yet</p>
           <Link href={`/add/${stop.icao}`} className="mt-2 inline-flex items-center gap-1.5 rounded-full taxi-sign px-3.5 py-1.5 text-xs font-semibold hover-elevate" data-testid={`link-add-at-${stop.icao}`}><Plus className="h-3.5 w-3.5" />Add a spot at {stop.icao}</Link>
@@ -415,7 +420,7 @@ function StopSection({ stop, index, onRemovePick, onAddPick, onMove, onResuggest
       )}
 
       <ol className="space-y-2">
-        {numbered.map(({ n, spot }) => <PickRow key={spot.id} n={n} spot={spot} count={numbered.length}
+        {numbered.map(({ n, spot, ai }) => <PickRow key={spot.id} n={n} spot={spot} count={stop.picks.length} readOnly={ai}
           favorite={favs.has(spot.id)} onRemove={() => onRemovePick(spot.id)} onUp={() => onMove(spot.id, -1)} onDown={() => onMove(spot.id, 1)} busy={busy} />)}
       </ol>
 
@@ -454,26 +459,34 @@ function PickRow({ n, spot, count, onRemove, onUp, onDown, busy, readOnly, favor
   n: number; spot: SpotWithStats; count: number; onRemove?: () => void; onUp?: () => void; onDown?: () => void; busy?: boolean; readOnly?: boolean; favorite?: boolean;
 }) {
   const M = CAT_META[spot.category as keyof typeof CAT_META];
-  const extra = spot.category === "eat" ? paceLabel(paceOf(spot)) : spot.category === "do" ? fmtMinutes(totalMinutes(spot)) : "";
+  const ai = isAi(spot);
+  const meal = ai ? (spot as AiPick).ai.meal : null;
+  const extra = spot.category === "eat" ? (ai && !spot.pace ? "" : paceLabel(paceOf(spot))) : spot.category === "do" ? fmtMinutes(totalMinutes(spot)) : "";
+  const outLink = spot.website || `https://maps.apple.com/?q=${encodeURIComponent(spot.name + " " + (spot.address || ""))}`;
   return (
-    <li className="rounded-2xl border border-card-border bg-card p-3.5" data-testid={`pick-${spot.id}`}>
+    <li className={cn("rounded-2xl border bg-card p-3.5", ai ? "border-dashed border-violet-400/60" : "border-card-border")} data-testid={ai ? `pick-ai-${-spot.id}` : `pick-${spot.id}`}>
       <div className="flex items-start gap-3">
         <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full text-[11px] font-bold text-white" style={{ background: PIN_COLORS[spot.category as keyof typeof PIN_COLORS] }}>{n}</span>
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
-            <Link href={`/spot/${spot.id}`} className="text-sm font-semibold leading-snug hover:underline underline-offset-2">{spot.name}</Link>
-            {spot.category !== "fbo" && <span className="shrink-0 text-right"><span className="block font-code text-xs font-bold text-primary">{costText(spot)}</span>{spot.cost != null && spot.cost > 0 && <span className="block text-[10px] text-muted-foreground whitespace-nowrap">{costRange(spot.category, spot.cost)}</span>}</span>}
+            {ai ? <a href={outLink} target="_blank" rel="noopener noreferrer" className="text-sm font-semibold leading-snug hover:underline underline-offset-2">{spot.name}</a>
+              : <Link href={`/spot/${spot.id}`} className="text-sm font-semibold leading-snug hover:underline underline-offset-2">{spot.name}</Link>}
+            {spot.category !== "fbo" && (!ai || spot.cost != null) && <span className="shrink-0 text-right"><span className="block font-code text-xs font-bold text-primary">{costText(spot)}</span>{spot.cost != null && spot.cost > 0 && <span className="block text-[10px] text-muted-foreground whitespace-nowrap">{costRange(spot.category, spot.cost)}</span>}</span>}
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            <PickTag ai={ai} />
+            {meal && <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold" data-testid={`text-meal-${-spot.id}`}>{MEAL_LABEL[meal]}</span>}
           </div>
           {favorite && <p className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-semibold text-rose-600 dark:text-rose-400" data-testid={`text-pick-favorite-${spot.id}`}><Heart className="h-3 w-3" fill="currentColor" />Favorite{readOnly ? "" : " · always included"}</p>}
           <p className="mt-0.5 text-[11px] text-muted-foreground">
             <span className="inline-flex items-center gap-1"><M.icon className="h-3 w-3" />{M.label}</span>
-            {" · "}{spot.milesFromField ? `${spot.milesFromField} mi` : "On field"}{extra ? ` · ${extra}` : ""}
+            {spot.milesFromField ? ` · ${spot.milesFromField} mi` : ai ? "" : " · On field"}{extra ? ` · ${extra}` : ""}
           </p>
           <div className="mt-1 flex items-center gap-1.5">
-            {spot.reviewCount ? <><Stars value={spot.avgRating ?? 0} size={11} /><span className="text-[11px] text-muted-foreground tabular">{spot.avgRating?.toFixed(1)} · {spot.reviewCount}</span></> : <span className="text-[11px] text-muted-foreground">No ratings yet</span>}
+            {spot.reviewCount ? <><Stars value={spot.avgRating ?? 0} size={11} /><span className="text-[11px] text-muted-foreground tabular">{spot.avgRating?.toFixed(1)} · {spot.reviewCount}</span></> : <span className="text-[11px] text-muted-foreground">{ai ? "Not rated by crews yet" : "No ratings yet"}</span>}
           </div>
           {(spot.crewTip || spot.description) && (
-            <p className="mt-1.5 flex gap-1.5 text-xs text-muted-foreground"><Lightbulb className="h-3.5 w-3.5 shrink-0 mt-0.5 text-primary" /><span className="line-clamp-2">{spot.crewTip || spot.description}</span></p>
+            <p className="mt-1.5 flex gap-1.5 text-xs text-muted-foreground">{ai ? <Sparkles className="h-3.5 w-3.5 shrink-0 mt-0.5 text-violet-600" /> : <Lightbulb className="h-3.5 w-3.5 shrink-0 mt-0.5 text-primary" />}<span className="line-clamp-2">{spot.crewTip || spot.description}</span></p>
           )}
           {spot.address && (
             <a href={`https://maps.apple.com/?q=${encodeURIComponent(spot.name + " " + spot.address)}`} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
@@ -482,6 +495,12 @@ function PickRow({ n, spot, count, onRemove, onUp, onDown, busy, readOnly, favor
           )}
         </div>
       </div>
+      {ai && (
+        <div className="mt-2 flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-[11px]">
+          <a href={outLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"><ExternalLink className="h-3 w-3" />{spot.website ? "Website" : "Maps"}</a>
+          <Link href={`/add/${spot.icao}?name=${encodeURIComponent(spot.name)}&cat=${spot.category}`} className="inline-flex items-center gap-1 font-semibold text-primary" data-testid={`link-ai-add-${-spot.id}`}><Plus className="h-3 w-3" />Been here? Add it for crews</Link>
+        </div>
+      )}
       {!readOnly && (
         <div className="mt-2.5 flex items-center justify-end gap-1">
           <button onClick={onUp} disabled={busy || n === 1} className="h-7 px-2 rounded-full text-[11px] border border-border hover-elevate disabled:opacity-30" aria-label="Move up" data-testid={`button-pick-up-${spot.id}`}>Up</button>
@@ -496,7 +515,7 @@ function PickRow({ n, spot, count, onRemove, onUp, onDown, busy, readOnly, favor
 // ---------------- shared (read-only) ----------------
 export function SharedBriefPage() {
   const [, params] = useRoute("/b/:token");
-  const { data: brief, isLoading, isError, error } = useQuery<BriefFull>({ queryKey: ["/api/shared/briefings", params?.token], retry: false });
+  const { data: brief, isLoading, isError, error } = useQuery<BriefFull>({ queryKey: ["/api/shared/briefings", params?.token], retry: false, refetchInterval: aiPolling });
   if (isLoading) return <div className="space-y-4"><Skeleton className="h-8 w-40" /><Skeleton className="h-64 rounded-2xl" /></div>;
   if (isError || !brief) return <p className="text-sm text-muted-foreground">{errText(error) || "This briefing isn't available."} <Link href="/" className="text-primary underline">Go to Wheelsdown</Link></p>;
   return (
@@ -518,8 +537,9 @@ export function SharedBriefPage() {
               <span className="text-xs text-muted-foreground truncate">{st.airport?.city}</span>
             </div>
             <MapCanvas pins={pins} />
+            <AiNote stop={st} />
             <ol className="space-y-2">{numbered.map(({ n, spot }) => <PickRow key={spot.id} n={n} spot={spot} count={numbered.length} readOnly favorite={(st.favoriteIds || []).includes(spot.id)} />)}</ol>
-            {numbered.length === 0 && <p className="text-sm text-muted-foreground">No picks for this stop.</p>}
+            {numbered.length === 0 && st.aiStatus !== "pending" && <p className="text-sm text-muted-foreground">No picks for this stop.</p>}
             {st.sponsor && (
               <a href={st.sponsor.url || "#"} target="_blank" rel="noopener noreferrer sponsored" className="block rounded-xl bg-muted/60 px-3 py-2 text-xs hover-elevate">
                 <span className="font-semibold uppercase tracking-wide text-[10px] text-muted-foreground mr-2">Sponsored</span>
@@ -531,5 +551,28 @@ export function SharedBriefPage() {
       })}
       <Link href="/" className="block text-center text-xs text-muted-foreground hover:text-foreground">Built with Wheelsdown, the crew-sourced layover guide</Link>
     </div>
+  );
+}
+
+const SLOT_WORD = (sl: { cat: string; meal?: string }) => (sl.meal ? `a ${sl.meal} spot` : sl.cat === "do" ? "something to do" : sl.cat === "stay" ? "a hotel" : "a place to eat");
+/** Explains AI picks on a stop, or says they're on the way. */
+function AiNote({ stop }: { stop: BriefStopFull }) {
+  const slots = stop.aiSlots || [];
+  if (stop.aiStatus === "pending") {
+    const w = Array.from(new Set(slots.map(SLOT_WORD)));
+    const want = w.length > 1 ? `${w.slice(0, -1).join(", ")} or ${w[w.length - 1]}` : w[0];
+    return (
+      <p className="flex items-start gap-2 rounded-xl bg-violet-500/10 px-3 py-2 text-xs" data-testid="text-ai-pending">
+        <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-violet-600" />
+        <span>No crew has listed {want || "everything"} at {stop.icao} yet. Finding AI picks to fill the gap, usually under a minute.</span>
+      </p>
+    );
+  }
+  if (!stop.aiPicks?.length) return null;
+  return (
+    <p className="flex items-start gap-2 text-[11px] text-muted-foreground" data-testid="text-ai-note">
+      <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-violet-600" />
+      <span>AI picks fill in where no crew has listed a place yet. They aren't crew-rated, so check hours before you go. Been to one? Add it and it becomes a crew pick.</span>
+    </p>
   );
 }

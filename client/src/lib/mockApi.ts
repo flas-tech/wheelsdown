@@ -240,6 +240,7 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
   if (method === "POST" && path === "/api/auth/forgot") return { ok: true, message: "Demo build: no emails are sent. On the live site, a reset link goes to the email on your account." };
   if (method === "POST" && path === "/api/auth/reset") throw new HttpError(400, "Password reset works on the live site only.");
   if (method === "GET" && path === "/api/config") return { contactEmail: "", emailEnabled: false, moderated: false, ai: false };
+  if (method === "GET" && path === "/api/ai-picks") return { status: "off", picks: [] }; // AI picks need the live server
   if (method === "DELETE" && path === "/api/me") {
     const u = needUser();
     if (String(body?.confirm || "").toLowerCase() !== u.handle) throw new HttpError(400, "Type your handle to confirm");
@@ -511,7 +512,7 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
   if (method === "POST" && path === "/api/briefings/suggest") {
     const u = needUser();
     const fv = favSet(u.id);
-    const stops = cleanStops(body.stops).map((st) => ({ ...st, picks: suggestPicks(withStats(db.spots.filter((s) => s.status === "live" && s.icao === st.icao)), st.layover).filter((i) => !fv.has(i)) }));
+    const stops = cleanStops(body.stops).map((st) => ({ ...st, picks: suggestPicks(withStats(db.spots.filter((s) => s.status === "live" && s.icao === st.icao)), st.layover, st.nights).filter((i) => !fv.has(i)) }));
     return { title: String(body.title || ""), stops };
   }
   if (method === "GET" && path === "/api/briefings") {

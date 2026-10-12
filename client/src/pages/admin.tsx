@@ -1003,7 +1003,7 @@ type CostData = {
   services: { id: string; name: string; role: string; what: string; plan: string; monthly: number | null; costText: string; note?: string; dashboard: string; pricing: string; monthToDate?: number }[];
   fixedMonthly: number;
 };
-const PURPOSE_LABEL: Record<string, string> = { listing: "Listing checks (new and edits)", rating: "Rating checks", autofill: "Add spot autofill", name: "Display-name checks", bio: "Bio checks", safety: "First-pass safety check (free)", fix: "Moderation fixes (AI fix button)" };
+const PURPOSE_LABEL: Record<string, string> = { listing: "Listing checks (new and edits)", rating: "Rating checks", autofill: "Add spot autofill", name: "Display-name checks", bio: "Bio checks", safety: "First-pass safety check (free)", fix: "Moderation fixes (AI fix button)", picks: "AI picks for briefs and empty airports" };
 const usd = (n: number) => n < 0.01 && n > 0 ? "<$0.01" : `$${n.toFixed(n < 10 ? 2 : 0)}`;
 const tok = (n: number) => n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n);
 

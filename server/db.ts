@@ -125,6 +125,8 @@ CREATE INDEX IF NOT EXISTS feedback_status_idx ON feedback (status, created_at);
 CREATE TABLE IF NOT EXISTS ai_usage_daily (day text NOT NULL, purpose text NOT NULL, calls integer NOT NULL DEFAULT 0, failures integer NOT NULL DEFAULT 0, input_tokens bigint NOT NULL DEFAULT 0, cached_tokens bigint NOT NULL DEFAULT 0, output_tokens bigint NOT NULL DEFAULT 0, searches integer NOT NULL DEFAULT 0, PRIMARY KEY (day, purpose));
 CREATE TABLE IF NOT EXISTS visitors_daily (day text NOT NULL, vid text NOT NULL, signed_in integer NOT NULL DEFAULT 0, PRIMARY KEY (day, vid));
 CREATE TABLE IF NOT EXISTS app_settings (key text PRIMARY KEY, value text NOT NULL DEFAULT '');
+CREATE TABLE IF NOT EXISTS ai_picks (id serial PRIMARY KEY, icao text NOT NULL, category text NOT NULL, meal text NOT NULL DEFAULT '', name text NOT NULL, address text NOT NULL DEFAULT '', website text NOT NULL DEFAULT '', description text NOT NULL DEFAULT '', cost_level integer, pace text, minutes_needed integer, tags text NOT NULL DEFAULT '[]', lat double precision, lng double precision, miles double precision, sources text NOT NULL DEFAULT '[]', status text NOT NULL DEFAULT 'live', created_at bigint NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS ai_picks_icao_idx ON ai_picks (icao, status);
 INSERT INTO app_settings (key, value) VALUES ('wright_seats_taken', '0') ON CONFLICT (key) DO NOTHING;
 `;
 

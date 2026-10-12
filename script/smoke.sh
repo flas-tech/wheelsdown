@@ -97,6 +97,9 @@ check "leaderboard"        '"crewTotal"'    "$(curl -s "$BASE/api/leaderboard?q=
 check "leaderboard bases"  '['              "$(curl -s $BASE/api/leaderboard/bases)"
 BID=$(curl -s -XPOST $BASE/api/briefings -H "$A" -H "$J" -d '{"title":"Smoke","stops":[{"icao":"KMIA","layover":"hours","picks":[]}]}' | jget "d.get('id','')" 2>/dev/null)
 [[ -n "$BID" ]] && ok "save briefing" || bad "save briefing" "no id"
+check "briefing ai status"  '"aiStatus"'     "$(curl -s $BASE/api/briefings/$BID -H "$A")"
+check "ai picks need cat"   'required'       "$(curl -s "$BASE/api/ai-picks?icao=KMIA")"
+check "ai picks defer crew" '"status":"crew"' "$(curl -s "$BASE/api/ai-picks?icao=KMIA&cat=eat")"
 check "delete briefing"    '"ok":true'      "$(curl -s -XDELETE $BASE/api/briefings/$BID -H "$A")"
 check "briefing gone"      'Not found'      "$(curl -s $BASE/api/briefings/$BID -H "$A")"
 check "delete again 404"   'Not found'      "$(curl -s -XDELETE $BASE/api/briefings/$BID -H "$A")"

@@ -77,6 +77,8 @@ export async function searchPlaces(q: string, lat: number, lng: number, cat?: st
       j = await photon(base);
       hits = dedupe([...hits, ...(j.features || []).map(toHit)]);
     }
+    // an FBO is on the field: a same-named FBO at another airport (Boston for Bedford) is never the right answer
+    if (cat === "fbo") hits = hits.filter((h) => milesApart({ lat, lng }, h) <= 4);
     return hits.slice(0, 8);
   });
 }

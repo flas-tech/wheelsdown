@@ -37,10 +37,13 @@ export default function AddPage() {
   const { data: editData } = useQuery<{ spot: SpotWithStats; reviews: ReviewWithVotes[] }>({ queryKey: ["/api/spots", editId], enabled: !!editId });
   const [loaded, setLoaded] = useState(false);
 
-  const [category, setCategory] = useState<Category>(search.category || "eat");
+  // "Been here? Add it" links from AI picks carry the name and category: #/add/KBED?name=...&cat=stay
+  const linkQ = new URLSearchParams(window.location.hash.split("?")[1] || "");
+  const linkCat = (["eat", "do", "stay", "fbo"] as const).find((c) => c === linkQ.get("cat"));
+  const [category, setCategory] = useState<Category>(linkCat || search.category || "eat");
   const [code, setCode] = useState(initialIcao);
   const [city, setCity] = useState("");
-  const [name, setName] = useState("");
+  const [name, setName] = useState((linkQ.get("name") || "").slice(0, 120));
   const [description, setDescription] = useState("");
   const [costLevel, setCost] = useState<number | null>(null);
   const [pace, setPace] = useState<PaceValue | null>(null);
@@ -206,7 +209,7 @@ export default function AddPage() {
           pace: category === "eat" ? pace : null,
           minutesNeeded: category === "do" && time ? TIME_PRESETS[time] : category === "stay" ? 720 : 30,
           milesFromField: miles ? Number(miles) : 0,
-          lat: place?.lat ?? null, lng: place?.lng ?? null, placeRef: place?.ref || null,
+          lat: place?.lat ?? null, lng: place?.lng ?? null, placeRef: place?.ref && !place.ref.startsWith("field:") ? place.ref : null,
           crewTip, address, website, tags,
           ...(!editId && avoid ? { goAround: { comment: why.trim() } } : {}),
         })
@@ -461,6 +464,11 @@ function PlaceAutocomplete({ value, onChange, onPick, anchor, category, here, fi
     finally { if (my === seq.current) setBusy(false); }
   }
 
+  // FBOs live on the field: if the map has no match right at the airport, offer to pin the typed name there
+  const fieldHit = (h: PlaceHit) => !!field && Math.abs(h.lat - field.lat) < 0.05 && Math.abs(h.lng - field.lng) < 0.06;
+  const atField: PlaceHit | null = category === "fbo" && mode === "search" && field && value.trim().length >= 3 && !busy && !hits.some(fieldHit)
+    ? { ref: `field:${code}`, name: value.trim(), address: "", city: "", lat: field.lat, lng: field.lng, kind: `at ${code}` } : null;
+
   return (
     <div ref={box} className="relative">
       <div className="relative">
@@ -484,7 +492,7 @@ function PlaceAutocomplete({ value, onChange, onPick, anchor, category, here, fi
         </div>
       )}
       {!anchor && <p className="mt-1.5 text-[11px] text-muted-foreground">Enter the airport (or use your location) to get name suggestions.</p>}
-      {open && (hits.length > 0 || note) && (
+      {open && (hits.length > 0 || note || atField) && (
         <div className="absolute z-30 mt-1 w-full rounded-xl border border-border bg-popover shadow-xl overflow-hidden" data-testid="list-place-hits">
           {mode === "nearby" && <p className="px-3 pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{nearLabel}</p>}
           {hits.map((h) => (
@@ -494,7 +502,14 @@ function PlaceAutocomplete({ value, onChange, onPick, anchor, category, here, fi
               <span className="block text-xs text-muted-foreground truncate">{[h.kind, h.address].filter(Boolean).join(" · ")}</span>
             </button>
           ))}
-          {note && <p className="px-3 py-2.5 text-xs text-muted-foreground">{note}</p>}
+          {atField && (
+            <button type="button" onClick={() => { onPick(atField); setOpen(false); }} data-testid="button-place-at-field"
+              className="w-full text-left px-3 py-2.5 hover-elevate border-b border-border/60 bg-primary/5">
+              <span className="block text-sm font-medium truncate">Use "{value.trim()}" at {code}</span>
+              <span className="block text-xs text-muted-foreground truncate">Not on the map? Pin it at the field. AI fills in the address.</span>
+            </button>
+          )}
+          {note && !atField && <p className="px-3 py-2.5 text-xs text-muted-foreground">{note}</p>}
           <p className="px-3 py-1.5 text-[10px] text-muted-foreground bg-muted/40">Suggestions © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer" className="underline">OpenStreetMap</a> contributors</p>
         </div>
       )}

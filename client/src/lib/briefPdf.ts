@@ -9,7 +9,11 @@ export type Sponsor = { id: number; advertiser: string; headline: string; url: s
 export type BriefStopFull = {
   icao: string; layover: string; nights?: number; airport: (Airport & { lat?: number | null; lon?: number | null }) | null;
   picks: SpotWithStats[]; candidates?: SpotWithStats[]; sponsor: Sponsor; favoriteIds?: number[];
+  /** AI picks filling slots no crew listing covers (negative ids). */
+  aiPicks?: AiPick[]; aiStatus?: "ready" | "pending" | "off" | "failed" | "none"; aiSlots?: { cat: string; meal?: string }[];
 };
+export type AiPick = SpotWithStats & { ai: { meal: "breakfast" | "lunch" | "dinner" | null; sources: string[]; createdAt: number } };
+export const isAi = (s: SpotWithStats): s is AiPick => s.id < 0 || !!(s as any).ai;
 export type BriefFull = { id: number; title: string; shareToken: string; createdAt: number; updatedAt: number; stops: BriefStopFull[] };
 
 export const CAT_NAMES: Record<string, string> = { eat: "Eat", do: "Do", stay: "Stay", fbo: "FBO" };
@@ -21,12 +25,12 @@ export const layoverText = (s: { layover: string; nights?: number }) => {
 export const routeText = (b: { stops: { icao: string }[] }) => b.stops.map((s) => s.icao).join(" > ");
 
 /** Pins for a stop: airport plus numbered picks that have coordinates. */
-export function stopPins(st: BriefStopFull): { pins: MapPin[]; numbered: { n: number; spot: SpotWithStats; mapped: boolean }[] } {
+export function stopPins(st: BriefStopFull): { pins: MapPin[]; numbered: { n: number; spot: SpotWithStats; mapped: boolean; ai: boolean }[] } {
   const pins: MapPin[] = [];
-  const numbered = st.picks.map((spot, i) => {
+  const numbered = [...st.picks, ...(st.aiPicks || [])].map((spot, i) => {
     const mapped = spot.lat != null && spot.lng != null;
     if (mapped) pins.push({ lat: spot.lat!, lng: spot.lng!, label: String(i + 1), kind: spot.category as MapPin["kind"] });
-    return { n: i + 1, spot, mapped };
+    return { n: i + 1, spot, mapped, ai: isAi(spot) };
   });
   if (st.airport?.lat != null && st.airport?.lon != null) pins.push({ lat: st.airport.lat, lng: st.airport.lon, label: st.icao, kind: "airport" });
   return { pins, numbered };
@@ -104,13 +108,13 @@ export async function buildBriefPdf(b: BriefFull, opts: { appUrl: string; prepar
     const lines = (doc.splitTextToSize(ap, 255) as string[]).slice(0, 2);
     doc.text(lines, M + 60, y);
     doc.text(clean(layoverText(s)), M + 330, y);
-    doc.text(String(s.picks.length), W - M, y, { align: "right" });
+    doc.text(String(s.picks.length + (s.aiPicks?.length || 0)), W - M, y, { align: "right" });
     y += 18 + (lines.length - 1) * 11;
   });
   y += 8;
   if (y > H - 80) { footer(page); doc.addPage(); page++; brandBar(); y = 70; }
   doc.setFontSize(8.5); doc.setTextColor(...slate);
-  doc.text(doc.splitTextToSize("Picks come from crew ratings, up/down vetting and crew-reported prices on Wheelsdown. Favorites saved by the crew member who built this briefing are always included. Each stop page lists the picks in map order with the top crew tip.", CW), M, y);
+  doc.text(doc.splitTextToSize("Picks come from crew ratings, up/down vetting and crew-reported prices on Wheelsdown. Favorites saved by the crew member who built this briefing are always included. Each stop page lists the picks in map order with the top crew tip. CREW PICK means a crew member listed and rated it. AI PICK means AI suggested it because no crew has listed a place for that meal or slot yet: check hours before you go.", CW), M, y);
   footer(page);
 
   // ---------- one page per stop ----------
@@ -148,7 +152,7 @@ export async function buildBriefPdf(b: BriefFull, opts: { appUrl: string; prepar
       yy += 30;
     }
 
-    for (const { n, spot, mapped } of numbered) {
+    for (const { n, spot, mapped, ai } of numbered) {
       const tip = clean(spot.crewTip || spot.description || "");
       const tipLines = tip ? doc.splitTextToSize(tip, CW - 30).slice(0, 2) : [];
       const need = 34 + tipLines.length * 11;
@@ -173,15 +177,24 @@ export async function buildBriefPdf(b: BriefFull, opts: { appUrl: string; prepar
         doc.setTextColor(255, 255, 255); doc.text("FAVORITE", nx + fw / 2, yy - 0.8, { align: "center" });
         nx += fw + 6; doc.setFontSize(11.5); doc.setTextColor(...navy);
       }
+      { // CREW PICK / AI PICK tag
+        const tag = ai ? "AI PICK" : "CREW PICK";
+        doc.setFont("helvetica", "bold"); doc.setFontSize(6.5);
+        const tw = doc.getTextWidth(tag) + 8;
+        if (ai) doc.setFillColor(124, 58, 237); else doc.setFillColor(5, 150, 105);
+        doc.roundedRect(nx, yy - 8.5, tw, 11, 2, 2, "F");
+        doc.setTextColor(255, 255, 255); doc.text(tag, nx + tw / 2, yy - 0.8, { align: "center" });
+        nx += tw + 6; doc.setFontSize(11.5); doc.setTextColor(...navy);
+      }
       const nmLines = doc.splitTextToSize(nm, CW - 150 - (nx - M - 26)) as string[];
       doc.text(nmLines.length > 1 ? nmLines[0].replace(/[\s,.-]+$/, "") + "..." : nmLines[0], nx, yy);
-      const right = [costText(spot) + (spot.cost != null && spot.cost > 0 ? ` (${costRange(spot.category, spot.cost)}${spot.category === "stay" ? "/night" : " pp"})` : ""), spot.avgRating ? `${spot.avgRating.toFixed(1)}/5 (${spot.reviewCount})` : "Not rated"].filter(Boolean).join("  ·  ");
+      const right = [spot.cost != null ? costText(spot) + (spot.cost > 0 ? ` (${costRange(spot.category, spot.cost)}${spot.category === "stay" ? "/night" : " pp"})` : "") : "", ai ? "No crew ratings yet" : spot.avgRating ? `${spot.avgRating.toFixed(1)}/5 (${spot.reviewCount})` : "Not rated"].filter(Boolean).join("  ·  ");
       doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.setTextColor(...slate);
       doc.text(clean(right), W - M, yy, { align: "right" });
       yy += 13;
       const meta = [
-        CAT_NAMES[spot.category] || spot.category,
-        spot.milesFromField ? `${spot.milesFromField} mi from field` : "On field",
+        ai && (spot as AiPick).ai.meal ? `${CAT_NAMES[spot.category]} (${(spot as AiPick).ai.meal})` : CAT_NAMES[spot.category] || spot.category,
+        spot.milesFromField ? `${spot.milesFromField} mi from field` : ai ? "" : "On field",
         spot.category === "eat" ? paceLabel(paceOf(spot)) : spot.category === "do" ? fmtMinutes(totalMinutes(spot)) : "",
         spot.address || "",
         mapped ? "" : "(not on map)",
@@ -195,8 +208,13 @@ export async function buildBriefPdf(b: BriefFull, opts: { appUrl: string; prepar
         doc.setFont("helvetica", "normal");
       }
       doc.setTextColor(37, 99, 235); doc.setFontSize(8);
-      const link = `${opts.appUrl}#/spot/${spot.id}`;
-      doc.textWithLink("Crew reviews on Wheelsdown", M + 26, yy, { url: link });
+      if (ai) {
+        const link = spot.website || `https://maps.apple.com/?q=${encodeURIComponent(spot.name + " " + (spot.address || ""))}`;
+        doc.textWithLink(spot.website ? "Website" : "Open in Maps", M + 26, yy, { url: link });
+      } else {
+        const link = `${opts.appUrl}#/spot/${spot.id}`;
+        doc.textWithLink("Crew reviews on Wheelsdown", M + 26, yy, { url: link });
+      }
       yy += 18;
     }
 
