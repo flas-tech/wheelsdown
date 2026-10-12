@@ -65,6 +65,8 @@ if [[ "$AI" == "true" ]]; then
   check "unpublished is private" 'Not found' "$(curl -s $BASE/api/spots/$SID)"
   approve spot $SID
 fi
+# the smoke listing is a live crew eat spot at KMIA, so AI picks must step aside there
+check "ai picks defer crew" '"status":"crew"' "$(curl -s "$BASE/api/ai-picks?icao=KMIA&cat=eat")"
 check "config"             '"ai":'          "$(curl -s $BASE/api/config)"
 check "admin moderation"   '"reviews"'      "$(curl -s $BASE/api/admin/moderation -H "x-admin-key: $ADMIN_KEY")"
 check "moderation status+log" '"log":'       "$(curl -s $BASE/api/admin/moderation -H "x-admin-key: $ADMIN_KEY")"
@@ -102,7 +104,6 @@ check "ai pref default"     '"pref":"crew"'  "$(curl -s $BASE/api/me/ai-pref -H 
 check "ai pref set"         '"pref":"ai"'    "$(curl -s -XPUT $BASE/api/me/ai-pref -H "$A" -H "$J" -d '{"pref":"ai"}')"
 check "ai pref reset"       '"pref":"crew"'  "$(curl -s -XPUT $BASE/api/me/ai-pref -H "$A" -H "$J" -d '{"pref":"crew"}')"
 check "ai picks need cat"   'required'       "$(curl -s "$BASE/api/ai-picks?icao=KMIA")"
-check "ai picks defer crew" '"status":"crew"' "$(curl -s "$BASE/api/ai-picks?icao=KPNS&cat=eat")"
 check "delete briefing"    '"ok":true'      "$(curl -s -XDELETE $BASE/api/briefings/$BID -H "$A")"
 check "briefing gone"      'Not found'      "$(curl -s $BASE/api/briefings/$BID -H "$A")"
 check "delete again 404"   'Not found'      "$(curl -s -XDELETE $BASE/api/briefings/$BID -H "$A")"
