@@ -11,8 +11,10 @@ export type BriefStopFull = {
   picks: SpotWithStats[]; candidates?: SpotWithStats[]; sponsor: Sponsor; favoriteIds?: number[];
   /** AI picks filling slots no crew listing covers (negative ids). */
   aiPicks?: AiPick[]; aiStatus?: "ready" | "pending" | "off" | "failed" | "none" | "offer"; ai?: boolean; aiSlots?: { cat: string; meal?: string }[];
+  /** "Pick more": AI picks the owner added, the others still available, and whether a find-more run is going. */
+  aiAdd?: number[]; aiMore?: AiPick[]; aiMoreStatus?: "pending" | "failed" | "idle" | "full";
 };
-export type AiPick = SpotWithStats & { ai: { meal: "breakfast" | "lunch" | "dinner" | null; sources: string[]; createdAt: number } };
+export type AiPick = SpotWithStats & { ai: { meal: "breakfast" | "lunch" | "dinner" | null; sources: string[]; createdAt: number; extra?: boolean } };
 export const isAi = (s: SpotWithStats): s is AiPick => s.id < 0 || !!(s as any).ai;
 export type BriefFull = { id: number; title: string; shareToken: string; createdAt: number; updatedAt: number; stops: BriefStopFull[] };
 

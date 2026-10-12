@@ -27,6 +27,8 @@ async function callModel<T>(system: string, user: string, o: CallOpts): Promise<
       text: { format: { type: "json_schema", name: o.schema.name, schema: o.schema.schema, strict: true } },
     };
     if (o.search) body.tools = [{ type: "web_search" }];
+    // picks must come from a real search: without one the model returns nothing rather than guess
+    if (o.search && o.purpose === "picks") body.tool_choice = "required";
     const r = await fetch(`${BASE}/responses`, { method: "POST", headers: { authorization: `Bearer ${KEY}`, "content-type": "application/json" }, body: JSON.stringify(body), signal: ctl.signal });
     if (!r.ok) { recordAi(o.purpose, { input: 0, cached: 0, output: 0, searches: 0, failed: true }); throw new Error(`AI ${r.status}: ${(await r.text()).slice(0, 200)}`); }
     const j: any = await r.json();
@@ -354,7 +356,7 @@ const PICKS_SCHEMA = { name: "ai_picks", schema: {
     } } } } } };
 
 /** Real, currently open places near an airport for crews on a layover. Used only where crews haven't listed anything yet. */
-export async function suggestAirportPicks(ap: { icao: string; name: string; city: string; region?: string | null; country?: string | null; lat: number | null; lon: number | null }, avoidNames: string[], effort: "low" | "medium" = "low"): Promise<AiPickDraft[]> {
+export async function suggestAirportPicks(ap: { icao: string; name: string; city: string; region?: string | null; country?: string | null; lat: number | null; lon: number | null }, avoidNames: string[], effort: "low" | "medium" = "low", more = false): Promise<AiPickDraft[]> {
   const system = `You suggest places for Wheelsdown, a guide for airline, corporate and charter flight crews on layovers. Crews have not listed these yet, so your picks fill the gap.
 Use web search. Only suggest real businesses that are open now, near this airport (hotels and food within about 10 miles if possible, never more than 25). Never invent places, addresses, prices or hours.
 Return about 14 picks. Restaurants and things to do matter most; hotels least. Always return picks: every town near an airport has somewhere to eat and something to see, even if it is small.
@@ -368,7 +370,8 @@ Fields:
 - pace (eat only, else null): grab, sit or both. minutesNeeded (do only, else null): typical visit length.
 - tags: up to 4, ${TAG_HINT}.
 - sources: URLs you relied on.
-Do not repeat any of these places crews already listed: ${avoidNames.slice(0, 60).join("; ") || "(none)"}.`;
+Do not repeat any of these places, which are already listed: ${avoidNames.slice(0, 80).join("; ") || "(none)"}.${more ? `
+This is a request for MORE options: the places above are already known. Return about 12 new, different places: mostly restaurants (any meal) and things to do, at most 1 hotel. Look a little further out (up to 15 miles) if the closest options are used up.` : ""}`;
   const user = JSON.stringify({ airport: { code: ap.icao, name: ap.name, city: ap.city, region: ap.region || "", country: ap.country || "", lat: ap.lat, lon: ap.lon } });
   const v = await callModel<{ picks: AiPickDraft[] }>(system, user, { purpose: "picks", search: true, schema: PICKS_SCHEMA, timeoutMs: 170_000, effort });
   const raw = v.picks || [];

@@ -103,6 +103,7 @@ check "briefing ai status"  '"aiStatus"'     "$(curl -s $BASE/api/briefings/$BID
 check "ai pref default"     '"pref":"crew"'  "$(curl -s $BASE/api/me/ai-pref -H "$A")"
 check "ai pref set"         '"pref":"ai"'    "$(curl -s -XPUT $BASE/api/me/ai-pref -H "$A" -H "$J" -d '{"pref":"ai"}')"
 check "ai pref reset"       '"pref":"crew"'  "$(curl -s -XPUT $BASE/api/me/ai-pref -H "$A" -H "$J" -d '{"pref":"crew"}')"
+check "ai find-more checks airport" 'Unknown airport' "$(curl -s -XPOST $BASE/api/ai-picks/more -H "$A" -H "$J" -d '{"icao":"QQQQ"}')"
 check "ai picks need cat"   'required'       "$(curl -s "$BASE/api/ai-picks?icao=KMIA")"
 check "delete briefing"    '"ok":true'      "$(curl -s -XDELETE $BASE/api/briefings/$BID -H "$A")"
 check "briefing gone"      'Not found'      "$(curl -s $BASE/api/briefings/$BID -H "$A")"

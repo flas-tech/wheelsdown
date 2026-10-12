@@ -531,10 +531,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const all = airport?.icao ? await storage.searchSpots([airport.icao]) : [];
       const byId = new Map(all.map((s) => [s.id, s]));
       const picks = withFavorites(st.picks, all, favs).map((i) => byId.get(i)).filter(Boolean) as SpotWithStats[];
-      const fill = airport?.icao ? await fillStop(airport.icao, st.layover, st.nights, picks, all, airport, st.ai ?? pref === "ai").catch(() => ({ aiPicks: [], aiStatus: "failed" as const, aiSlots: [] })) : { aiPicks: [], aiStatus: "none" as const, aiSlots: [] };
+      const fill = airport?.icao ? await fillStop(airport.icao, st.layover, st.nights, picks, all, airport, st.ai ?? pref === "ai", st.aiAdd || []).catch(() => ({ aiPicks: [], aiStatus: "failed" as const, aiSlots: [], aiMore: [], aiMoreStatus: "idle" as const })) : { aiPicks: [], aiStatus: "none" as const, aiSlots: [], aiMore: [], aiMoreStatus: "idle" as const };
       out.push({
         icao: airport?.icao || st.icao.toUpperCase(), layover: st.layover, nights: st.nights, ai: st.ai, airport,
-        picks, aiPicks: fill.aiPicks, aiStatus: fill.aiStatus, aiSlots: fill.aiSlots,
+        picks, aiPicks: fill.aiPicks, aiStatus: fill.aiStatus, aiSlots: fill.aiSlots, aiAdd: st.aiAdd, aiMore: withCandidates ? fill.aiMore : undefined, aiMoreStatus: fill.aiMoreStatus,
         favoriteIds: all.filter((s) => favs.has(s.id)).map((s) => s.id),
         candidates: withCandidates ? all : undefined,
         sponsor: await sponsorFor(airport?.icao || st.icao.toUpperCase()),

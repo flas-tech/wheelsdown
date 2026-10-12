@@ -25,7 +25,7 @@ type Row = {
   sources: string; status: string; created_at: number;
 };
 /** An AI pick shaped like a crew listing so cards, maps and the PDF can show it. Negative id = not a crew listing. */
-export type AiPickCard = SpotWithStats & { ai: { meal: Meal | null; sources: string[]; createdAt: number } };
+export type AiPickCard = SpotWithStats & { ai: { meal: Meal | null; sources: string[]; createdAt: number; extra?: boolean } };
 
 const FRESH_MS = 120 * 86400_000; // regenerate an airport's picks after ~4 months
 const RETRY_MS = 2 * 60_000; // after a failure, a new request may try again shortly
@@ -51,7 +51,7 @@ export async function rowsFor(icao: string): Promise<Row[]> {
 /** Status for an airport, starting a background run if it has never been done (or is stale) and the daily cap allows. */
 export async function ensurePicks(icao: string): Promise<AiStatus> {
   if (!AI_ENABLED) return "off";
-  if (running.has(icao) || queue.includes(icao)) return "pending";
+  if (running.has(icao) || queue.includes(icao) || running.has(icao + "+") || queue.includes(icao + "+")) return "pending";
   const st = await runState(icao);
   if (st?.status === "ready" && Date.now() - st.at < FRESH_MS) return "ready";
   if (st?.status === "failed" && Date.now() - st.at < RETRY_MS) return "failed";
@@ -66,26 +66,50 @@ export async function ensurePicks(icao: string): Promise<AiStatus> {
   return "pending";
 }
 
+const MAX_ROWS = 45; // per airport, so "find more" can't grow without limit
+const moreFailed = new Map<string, number>();
+/** "Find more places": a second AI run that adds new picks without replacing the ones crews may already have added. */
+export async function findMore(icao: string): Promise<"pending" | "full" | "busy" | "off"> {
+  if (!AI_ENABLED) return "off";
+  if (running.has(icao) || queue.includes(icao) || running.has(icao + "+") || queue.includes(icao + "+")) return "pending";
+  const n = Number(((await db().execute(sql`SELECT count(*)::int AS n FROM ai_picks WHERE icao = ${icao} AND status = 'live'`)).rows[0] as any)?.n || 0);
+  if (n >= MAX_ROWS) return "full";
+  const d = new Date().toISOString().slice(0, 10);
+  if (d !== day) { day = d; today = 0; }
+  if (today >= DAILY_CAP) return "busy";
+  today++;
+  moreFailed.delete(icao);
+  queue.push(icao + "+");
+  pump();
+  return "pending";
+}
+export const moreStatus = (icao: string) => (running.has(icao + "+") || queue.includes(icao + "+") ? "pending" : moreFailed.has(icao) ? "failed" : "idle");
+
 function pump() {
   while (active < 2 && queue.length) {
-    const icao = queue.shift()!;
+    const key = queue.shift()!;
+    const more = key.endsWith("+"), icao = key.replace("+", "");
     active++;
-    const p = generate(icao).catch(async (e) => { console.error(`[ai-picks] ${icao}:`, String(e?.message || e).slice(0, 200)); await setState(icao, "failed"); })
-      .finally(() => { active--; running.delete(icao); pump(); });
-    running.set(icao, p);
+    const p = generate(icao, more).catch(async (e) => {
+      console.error(`[ai-picks] ${key}:`, String(e?.message || e).slice(0, 200));
+      if (more) moreFailed.set(icao, Date.now()); else await setState(icao, "failed");
+    }).finally(() => { active--; running.delete(key); pump(); });
+    running.set(key, p);
   }
 }
 
-async function generate(icao: string) {
+async function generate(icao: string, more = false) {
   // airports from the reference list (no listings yet) aren't in the airports table
   const ap = (await storage.resolveCode(icao)) || refAirport(icao);
   if (!ap) { console.error(`[ai-picks] ${icao}: unknown airport`); await setState(icao, "failed"); return; }
   const crew = await storage.searchSpots([ap.icao]);
+  const existing = more ? await rowsFor(ap.icao) : [];
+  const avoid = [...crew.map((s) => s.name), ...existing.map((r) => r.name)];
   // the model occasionally returns an empty or thin list; ask once more, a little harder, before giving up
-  let drafts = await suggestAirportPicks(ap as any, crew.map((s) => s.name));
+  let drafts = await suggestAirportPicks(ap as any, avoid, "low", more);
   if (drafts.length < 6) {
     console.log(`[ai-picks] ${ap.icao}: only ${drafts.length} on the first try, retrying`);
-    const again = await suggestAirportPicks(ap as any, crew.map((s) => s.name), "medium").catch(() => []);
+    const again = await suggestAirportPicks(ap as any, avoid, "medium", more).catch(() => []);
     if (again.length > drafts.length) drafts = again;
   }
   const near = ap.lat != null && ap.lon != null ? { lat: ap.lat, lng: ap.lon } : null;
@@ -93,6 +117,7 @@ async function generate(icao: string) {
   for (const d of drafts) {
     // drop anything crews already listed, and anything we can't place near the field
     if (crew.some((c) => similarity({ name: d.name }, c) >= 0.8)) continue;
+    if (existing.some((r) => similarity({ name: d.name }, { name: r.name, lat: null, lng: null }) >= 0.85)) continue;
     if (keep.some((k) => similarity({ name: d.name }, { name: k.name, lat: null, lng: null }) >= 0.85)) continue;
     let lat: number | null = null, lng: number | null = null, miles: number | null = null;
     if (near) {
@@ -101,15 +126,16 @@ async function generate(icao: string) {
     }
     keep.push({ ...d, lat, lng, miles });
   }
-  await db().execute(sql`UPDATE ai_picks SET status = 'replaced' WHERE icao = ${ap.icao} AND status = 'live'`);
+  if (more && !keep.length) { moreFailed.set(ap.icao, Date.now()); console.log(`[ai-picks] ${ap.icao}+: nothing new`); return; }
+  if (!more) await db().execute(sql`UPDATE ai_picks SET status = 'replaced' WHERE icao = ${ap.icao} AND status = 'live'`);
   const now = Date.now();
   for (const k of keep) {
     await db().execute(sql`INSERT INTO ai_picks (icao, category, meal, name, address, website, description, cost_level, pace, minutes_needed, tags, lat, lng, miles, sources, status, created_at)
       VALUES (${ap.icao}, ${k.category}, ${k.meal === "none" ? "" : k.meal}, ${k.name}, ${k.address}, ${k.website}, ${k.description}, ${k.costLevel}, ${k.pace}, ${k.minutesNeeded},
         ${JSON.stringify(k.tags)}, ${k.lat}, ${k.lng}, ${k.miles}, ${JSON.stringify(k.sources)}, 'live', ${now})`);
   }
-  await setState(ap.icao, keep.length ? "ready" : "failed");
-  console.log(`[ai-picks] ${ap.icao}: ${keep.length} of ${drafts.length} kept`);
+  if (!more) await setState(ap.icao, keep.length ? "ready" : "failed");
+  console.log(`[ai-picks] ${ap.icao}${more ? "+" : ""}: ${keep.length} of ${drafts.length} kept`);
 }
 
 export function toCard(r: Row, airport?: any): AiPickCard {
@@ -126,20 +152,26 @@ export function toCard(r: Row, airport?: any): AiPickCard {
 }
 const aiMealOf = (r: Row) => ({ category: r.category, name: r.name, description: r.description, tags: r.tags, pace: r.pace, meal: (r.meal || null) as Meal | null });
 
+export type StopFill = { aiPicks: AiPickCard[]; aiStatus: AiStatus; aiSlots: Slot[]; aiMore: AiPickCard[]; aiMoreStatus: "pending" | "failed" | "idle" | "full" };
+const CAT_ORDER: Record<string, number> = { eat: 0, do: 1, stay: 2 };
 /**
  * AI picks that fill a briefing stop's open slots. A slot is only filled by AI when no crew listing at the airport could
- * fill it (if crews have one and it was removed from the plan, it stays removed).
+ * fill it (if crews have one and it was removed from the plan, it stays removed). aiAdd are extra AI picks the owner chose
+ * with "Pick more"; aiMore lists the other AI picks at the airport they can still add.
  */
-export async function fillStop(icao: string, layover: LayoverId, nights: number | undefined, picks: SpotWithStats[], all: SpotWithStats[], airport?: any, useAi = true): Promise<{ aiPicks: AiPickCard[]; aiStatus: AiStatus; aiSlots: Slot[] }> {
+export async function fillStop(icao: string, layover: LayoverId, nights: number | undefined, picks: SpotWithStats[], all: SpotWithStats[], airport?: any, useAi = true, aiAdd: number[] = []): Promise<StopFill> {
+  const empty = { aiMore: [], aiMoreStatus: "idle" as const };
   const open = unmetSlots(slotsFor(layover, nights), picks);
   const crewOk = all.filter((s) => pickable(s) && (s.milesFromField ?? 0) <= MAX_MILES && !picks.some((p) => p.id === s.id));
   const needAi = open.filter((sl) => !crewOk.some((s) => slotMatches(sl, s)));
-  if (!needAi.length) return { aiPicks: [], aiStatus: "none", aiSlots: [] };
-  // Prefer crew: say what's missing and offer AI, but don't generate or show anything until asked
-  if (!useAi) return { aiPicks: [], aiStatus: AI_ENABLED ? "offer" : "off", aiSlots: needAi };
+  if (!useAi) return { aiPicks: [], aiStatus: needAi.length ? (AI_ENABLED ? "offer" : "off") : "none", aiSlots: needAi, ...empty };
+  if (!needAi.length && !aiAdd.length) return { aiPicks: [], aiStatus: "none", aiSlots: [], ...empty };
   const status = await ensurePicks(icao);
   const rows = (await rowsFor(icao)).filter((r) => !all.some((c) => similarity({ name: r.name }, c) >= 0.8));
-  const used = new Set<number>();
+  // extras the owner added stay put even after the airport's picks are refreshed (unless an admin hid them)
+  const added = aiAdd.length ? ((await db().execute(sql`SELECT id, icao, category, meal, name, address, website, description, cost_level, pace, minutes_needed, tags, lat, lng, miles, sources, status, created_at::float8 AS created_at
+    FROM ai_picks WHERE id IN (${sql.join(aiAdd.map((x) => sql`${x}`), sql`, `)}) AND icao = ${icao} AND status <> 'hidden'`)).rows as any as Row[]) : [];
+  const used = new Set<number>(added.map((r) => r.id)); // extras are on top of the automatic picks, never instead of them
   const out: AiPickCard[] = [];
   const byDistance = (a: Row, b: Row) => (a.miles ?? 99) - (b.miles ?? 99);
   for (const sl of needAi) {
@@ -148,7 +180,11 @@ export async function fillStop(icao: string, layover: LayoverId, nights: number 
       (sl.meal ? Number(b.meal === sl.meal) - Number(a.meal === sl.meal) : 0) || byDistance(a, b))[0];
     if (r) { used.add(r.id); out.push(toCard(r, airport)); }
   }
-  return { aiPicks: out, aiStatus: rows.length ? "ready" : status, aiSlots: needAi };
+  const order = new Map(aiAdd.map((x, k) => [x, k]));
+  for (const r of [...added].sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))) out.push({ ...toCard(r, airport), ai: { ...toCard(r).ai, extra: true } } as AiPickCard);
+  const more = rows.filter((r) => !used.has(r.id)).sort((a, b) => (CAT_ORDER[a.category] - CAT_ORDER[b.category]) || byDistance(a, b)).map((r) => toCard(r, airport));
+  const ms = moreStatus(icao);
+  return { aiPicks: out, aiStatus: rows.length || added.length ? "ready" : status, aiSlots: needAi, aiMore: more, aiMoreStatus: ms === "idle" && rows.length >= MAX_ROWS ? "full" : ms };
 }
 
 export function registerAiPicks(app: Express, o: { requireAdmin: Mw; requireUser: Mw }) {
@@ -169,6 +205,14 @@ export function registerAiPicks(app: Express, o: { requireAdmin: Mw; requireUser
     const status = await ensurePicks(ap.icao);
     const picks = (await rowsFor(ap.icao)).filter((r) => r.category === cat).sort((a, b) => (a.miles ?? 99) - (b.miles ?? 99)).map((r) => toCard(r, ap));
     res.json({ status: picks.length ? "ready" : status, picks });
+  });
+
+  /** Brief owners: ask AI for more places at an airport (added alongside, nothing replaced). */
+  app.post("/api/ai-picks/more", o.requireUser, async (req, res) => {
+    const code = String(req.body?.icao || "");
+    const ap = (await storage.resolveCode(code)) || refAirport(code);
+    if (!ap) return res.status(400).json({ message: "Unknown airport" });
+    res.json({ status: await findMore(ap.icao) });
   });
 
   // ---------- admin ----------
