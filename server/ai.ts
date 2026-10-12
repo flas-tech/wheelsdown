@@ -35,6 +35,8 @@ async function callModel<T>(system: string, user: string, o: CallOpts): Promise<
     const sources: string[] = (j.output || []).flatMap((x: any) => x.type === "message" ? (x.content || []) : [])
       .flatMap((c: any) => c.annotations || []).filter((a: any) => a.type === "url_citation" && a.url).map((a: any) => a.url);
     const parsed = JSON.parse(textOut);
+    if (o.purpose === "picks" && Array.isArray(parsed.picks) && !parsed.picks.length)
+      console.log(`[ai-picks] empty answer: status=${j.status} ${JSON.stringify(j.incomplete_details || {})} steps=${(j.output || []).map((x: any) => x.type).join(",")}`);
     if (sources.length && Array.isArray(parsed.sources)) parsed.sources = Array.from(new Set([...parsed.sources, ...sources])).slice(0, 6);
     return parsed as T;
   } finally { clearTimeout(t); }
@@ -352,13 +354,13 @@ const PICKS_SCHEMA = { name: "ai_picks", schema: {
     } } } } } };
 
 /** Real, currently open places near an airport for crews on a layover. Used only where crews haven't listed anything yet. */
-export async function suggestAirportPicks(ap: { icao: string; name: string; city: string; region?: string | null; country?: string | null; lat: number | null; lon: number | null }, avoidNames: string[]): Promise<AiPickDraft[]> {
+export async function suggestAirportPicks(ap: { icao: string; name: string; city: string; region?: string | null; country?: string | null; lat: number | null; lon: number | null }, avoidNames: string[], effort: "low" | "medium" = "low"): Promise<AiPickDraft[]> {
   const system = `You suggest places for Wheelsdown, a guide for airline, corporate and charter flight crews on layovers. Crews have not listed these yet, so your picks fill the gap.
 Use web search. Only suggest real businesses that are open now, near this airport (hotels and food within about 10 miles if possible, never more than 25). Never invent places, addresses, prices or hours.
-Return about 12 picks:
-- eat: 2 good for breakfast (meal "breakfast"), 2 for lunch ("lunch"), 2 for dinner ("dinner"). Mix grab-and-go and sit-down. Favor local favorites over national chains, but a reliable chain is fine when that is what is near the field.
-- do: 3 things to do (meal "none"): a mix of quick (under 2 hours) and longer options, ideally reachable without a car.
-- stay: 3 hotels crews actually use near the field (meal "none"): at least one from a major rewards program (Hilton, Marriott, IHG, Hyatt, Wyndham, Choice, Best Western) and say the full brand name in name, e.g. "Hampton Inn Bedford-Burlington".
+Return about 14 picks. Restaurants and things to do matter most; hotels least. Always return picks: every town near an airport has somewhere to eat and something to see, even if it is small.
+- eat (8): 2 good for breakfast (meal "breakfast"), 3 for lunch ("lunch"), 3 for dinner ("dinner"). Mix grab-and-go and sit-down. Favor local favorites over national chains, but a reliable chain is fine when that is what is near the field.
+- do (4-5, meal "none"): parks, museums, historic sites, walks, breweries, local attractions. A mix of quick (under 2 hours) and longer options, ideally reachable without a car.
+- stay (1-2, meal "none"): hotels crews use near the field, preferably from a major rewards program (Hilton, Marriott, IHG, Hyatt, Wyndham, Choice, Best Western), with the full brand name in name, e.g. "Hampton Inn Bedford-Burlington".
 Fields:
 - name: the business's official name only, no parentheses, alternate names or notes. address: the exact street address, e.g. "5 Wheeler Rd, Burlington, MA 01803", with no notes or ranges (required; skip the place if you can't confirm it). website: official URL or "".
 - description: 1-2 plain sentences (max 220 chars): what it is and why a crew would go. No hype, no emojis, no exclamation points.
@@ -368,8 +370,10 @@ Fields:
 - sources: URLs you relied on.
 Do not repeat any of these places crews already listed: ${avoidNames.slice(0, 60).join("; ") || "(none)"}.`;
   const user = JSON.stringify({ airport: { code: ap.icao, name: ap.name, city: ap.city, region: ap.region || "", country: ap.country || "", lat: ap.lat, lon: ap.lon } });
-  const v = await callModel<{ picks: AiPickDraft[] }>(system, user, { purpose: "picks", search: true, schema: PICKS_SCHEMA, timeoutMs: 150_000, effort: "low" });
-  return (v.picks || []).map((p) => {
+  const v = await callModel<{ picks: AiPickDraft[] }>(system, user, { purpose: "picks", search: true, schema: PICKS_SCHEMA, timeoutMs: 170_000, effort });
+  const raw = v.picks || [];
+  console.log(`[ai-picks] ${ap.icao}: model returned ${raw.length}`);
+  return raw.map((p) => {
     const website = p.website && /^https?:\/\//.test(p.website) ? p.website : p.website ? "https://" + p.website : "";
     let site = ""; try { site = website ? new URL(website).toString() : ""; } catch { site = ""; }
     return {

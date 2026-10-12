@@ -6,6 +6,7 @@ import { db } from "./db";
 import { storage } from "./storage";
 import { AI_ENABLED, suggestAirportPicks } from "./ai";
 import { geocodeAddress } from "./places";
+import { refAirport } from "./airportsData";
 import { milesBetween } from "@shared/cost";
 import { similarity } from "@shared/similar";
 import { pickable, slotsFor, unmetSlots, slotMatches, type Meal, type Slot } from "@shared/briefing";
@@ -27,7 +28,7 @@ type Row = {
 export type AiPickCard = SpotWithStats & { ai: { meal: Meal | null; sources: string[]; createdAt: number } };
 
 const FRESH_MS = 120 * 86400_000; // regenerate an airport's picks after ~4 months
-const RETRY_MS = 6 * 3600_000; // after a failure, wait before trying the same airport again
+const RETRY_MS = 2 * 60_000; // after a failure, a new request may try again shortly
 const DAILY_CAP = Number(process.env.AI_PICKS_DAILY || 40); // airports per day
 const MAX_MILES = 30;
 
@@ -76,10 +77,17 @@ function pump() {
 }
 
 async function generate(icao: string) {
-  const ap = await storage.resolveCode(icao);
-  if (!ap) { await setState(icao, "failed"); return; }
+  // airports from the reference list (no listings yet) aren't in the airports table
+  const ap = (await storage.resolveCode(icao)) || refAirport(icao);
+  if (!ap) { console.error(`[ai-picks] ${icao}: unknown airport`); await setState(icao, "failed"); return; }
   const crew = await storage.searchSpots([ap.icao]);
-  const drafts = await suggestAirportPicks(ap as any, crew.map((s) => s.name));
+  // the model occasionally returns an empty or thin list; ask once more, a little harder, before giving up
+  let drafts = await suggestAirportPicks(ap as any, crew.map((s) => s.name));
+  if (drafts.length < 6) {
+    console.log(`[ai-picks] ${ap.icao}: only ${drafts.length} on the first try, retrying`);
+    const again = await suggestAirportPicks(ap as any, crew.map((s) => s.name), "medium").catch(() => []);
+    if (again.length > drafts.length) drafts = again;
+  }
   const near = ap.lat != null && ap.lon != null ? { lat: ap.lat, lng: ap.lon } : null;
   const keep: (typeof drafts[number] & { lat: number | null; lng: number | null; miles: number | null })[] = [];
   for (const d of drafts) {
@@ -152,7 +160,8 @@ export function registerAiPicks(app: Express, o: { requireAdmin: Mw; requireUser
   });
   /** Search fallback: AI picks for one airport and category, only when crews have nothing there in that category. */
   app.get("/api/ai-picks", async (req, res) => {
-    const ap = await storage.resolveCode(String(req.query.icao || ""));
+    const code = String(req.query.icao || "");
+    const ap = (await storage.resolveCode(code)) || refAirport(code);
     const cat = String(req.query.cat || "");
     if (!ap || !["eat", "do", "stay"].includes(cat)) return res.status(400).json({ message: "icao and cat (eat, do, stay) required" });
     const crew = (await storage.searchSpots([ap.icao])).filter((s) => s.category === cat && pickable(s));
@@ -174,7 +183,8 @@ export function registerAiPicks(app: Express, o: { requireAdmin: Mw; requireUser
     res.json({ ok: true });
   });
   app.post("/api/admin/ai-picks/refresh", o.requireAdmin, async (req, res) => {
-    const ap = await storage.resolveCode(String(req.body?.icao || ""));
+    const code = String(req.body?.icao || "");
+    const ap = (await storage.resolveCode(code)) || refAirport(code);
     if (!ap) return res.status(400).json({ message: "Unknown airport" });
     await storage.setSetting(`aipicks:${ap.icao}`, "");
     res.json({ status: await ensurePicks(ap.icao) });

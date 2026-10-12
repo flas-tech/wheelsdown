@@ -579,6 +579,15 @@ function AiNote({ stop, onAi, busy }: { stop: BriefStopFull; onAi?: (on: boolean
       </div>
     );
   }
+  if (stop.aiStatus === "failed" && onAi && !stop.aiPicks?.length) {
+    return (
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-dashed border-border px-3 py-2.5" data-testid="box-ai-failed">
+        <p className="min-w-0 flex-1 basis-56 text-xs"><span className="font-semibold">AI couldn't find picks at {stop.icao} just now.</span> <span className="text-muted-foreground">Try again in a couple of minutes.</span></p>
+        <button type="button" onClick={() => onAi(true)} disabled={busy} data-testid="button-ai-retry"
+          className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-border px-3.5 text-xs font-semibold hover-elevate disabled:opacity-60"><RefreshCw className="h-3.5 w-3.5" />Try again</button>
+      </div>
+    );
+  }
   if (stop.aiStatus === "pending") {
     return (
       <p className="flex items-start gap-2 rounded-xl bg-violet-500/10 px-3 py-2 text-xs" data-testid="text-ai-pending">

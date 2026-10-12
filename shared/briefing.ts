@@ -45,7 +45,7 @@ export function suggestPicks(all: SpotWithStats[], layover: LayoverId, nights?: 
 
 // ---------------------------------------------------------------- minimum coverage per stop
 // Every stop gets at least one place to eat, one thing to do and one place to stay.
-// Overnights also get a place for breakfast, lunch and dinner, and one thing to do per night.
+// Overnights also get a place for breakfast, lunch and dinner, and things to do: two for one night, one per night plus one for longer.
 export type Meal = "breakfast" | "lunch" | "dinner";
 export const MEALS: Meal[] = ["breakfast", "lunch", "dinner"];
 export const MEAL_LABEL: Record<Meal, string> = { breakfast: "Breakfast", lunch: "Lunch", dinner: "Dinner" };
@@ -55,7 +55,7 @@ export const nightsOf = (layover: LayoverId, nights?: number) => (layover === "o
 export function slotsFor(layover: LayoverId, nights?: number): Slot[] {
   const n = nightsOf(layover, nights);
   if (!n) return [{ cat: "eat" }, { cat: "do" }, { cat: "stay" }];
-  return [...MEALS.map((meal) => ({ cat: "eat" as const, meal })), ...Array.from({ length: Math.min(n, 6) }, () => ({ cat: "do" as const })), { cat: "stay" }];
+  return [...MEALS.map((meal) => ({ cat: "eat" as const, meal })), ...Array.from({ length: Math.min(n + 1, 6) }, () => ({ cat: "do" as const })), { cat: "stay" }];
 }
 
 type MealInput = { category: string; name: string; description?: string | null; tags?: string | null; crewTip?: string | null; pace?: string | null; meal?: Meal | null };

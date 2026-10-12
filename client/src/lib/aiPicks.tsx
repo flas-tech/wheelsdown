@@ -118,7 +118,7 @@ export function AiPicksPanel({ icao, category, program }: { icao: string; catego
 }
 
 function AiPicksList({ icao, category, program, on }: { icao: string; category: string; program?: ProgramId | null; on: boolean }) {
-  const { data, isLoading } = useQuery<{ status: string; picks: AiPick[] }>({
+  const { data, isLoading, refetch } = useQuery<{ status: string; picks: AiPick[] }>({
     queryKey: [`/api/ai-picks?icao=${icao}&cat=${category}`], enabled: on, staleTime: 60_000,
     refetchInterval: (q) => (q.state.data?.status === "pending" ? 5000 : false),
   });
@@ -129,7 +129,12 @@ function AiPicksList({ icao, category, program, on }: { icao: string; category: 
       <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-violet-600" />No crew has listed one at {icao} yet. Finding AI picks, usually under a minute.
     </p>
   );
-  if (!picks.length) return null;
+  if (!picks.length) return data.status === "failed" ? (
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-dashed border-border px-3 py-2.5" data-testid={`box-ai-failed-${icao}`}>
+      <p className="text-xs text-muted-foreground">AI couldn't find picks at {icao} just now. Try again in a couple of minutes.</p>
+      <button type="button" onClick={() => refetch()} className="inline-flex h-9 items-center rounded-full border border-border px-3.5 text-xs font-semibold hover-elevate" data-testid={`button-ai-retry-${icao}`}>Try again</button>
+    </div>
+  ) : null;
   return (
     <section className="space-y-3" data-testid={`section-ai-picks-${icao}`}>
       <p className="flex items-start gap-2 text-xs text-muted-foreground"><Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-violet-600" />
