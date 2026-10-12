@@ -8,6 +8,7 @@ import { FeedbackCard } from "@/lib/feedback";
 import { LogbookTabs } from "@/pages/notifications";
 import { AirportCheckInCard, CheckInList, ProfileMap } from "@/lib/checkins";
 import { InviteCard } from "@/lib/share";
+import { AiPrefCard } from "@/lib/aiPicks";
 import { BIO_MAX } from "@shared/interests";
 import { aircraftList } from "@shared/aircraft";
 import { useEffect, useState } from "react";
@@ -150,6 +151,8 @@ export default function ProfilePage() {
       <p className="text-center text-xs text-muted-foreground">New here, or forgot where something is? <TourLink className="font-semibold text-foreground underline hover:text-primary" /></p>
 
       <ProfileSettings />
+
+      <AiPrefCard />
 
       <ActivityLog items={contrib?.activity} loading={isLoading} />
 

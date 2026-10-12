@@ -98,6 +98,9 @@ check "leaderboard bases"  '['              "$(curl -s $BASE/api/leaderboard/bas
 BID=$(curl -s -XPOST $BASE/api/briefings -H "$A" -H "$J" -d '{"title":"Smoke","stops":[{"icao":"KMIA","layover":"hours","picks":[]}]}' | jget "d.get('id','')" 2>/dev/null)
 [[ -n "$BID" ]] && ok "save briefing" || bad "save briefing" "no id"
 check "briefing ai status"  '"aiStatus"'     "$(curl -s $BASE/api/briefings/$BID -H "$A")"
+check "ai pref default"     '"pref":"crew"'  "$(curl -s $BASE/api/me/ai-pref -H "$A")"
+check "ai pref set"         '"pref":"ai"'    "$(curl -s -XPUT $BASE/api/me/ai-pref -H "$A" -H "$J" -d '{"pref":"ai"}')"
+check "ai pref reset"       '"pref":"crew"'  "$(curl -s -XPUT $BASE/api/me/ai-pref -H "$A" -H "$J" -d '{"pref":"crew"}')"
 check "ai picks need cat"   'required'       "$(curl -s "$BASE/api/ai-picks?icao=KMIA")"
 check "ai picks defer crew" '"status":"crew"' "$(curl -s "$BASE/api/ai-picks?icao=KPNS&cat=eat")"
 check "delete briefing"    '"ok":true'      "$(curl -s -XDELETE $BASE/api/briefings/$BID -H "$A")"

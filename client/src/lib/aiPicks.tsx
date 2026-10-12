@@ -1,4 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useAuth } from "@/lib/auth";
 import { Link } from "wouter";
 import { ExternalLink, Loader2, MapPin, Plus, Sparkles, Users } from "lucide-react";
 import type { SpotWithStats } from "@shared/schema";
@@ -55,9 +58,66 @@ function AiCard({ spot }: { spot: AiPick }) {
   );
 }
 
-/** Search fallback: when crews have nothing at an airport in this category, show AI picks, clearly labeled. */
+export type AiPref = "crew" | "ai";
+/** The member's AI setting: "crew" (default) = AI picks only when asked; "ai" = fill gaps automatically. */
+export function useAiPref() {
+  const { me } = useAuth();
+  const { data } = useQuery<{ pref: AiPref }>({ queryKey: ["/api/me/ai-pref"], enabled: !!me, staleTime: 5 * 60_000 });
+  return (me && data?.pref) || "crew";
+}
+
+/** Logbook setting: Prefer crew or Prefer AI. */
+export function AiPrefCard() {
+  const { me } = useAuth();
+  const pref = useAiPref();
+  const { data: cfg } = useQuery<{ ai?: boolean }>({ queryKey: ["/api/config"] });
+  const box = useRef<HTMLElement>(null);
+  useEffect(() => { if (/[?&]s=ai\b/.test(window.location.hash + window.location.search)) setTimeout(() => box.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 300); }, []);
+  const m = useMutation({
+    mutationFn: async (next: AiPref) => (await apiRequest("PUT", "/api/me/ai-pref", { pref: next })).json(),
+    onSuccess: (r) => { queryClient.setQueryData(["/api/me/ai-pref"], r); queryClient.invalidateQueries({ queryKey: ["/api/briefings"] }); },
+  });
+  if (!me || cfg?.ai === false) return null;
+  const opt = (id: AiPref, title: string, sub: string, Icon: typeof Users) => (
+    <button type="button" onClick={() => id !== pref && m.mutate(id)} aria-pressed={pref === id} disabled={m.isPending} data-testid={`button-ai-pref-${id}`}
+      className={cn("flex-1 rounded-xl border p-3 text-left", pref === id ? "border-primary bg-primary/10" : "border-input")}>
+      <span className="flex items-center gap-1.5 text-sm font-semibold"><Icon className={cn("h-4 w-4", id === "ai" ? "text-violet-600" : "text-emerald-600")} />{title}</span>
+      <span className="mt-0.5 block text-[11px] text-muted-foreground">{sub}</span>
+    </button>
+  );
+  return (
+    <section ref={box} id="pf-ai" className="rounded-2xl border border-card-border bg-card p-4 space-y-3 scroll-mt-24" data-testid="section-ai-pref">
+      <div>
+        <h2 className="text-sm font-semibold">When crews haven't listed a place</h2>
+        <p className="text-xs text-muted-foreground">For briefings and search. Crew picks always come first.</p>
+      </div>
+      <div className="flex flex-col gap-2 sm:flex-row">
+        {opt("crew", "Prefer crew", "Show only crew picks. Tap Pick with AI when you want suggestions.", Users)}
+        {opt("ai", "Prefer AI", "Fill gaps automatically with AI picks, tagged AI pick.", Sparkles)}
+      </div>
+    </section>
+  );
+}
+
+/** Search fallback: when crews have nothing at an airport in this category, offer (or, with Prefer AI, show) AI picks. */
 export function AiPicksPanel({ icao, category, program }: { icao: string; category: string; program?: ProgramId | null }) {
-  const on = ["eat", "do", "stay"].includes(category);
+  const pref = useAiPref();
+  const [asked, setAsked] = useState(false);
+  const { data: cfg } = useQuery<{ ai?: boolean }>({ queryKey: ["/api/config"] });
+  const on = ["eat", "do", "stay"].includes(category) && !!cfg?.ai;
+  const want = pref === "ai" || asked;
+  useEffect(() => setAsked(false), [icao, category]);
+  if (on && !want) return (
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-dashed border-border px-3 py-2.5" data-testid={`box-ai-offer-${icao}`}>
+      <p className="text-xs text-muted-foreground">No crew picks here yet. AI can suggest real places, clearly tagged.</p>
+      <button type="button" onClick={() => setAsked(true)} data-testid={`button-pick-ai-${icao}`}
+        className="inline-flex h-9 items-center gap-1.5 rounded-full bg-violet-600 px-3.5 text-xs font-semibold text-white hover-elevate"><Sparkles className="h-3.5 w-3.5" />Pick with AI</button>
+    </div>
+  );
+  return <AiPicksList icao={icao} category={category} program={program} on={on} />;
+}
+
+function AiPicksList({ icao, category, program, on }: { icao: string; category: string; program?: ProgramId | null; on: boolean }) {
   const { data, isLoading } = useQuery<{ status: string; picks: AiPick[] }>({
     queryKey: [`/api/ai-picks?icao=${icao}&cat=${category}`], enabled: on, staleTime: 60_000,
     refetchInterval: (q) => (q.state.data?.status === "pending" ? 5000 : false),

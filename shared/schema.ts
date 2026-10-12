@@ -174,7 +174,8 @@ export const LAYOVERS = [
   { id: "multi", label: "Several days", sub: "2+ nights" },
 ] as const;
 export type LayoverId = (typeof LAYOVERS)[number]["id"];
-export type BriefingStop = { icao: string; layover: LayoverId; nights?: number; picks: number[] };
+/** ai: true = fill gaps with AI picks, false = never; unset = follow the owner's Prefer AI / Prefer crew setting. */
+export type BriefingStop = { icao: string; layover: LayoverId; nights?: number; picks: number[]; ai?: boolean };
 export const briefingSchema = z.object({
   title: z.string().trim().max(80).default(""),
   stops: z.array(z.object({
@@ -182,6 +183,7 @@ export const briefingSchema = z.object({
     layover: z.enum(["quick", "hours", "overnight", "multi"]),
     nights: z.coerce.number().int().min(1).max(14).optional(),
     picks: z.array(z.coerce.number().int()).max(20).default([]),
+    ai: z.boolean().optional(),
   })).min(1, "Add at least one stop").max(12),
 });
 

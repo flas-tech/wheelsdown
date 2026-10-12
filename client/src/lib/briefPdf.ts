@@ -10,7 +10,7 @@ export type BriefStopFull = {
   icao: string; layover: string; nights?: number; airport: (Airport & { lat?: number | null; lon?: number | null }) | null;
   picks: SpotWithStats[]; candidates?: SpotWithStats[]; sponsor: Sponsor; favoriteIds?: number[];
   /** AI picks filling slots no crew listing covers (negative ids). */
-  aiPicks?: AiPick[]; aiStatus?: "ready" | "pending" | "off" | "failed" | "none"; aiSlots?: { cat: string; meal?: string }[];
+  aiPicks?: AiPick[]; aiStatus?: "ready" | "pending" | "off" | "failed" | "none" | "offer"; ai?: boolean; aiSlots?: { cat: string; meal?: string }[];
 };
 export type AiPick = SpotWithStats & { ai: { meal: "breakfast" | "lunch" | "dinner" | null; sources: string[]; createdAt: number } };
 export const isAi = (s: SpotWithStats): s is AiPick => s.id < 0 || !!(s as any).ai;

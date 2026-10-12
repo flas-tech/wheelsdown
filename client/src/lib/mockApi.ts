@@ -240,6 +240,7 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
   if (method === "POST" && path === "/api/auth/forgot") return { ok: true, message: "Demo build: no emails are sent. On the live site, a reset link goes to the email on your account." };
   if (method === "POST" && path === "/api/auth/reset") throw new HttpError(400, "Password reset works on the live site only.");
   if (method === "GET" && path === "/api/config") return { contactEmail: "", emailEnabled: false, moderated: false, ai: false };
+  if (path === "/api/me/ai-pref") return { pref: "crew" };
   if (method === "GET" && path === "/api/ai-picks") return { status: "off", picks: [] }; // AI picks need the live server
   if (method === "DELETE" && path === "/api/me") {
     const u = needUser();

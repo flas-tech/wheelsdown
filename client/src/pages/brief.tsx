@@ -17,11 +17,11 @@ import { buildBriefPdf, shareOrDownload, stopPins, layoverText, routeText, CAT_N
 import { errText } from "./add";
 import { PickTag } from "@/lib/aiPicks";
 
-type StopInput = { icao: string; layover: LayoverId; nights?: number; picks: number[] };
+type StopInput = { icao: string; layover: LayoverId; nights?: number; picks: number[]; ai?: boolean };
 type BriefSummary = { id: number; title: string; stops: { icao: string; layover: LayoverId }[]; updatedAt: number };
 const parseCodes = (r: string) => r.toUpperCase().split(/[^A-Z0-9]+/).filter((c) => c.length === 3 || c.length === 4).slice(0, 12);
 const appUrl = () => `${window.location.origin}${window.location.pathname}`;
-const toInput = (b: BriefFull): StopInput[] => b.stops.map((s) => ({ icao: s.icao, layover: s.layover as LayoverId, nights: s.nights, picks: s.picks.map((p) => p.id) }));
+const toInput = (b: BriefFull): StopInput[] => b.stops.map((s) => ({ icao: s.icao, layover: s.layover as LayoverId, nights: s.nights, picks: s.picks.map((p) => p.id), ...(s.ai != null ? { ai: s.ai } : {}) }));
 
 /** Refetch every few seconds while AI picks are still being found for a stop (they take about a minute). */
 const aiPolling = (q: { state: { data?: BriefFull } }) => (q.state.data?.stops.some((s) => s.aiStatus === "pending") ? 5000 : false);
@@ -148,7 +148,8 @@ function RouteForm({ initial, initialTitle, busy, onSubmit, submitLabel }: {
       onSubmit(title.trim(), codes.map((c, i) => {
         const v = get(i, c);
         const same = initial?.find((s) => s.icao === c && s.layover === v.layover);
-        return { icao: c, ...v, picks: same ? prevPicks.get(c) || [] : [] };
+        const was = initial?.find((s) => s.icao === c);
+        return { icao: c, ...v, picks: same ? prevPicks.get(c) || [] : [], ...(was?.ai != null ? { ai: was.ai } : {}) };
       }));
     }} data-testid="form-brief-route">
       <div>
@@ -286,6 +287,7 @@ export function BriefEditorPage() {
             [a[j], a[t]] = [a[t], a[j]]; return { ...s, picks: a };
           }))}
           onResuggest={() => update(input.map((s, k) => (k === i ? { ...s, picks: [] } : s)), true)}
+          onAi={(on) => update(input.map((s, k) => (k === i ? { ...s, ai: on } : s)))}
           busy={save.isPending} />
       ))}
 
@@ -380,9 +382,9 @@ function BriefOverview({ brief }: { brief: BriefFull }) {
   return <MapCanvas pins={pins} height={190} route testId="map-brief-overview" />;
 }
 
-function StopSection({ stop, index, onRemovePick, onAddPick, onMove, onResuggest, busy }: {
+function StopSection({ stop, index, onRemovePick, onAddPick, onMove, onResuggest, onAi, busy }: {
   stop: BriefStopFull; index: number; busy: boolean;
-  onRemovePick: (id: number) => void; onAddPick: (id: number) => void; onMove: (id: number, dir: -1 | 1) => void; onResuggest: () => void;
+  onRemovePick: (id: number) => void; onAddPick: (id: number) => void; onMove: (id: number, dir: -1 | 1) => void; onResuggest: () => void; onAi: (on: boolean) => void;
 }) {
   const [adding, setAdding] = useState(false);
   const { pins, numbered } = useMemo(() => stopPins(stop), [stop]);
@@ -411,8 +413,8 @@ function StopSection({ stop, index, onRemovePick, onAddPick, onMove, onResuggest
       <MapCanvas pins={pins} testId={`map-stop-${index}`} />
       {unmapped > 0 && <p className="text-[11px] text-muted-foreground">{unmapped} pick{unmapped > 1 ? "s aren't" : " isn't"} on the map yet (no location saved). They're still in the list and the PDF.</p>}
 
-      <AiNote stop={stop} />
-      {numbered.length === 0 && stop.aiStatus !== "pending" && (
+      <AiNote stop={stop} onAi={onAi} busy={busy} />
+      {numbered.length === 0 && stop.aiStatus !== "pending" && stop.aiStatus !== "offer" && (
         <div className="rounded-2xl border border-dashed border-border p-4 text-center">
           <p className="text-sm font-semibold">No crew picks at {stop.icao} yet</p>
           <Link href={`/add/${stop.icao}`} className="mt-2 inline-flex items-center gap-1.5 rounded-full taxi-sign px-3.5 py-1.5 text-xs font-semibold hover-elevate" data-testid={`link-add-at-${stop.icao}`}><Plus className="h-3.5 w-3.5" />Add a spot at {stop.icao}</Link>
@@ -554,13 +556,30 @@ export function SharedBriefPage() {
   );
 }
 
-const SLOT_WORD = (sl: { cat: string; meal?: string }) => (sl.meal ? `a ${sl.meal} spot` : sl.cat === "do" ? "something to do" : sl.cat === "stay" ? "a hotel" : "a place to eat");
+const SLOT_WORD = (sl: { cat: string; meal?: string }) => (sl.meal ? sl.meal : sl.cat === "do" ? "something to do" : sl.cat === "stay" ? "a hotel" : "a place to eat");
+const WORD_ORDER = ["breakfast", "lunch", "dinner", "a place to eat", "something to do", "a hotel"];
 /** Explains AI picks on a stop, or says they're on the way. */
-function AiNote({ stop }: { stop: BriefStopFull }) {
+function AiNote({ stop, onAi, busy }: { stop: BriefStopFull; onAi?: (on: boolean) => void; busy?: boolean }) {
   const slots = stop.aiSlots || [];
+  const w = Array.from(new Set(slots.map(SLOT_WORD))).sort((a, b) => WORD_ORDER.indexOf(a) - WORD_ORDER.indexOf(b));
+  const want = w.length > 1 ? `${w.slice(0, -1).join(", ")} or ${w[w.length - 1]}` : w[0];
+  if (stop.aiStatus === "offer") {
+    if (!onAi) return null; // shared view: only the owner decides
+    return (
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-dashed border-border px-3 py-2.5" data-testid="box-ai-offer">
+        <p className="min-w-0 flex-1 basis-56 text-xs"><span className="font-semibold">No crew picks yet for {want} at {stop.icao}.</span> <span className="text-muted-foreground">AI can suggest real places to fill the gap, clearly tagged.</span></p>
+        <button type="button" onClick={() => onAi(true)} disabled={busy} data-testid="button-pick-ai"
+          className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-violet-600 px-3.5 text-xs font-semibold text-white hover-elevate disabled:opacity-60">
+          <Sparkles className="h-3.5 w-3.5" />Pick with AI
+        </button>
+        <div className="flex basis-full flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+          <Link href={`/add/${stop.icao}`} className="inline-flex items-center gap-1 font-semibold text-primary" data-testid="link-ai-offer-add"><Plus className="h-3 w-3" />Add a spot at {stop.icao}</Link>
+          <Link href="/me?s=ai" className="text-muted-foreground underline underline-offset-2" data-testid="link-ai-setting">Always fill gaps with AI? Choose Prefer AI</Link>
+        </div>
+      </div>
+    );
+  }
   if (stop.aiStatus === "pending") {
-    const w = Array.from(new Set(slots.map(SLOT_WORD)));
-    const want = w.length > 1 ? `${w.slice(0, -1).join(", ")} or ${w[w.length - 1]}` : w[0];
     return (
       <p className="flex items-start gap-2 rounded-xl bg-violet-500/10 px-3 py-2 text-xs" data-testid="text-ai-pending">
         <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-violet-600" />
@@ -572,7 +591,8 @@ function AiNote({ stop }: { stop: BriefStopFull }) {
   return (
     <p className="flex items-start gap-2 text-[11px] text-muted-foreground" data-testid="text-ai-note">
       <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-violet-600" />
-      <span>AI picks fill in where no crew has listed a place yet. They aren't crew-rated, so check hours before you go. Been to one? Add it and it becomes a crew pick.</span>
+      <span>AI picks fill in where no crew has listed a place yet. They aren't crew-rated, so check hours before you go. Been to one? Add it and it becomes a crew pick.
+        {onAi && <> <button type="button" onClick={() => onAi(false)} disabled={busy} className="font-medium text-foreground underline underline-offset-2" data-testid="button-remove-ai">Remove AI picks</button></>}</span>
     </p>
   );
 }

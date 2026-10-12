@@ -12,7 +12,12 @@ import { pickable, slotsFor, unmetSlots, slotMatches, type Meal, type Slot } fro
 import type { LayoverId, SpotWithStats } from "@shared/schema";
 
 type Mw = (req: Request, res: Response, next: NextFunction) => unknown;
-export type AiStatus = "ready" | "pending" | "off" | "failed" | "none";
+export type AiStatus = "ready" | "pending" | "off" | "failed" | "none" | "offer";
+export type AiPref = "crew" | "ai";
+/** A member's choice: "crew" (default) = AI picks only when asked, "ai" = fill gaps automatically. */
+export async function aiPrefOf(userId: number): Promise<AiPref> {
+  return (await storage.getSetting(`aipref:${userId}`)) === "ai" ? "ai" : "crew";
+}
 type Row = {
   id: number; icao: string; category: "eat" | "do" | "stay"; meal: string; name: string; address: string; website: string; description: string;
   cost_level: number | null; pace: string | null; minutes_needed: number | null; tags: string; lat: number | null; lng: number | null; miles: number | null;
@@ -117,11 +122,13 @@ const aiMealOf = (r: Row) => ({ category: r.category, name: r.name, description:
  * AI picks that fill a briefing stop's open slots. A slot is only filled by AI when no crew listing at the airport could
  * fill it (if crews have one and it was removed from the plan, it stays removed).
  */
-export async function fillStop(icao: string, layover: LayoverId, nights: number | undefined, picks: SpotWithStats[], all: SpotWithStats[], airport?: any): Promise<{ aiPicks: AiPickCard[]; aiStatus: AiStatus; aiSlots: Slot[] }> {
+export async function fillStop(icao: string, layover: LayoverId, nights: number | undefined, picks: SpotWithStats[], all: SpotWithStats[], airport?: any, useAi = true): Promise<{ aiPicks: AiPickCard[]; aiStatus: AiStatus; aiSlots: Slot[] }> {
   const open = unmetSlots(slotsFor(layover, nights), picks);
   const crewOk = all.filter((s) => pickable(s) && (s.milesFromField ?? 0) <= MAX_MILES && !picks.some((p) => p.id === s.id));
   const needAi = open.filter((sl) => !crewOk.some((s) => slotMatches(sl, s)));
   if (!needAi.length) return { aiPicks: [], aiStatus: "none", aiSlots: [] };
+  // Prefer crew: say what's missing and offer AI, but don't generate or show anything until asked
+  if (!useAi) return { aiPicks: [], aiStatus: AI_ENABLED ? "offer" : "off", aiSlots: needAi };
   const status = await ensurePicks(icao);
   const rows = (await rowsFor(icao)).filter((r) => !all.some((c) => similarity({ name: r.name }, c) >= 0.8));
   const used = new Set<number>();
@@ -136,7 +143,13 @@ export async function fillStop(icao: string, layover: LayoverId, nights: number 
   return { aiPicks: out, aiStatus: rows.length ? "ready" : status, aiSlots: needAi };
 }
 
-export function registerAiPicks(app: Express, o: { requireAdmin: Mw }) {
+export function registerAiPicks(app: Express, o: { requireAdmin: Mw; requireUser: Mw }) {
+  app.get("/api/me/ai-pref", o.requireUser, async (req, res) => res.json({ pref: await aiPrefOf((req as any).user.id) }));
+  app.put("/api/me/ai-pref", o.requireUser, async (req, res) => {
+    const pref: AiPref = req.body?.pref === "ai" ? "ai" : "crew";
+    await storage.setSetting(`aipref:${(req as any).user.id}`, pref);
+    res.json({ pref });
+  });
   /** Search fallback: AI picks for one airport and category, only when crews have nothing there in that category. */
   app.get("/api/ai-picks", async (req, res) => {
     const ap = await storage.resolveCode(String(req.query.icao || ""));

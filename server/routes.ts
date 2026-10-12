@@ -20,7 +20,7 @@ import { AI_PRICES, costOf, costReport } from "./aiUsage";
 import { registerFeedback } from "./feedback";
 import { registerCheckins } from "./checkins";
 import { registerModFix, closeDuplicateNotices } from "./modfix";
-import { registerAiPicks, fillStop } from "./aiPicks";
+import { registerAiPicks, fillStop, aiPrefOf } from "./aiPicks";
 import { registerSimilar } from "./similar";
 import { dayKey } from "./metrics";
 import { SERVICES } from "@shared/services";
@@ -524,15 +524,16 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   async function expandBriefing(b: Briefing, withCandidates: boolean) {
     const stops = JSON.parse(b.stops || "[]") as BriefingStop[];
     const favs = new Set(await storage.favoriteIds(b.userId));
+    const pref = await aiPrefOf(b.userId);
     const out = [];
     for (const st of stops) {
       const airport = (await storage.resolveCode(st.icao)) || (refAirport(st.icao) as any) || null;
       const all = airport?.icao ? await storage.searchSpots([airport.icao]) : [];
       const byId = new Map(all.map((s) => [s.id, s]));
       const picks = withFavorites(st.picks, all, favs).map((i) => byId.get(i)).filter(Boolean) as SpotWithStats[];
-      const fill = airport?.icao ? await fillStop(airport.icao, st.layover, st.nights, picks, all, airport).catch(() => ({ aiPicks: [], aiStatus: "failed" as const, aiSlots: [] })) : { aiPicks: [], aiStatus: "none" as const, aiSlots: [] };
+      const fill = airport?.icao ? await fillStop(airport.icao, st.layover, st.nights, picks, all, airport, st.ai ?? pref === "ai").catch(() => ({ aiPicks: [], aiStatus: "failed" as const, aiSlots: [] })) : { aiPicks: [], aiStatus: "none" as const, aiSlots: [] };
       out.push({
-        icao: airport?.icao || st.icao.toUpperCase(), layover: st.layover, nights: st.nights, airport,
+        icao: airport?.icao || st.icao.toUpperCase(), layover: st.layover, nights: st.nights, ai: st.ai, airport,
         picks, aiPicks: fill.aiPicks, aiStatus: fill.aiStatus, aiSlots: fill.aiSlots,
         favoriteIds: all.filter((s) => favs.has(s.id)).map((s) => s.id),
         candidates: withCandidates ? all : undefined,
@@ -622,7 +623,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // ---------- admin ----------
   registerFeedback(app, { userOf, requireAdmin });
   registerCheckins(app, { requireUser, userOf });
-  registerAiPicks(app, { requireAdmin });
+  registerAiPicks(app, { requireAdmin, requireUser });
   registerModFix(app, { requireAdmin, requireUser, ensureAirport: (c) => ensureAirport(c), byAdmin });
   app.get("/api/admin/costs", requireAdmin, async (req, res) => {
     const days = [7, 30, 90].includes(Number(req.query.days)) ? Number(req.query.days) : 30;
