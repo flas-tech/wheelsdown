@@ -7,6 +7,7 @@ import { createServer } from "node:http";
 import helmet from "helmet";
 import { storage } from "./storage";
 import { closeDb, dbKind } from "./db";
+import { installOps, logRequestError, recordRelease } from "./ops";
 
 const app = express();
 const PROD = process.env.NODE_ENV === "production";
@@ -95,14 +96,17 @@ app.use((req, res, next) => {
   await storage.init();
   log(`database ready (${dbKind()})`);
   setInterval(() => storage.pruneSessions().catch(() => {}), 6 * 3600_000).unref();
+  installOps(app);
   await registerRoutes(httpServer, app);
+  recordRelease().catch(() => {});
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     // Don't leak internals in production
     const message = status < 500 || !PROD ? err.message || "Internal Server Error" : "Something went wrong on our side. Try again in a moment.";
 
-    console.error("Internal Server Error:", err);
+    logRequestError(err, _req, res);
+    if (status >= 500) process.stderr.write(`Internal Server Error: ${err?.stack || err}\n`);
 
     if (res.headersSent) {
       return next(err);

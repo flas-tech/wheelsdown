@@ -19,6 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { FEEDBACK_LABEL, type FeedbackItem } from "@shared/feedback";
+import { OverviewPanel, ErrorLog, ChangeLog, AiPicksAdmin, type AdmApi } from "./adminOps";
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 
 const inputCls = "w-full h-9 rounded-lg border border-input bg-background px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring";
@@ -64,13 +65,29 @@ function Login({ onOk }: { onOk: () => void }) {
   );
 }
 
+const TABS: { id: string; label: string }[] = [
+  { id: "overview", label: "Overview" }, { id: "errors", label: "Errors" }, { id: "changes", label: "Change log" },
+  { id: "mod", label: "Moderation" }, { id: "feedback", label: "Feedback" }, { id: "aipicks", label: "AI picks" },
+  { id: "spots", label: "Spots" }, { id: "check", label: "Needs check" }, { id: "users", label: "Crew" },
+  { id: "bulk", label: "Import / Export" }, { id: "ads", label: "Ad banners" }, { id: "adv", label: "Advertisers" }, { id: "costs", label: "Costs" },
+];
+const TAB_KEY = "wheelsdown-admin-tab";
+const API: AdmApi = { adm, admGet };
+
 function Console({ onLogout, viaAccount = false }: { onLogout: () => void; viaAccount?: boolean }) {
   const { data: stats } = useQuery<Record<string, number>>({ queryKey: ["/api/admin/stats"], queryFn: admGet("/api/admin/stats") });
   const { data: fbOpen } = useQuery<{ counts: Record<string, number> }>({ queryKey: ["/api/admin/feedback", "open"], queryFn: admGet("/api/admin/feedback?status=open"), refetchInterval: 30000 });
+  const { data: ov } = useQuery<{ errorsOpen: number; errors24: number }>({ queryKey: ["/api/admin/overview"], queryFn: admGet("/api/admin/overview"), refetchInterval: 60_000 });
   const fbNew = fbOpen?.counts?.new || 0;
-  const ctr = stats && stats.impressions ? ((stats.clicks / stats.impressions) * 100).toFixed(1) + "%" : "—";
+  const [tab, setTabState] = useState(() => { try { const t = sessionStorage.getItem(TAB_KEY); return t && TABS.some((x) => x.id === t) ? t : "overview"; } catch { return "overview"; } });
+  const setTab = (t: string) => { setTabState(t); try { sessionStorage.setItem(TAB_KEY, t); } catch { /* private mode */ } window.scrollTo({ top: 0 }); };
+  const badge = (id: string) => {
+    const n = id === "feedback" ? fbNew : id === "errors" ? ov?.errors24 || 0 : id === "mod" ? stats?.pending || 0 : 0;
+    if (!n) return null;
+    return <span className={cn("ml-1.5 rounded-full px-1.5 font-code text-[10px] font-bold tabular", id === "errors" ? "bg-destructive text-destructive-foreground" : "bg-primary text-primary-foreground")} data-testid={`badge-${id}`}>{n}</span>;
+  };
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <div className="flex items-center justify-between print:hidden">
         <div>
           <h1 className="text-lg font-semibold">Admin console</h1>
@@ -78,31 +95,18 @@ function Console({ onLogout, viaAccount = false }: { onLogout: () => void; viaAc
         </div>
         <button onClick={onLogout} className={btn} data-testid="button-admin-logout">{viaAccount ? <><BookUser className="h-4 w-4" />Logbook</> : <><LogOut className="h-4 w-4" />Lock</>}</button>
       </div>
-      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 print:hidden">
-        {[
-          ["Live spots", stats?.spots], ["Pending", stats?.pending], ["Reviews", stats?.reviews],
-          ["Crew votes", stats?.votes], ["Ad views", stats?.impressions], ["Crew accounts", stats?.users],
-        ].map(([l, v]) => (
-          <div key={l as string} className="rounded-xl border border-card-border bg-card px-3 py-2.5">
-            <p className="text-[11px] text-muted-foreground">{l}</p>
-            <p className="font-code text-lg font-bold tabular" data-testid={`stat-${String(l).replace(/\s/g, "-").toLowerCase()}`}>{v ?? "–"}</p>
-          </div>
-        ))}
-      </div>
-      <Tabs defaultValue="mod">
-        <TabsList className="print:hidden">
-          <TabsTrigger value="mod" data-testid="tab-mod">Moderation</TabsTrigger>
-          <TabsTrigger value="feedback" data-testid="tab-feedback">Feedback{fbNew > 0 && <span className="ml-1.5 rounded-full bg-primary px-1.5 font-code text-[10px] font-bold text-primary-foreground tabular" data-testid="badge-feedback-new">{fbNew}</span>}</TabsTrigger>
-          <TabsTrigger value="adv" data-testid="tab-advertisers">Advertisers</TabsTrigger>
-          <TabsTrigger value="costs" data-testid="tab-costs">Costs</TabsTrigger>
-          <TabsTrigger value="spots" data-testid="tab-spots">Spots</TabsTrigger>
-          <TabsTrigger value="check" data-testid="tab-check">Needs check</TabsTrigger>
-          <TabsTrigger value="bulk" data-testid="tab-bulk">Import / Export</TabsTrigger>
-          <TabsTrigger value="ads" data-testid="tab-ads">Ad banners</TabsTrigger>
-          <TabsTrigger value="users" data-testid="tab-users">Crew</TabsTrigger>
-        </TabsList>
+      <Tabs value={tab} onValueChange={setTab}>
+        <div className="-mx-4 overflow-x-auto no-scrollbar px-4 print:hidden sm:mx-0 sm:overflow-visible sm:px-0">
+          <TabsList className="inline-flex w-max justify-start sm:h-auto sm:w-full sm:flex-wrap sm:gap-y-1">
+            {TABS.map((t) => <TabsTrigger key={t.id} value={t.id} data-testid={`tab-${t.id}`}>{t.label}{badge(t.id)}</TabsTrigger>)}
+          </TabsList>
+        </div>
+        <TabsContent value="overview"><OverviewPanel api={API} go={setTab} stats={stats} /></TabsContent>
+        <TabsContent value="errors"><ErrorLog api={API} /></TabsContent>
+        <TabsContent value="changes"><ChangeLog api={API} /></TabsContent>
         <TabsContent value="mod"><ModerationQueue /></TabsContent>
         <TabsContent value="feedback"><FeedbackInbox /></TabsContent>
+        <TabsContent value="aipicks"><AiPicksAdmin api={API} /></TabsContent>
         <TabsContent value="adv"><AdvertiserReport /></TabsContent>
         <TabsContent value="costs"><CostsPanel /></TabsContent>
         <TabsContent value="spots"><SpotsTable /></TabsContent>
@@ -1113,10 +1117,14 @@ function FeedbackInbox() {
   const { toast } = useToast();
   const [filter, setFilter] = useState<string>("open");
   const [del, setDel] = useState<FeedbackItem | null>(null);
+  const [kind, setKind] = useState("all");
+  const [fq, setFq] = useState("");
   const { data, isLoading } = useQuery<{ items: FeedbackItem[]; counts: Record<string, number> }>({ queryKey: ["/api/admin/feedback", filter], queryFn: admGet(`/api/admin/feedback?status=${filter}`), refetchInterval: 30000 });
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["/api/admin/feedback"] });
   const update = useMutation({ mutationFn: async (v: { id: number; status?: string; adminNote?: string }) => (await adm("PATCH", `/api/admin/feedback/${v.id}`, v)).json(), onSuccess: refresh });
   const remove = useMutation({ mutationFn: async (id: number) => (await adm("DELETE", `/api/admin/feedback/${id}`)).json(), onSuccess: () => { refresh(); toast({ title: "Feedback deleted" }); } });
+  const t = fq.trim().toLowerCase();
+  const items = (data?.items || []).filter((f) => (kind === "all" || f.kind === kind) && (!t || [f.message, f.userName, f.handle, f.page, f.adminNote, f.contact].some((x) => String(x || "").toLowerCase().includes(t))));
   const c = data?.counts || {};
   const countFor = (k: string) => k === "open" ? (c.new || 0) + (c.reviewing || 0) : k === "all" ? Object.values(c).reduce((a, b) => a + b, 0) : c[k] || 0;
   return (
@@ -1132,11 +1140,18 @@ function FeedbackInbox() {
           </button>
         ))}
       </div>
-      {isLoading ? <Skeleton className="h-40 rounded-xl" /> : !data?.items.length ? (
+      <div className="flex flex-wrap gap-2">
+        <input value={fq} onChange={(e) => setFq(e.target.value)} placeholder="Search feedback, name or page" className={cn(inputCls, "flex-1 min-w-[180px]")} data-testid="input-feedback-search" />
+        <select value={kind} onChange={(e) => setKind(e.target.value)} className={cn(inputCls, "w-auto")} data-testid="select-feedback-kind">
+          <option value="all">All types</option>
+          {Object.entries(FEEDBACK_LABEL).map(([k, l]) => <option key={k} value={k}>{l} ({(data?.items || []).filter((f) => f.kind === k).length})</option>)}
+        </select>
+      </div>
+      {isLoading ? <Skeleton className="h-40 rounded-xl" /> : !items.length ? (
         <p className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">Nothing here. New feedback shows up as soon as it's sent.</p>
       ) : (
         <ul className="space-y-2.5">
-          {data.items.map((f) => <FeedbackRow key={f.id} f={f} onStatus={(status) => update.mutate({ id: f.id, status })} onNote={(adminNote) => update.mutate({ id: f.id, adminNote }, { onSuccess: () => toast({ title: "Note saved" }) })} onDelete={() => setDel(f)} />)}
+          {items.map((f) => <FeedbackRow key={f.id} f={f} onStatus={(status) => update.mutate({ id: f.id, status })} onNote={(adminNote) => update.mutate({ id: f.id, adminNote }, { onSuccess: () => toast({ title: "Note saved" }) })} onDelete={() => setDel(f)} />)}
         </ul>
       )}
       <AlertDialog open={!!del} onOpenChange={(o) => !o && setDel(null)}>

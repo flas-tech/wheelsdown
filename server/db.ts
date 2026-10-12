@@ -127,6 +127,14 @@ CREATE TABLE IF NOT EXISTS visitors_daily (day text NOT NULL, vid text NOT NULL,
 CREATE TABLE IF NOT EXISTS app_settings (key text PRIMARY KEY, value text NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS ai_picks (id serial PRIMARY KEY, icao text NOT NULL, category text NOT NULL, meal text NOT NULL DEFAULT '', name text NOT NULL, address text NOT NULL DEFAULT '', website text NOT NULL DEFAULT '', description text NOT NULL DEFAULT '', cost_level integer, pace text, minutes_needed integer, tags text NOT NULL DEFAULT '[]', lat double precision, lng double precision, miles double precision, sources text NOT NULL DEFAULT '[]', status text NOT NULL DEFAULT 'live', created_at bigint NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS ai_picks_icao_idx ON ai_picks (icao, status);
+ALTER TABLE ai_picks ADD COLUMN IF NOT EXISTS focus text NOT NULL DEFAULT '';
+ALTER TABLE ai_picks ADD COLUMN IF NOT EXISTS spot_id integer;
+ALTER TABLE ai_picks ADD COLUMN IF NOT EXISTS bonus_user_id integer;
+CREATE TABLE IF NOT EXISTS error_log (id serial PRIMARY KEY, fingerprint text NOT NULL, level text NOT NULL DEFAULT 'error', source text NOT NULL, message text NOT NULL, path text NOT NULL DEFAULT '', method text NOT NULL DEFAULT '', status_code integer, user_id integer, detail text NOT NULL DEFAULT '', count integer NOT NULL DEFAULT 1, first_at bigint NOT NULL DEFAULT 0, last_at bigint NOT NULL DEFAULT 0, resolved boolean NOT NULL DEFAULT false, resolved_by text NOT NULL DEFAULT '', resolved_at bigint);
+CREATE INDEX IF NOT EXISTS error_log_fp_idx ON error_log (fingerprint, resolved);
+CREATE INDEX IF NOT EXISTS error_log_last_idx ON error_log (last_at);
+CREATE TABLE IF NOT EXISTS change_log (id serial PRIMARY KEY, at bigint NOT NULL, kind text NOT NULL DEFAULT 'admin', actor text NOT NULL DEFAULT '', actor_id integer, action text NOT NULL, entity text NOT NULL DEFAULT '', entity_id text NOT NULL DEFAULT '', summary text NOT NULL DEFAULT '', detail text NOT NULL DEFAULT '');
+CREATE INDEX IF NOT EXISTS change_log_at_idx ON change_log (at);
 INSERT INTO app_settings (key, value) VALUES ('wright_seats_taken', '0') ON CONFLICT (key) DO NOTHING;
 `;
 

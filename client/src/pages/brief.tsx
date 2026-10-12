@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { drawStaticMap, PIN_COLORS } from "@/lib/staticMap";
 import { buildBriefPdf, shareOrDownload, stopPins, layoverText, routeText, CAT_NAMES, isAi, type AiPick, type BriefFull, type BriefStopFull } from "@/lib/briefPdf";
 import { errText } from "./add";
-import { PickTag } from "@/lib/aiPicks";
+import { PickTag, FindMore, aiAddHref } from "@/lib/aiPicks";
 
 type StopInput = { icao: string; layover: LayoverId; nights?: number; picks: number[]; ai?: boolean; aiAdd?: number[] };
 type BriefSummary = { id: number; title: string; stops: { icao: string; layover: LayoverId }[]; updatedAt: number };
@@ -507,7 +507,7 @@ function PickRow({ n, spot, count, onRemove, onUp, onDown, busy, readOnly, favor
       {ai && (
         <div className="mt-2 flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-[11px]">
           <a href={outLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"><ExternalLink className="h-3 w-3" />{spot.website ? "Website" : "Maps"}</a>
-          <Link href={`/add/${spot.icao}?name=${encodeURIComponent(spot.name)}&cat=${spot.category}`} className="inline-flex items-center gap-1 font-semibold text-primary" data-testid={`link-ai-add-${-spot.id}`}><Plus className="h-3 w-3" />Been here? Add it for crews</Link>
+          <Link href={aiAddHref(spot as AiPick)} className="inline-flex items-center gap-1 font-semibold text-primary" data-testid={`link-ai-add-${-spot.id}`} title="+10 points if you're the first to add and rate it"><Plus className="h-3 w-3" />Been here? Add it, +10 pts</Link>
           {onRemoveAi && <button type="button" onClick={onRemoveAi} disabled={busy} className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground disabled:opacity-50" data-testid={`button-remove-ai-${-spot.id}`}><X className="h-3 w-3" />Remove</button>}
         </div>
       )}
@@ -617,21 +617,11 @@ function AiNote({ stop, onAi, busy }: { stop: BriefStopFull; onAi?: (on: boolean
 const MORE_CATS = [["all", "All"], ["eat", "Eat"], ["do", "Do"], ["stay", "Stay"]] as const;
 /** "Pick more with AI": add other AI picks found for this airport, or ask AI for more places. */
 function PickMore({ stop, index, onAdd, busy }: { stop: BriefStopFull; index: number; onAdd: (rowId: number) => void; busy: boolean }) {
-  const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [cat, setCat] = useState<(typeof MORE_CATS)[number][0]>("all");
   const more = stop.aiMore || [];
   const list = cat === "all" ? more : more.filter((m) => m.category === cat);
   const pending = stop.aiMoreStatus === "pending";
-  const find = useMutation({
-    mutationFn: async () => (await (await apiRequest("POST", "/api/ai-picks/more", { icao: stop.icao })).json()) as { status: string },
-    onSuccess: (r) => {
-      if (r.status === "full") toast({ title: `That's plenty for ${stop.icao}`, description: "AI has already found as many places as we keep for one airport." });
-      else if (r.status === "busy") toast({ title: "AI is at today's limit", description: "Try again tomorrow, or add a place you know." });
-      queryClient.invalidateQueries({ queryKey: ["/api/briefings"] });
-    },
-    onError: (e: Error) => toast({ title: "Couldn't ask AI", description: errText(e), variant: "destructive" }),
-  });
   const counts = Object.fromEntries(MORE_CATS.map(([c]) => [c, c === "all" ? more.length : more.filter((m) => m.category === c).length]));
   return (
     <div data-testid={`section-pick-more-${index}`}>
@@ -668,12 +658,7 @@ function PickMore({ stop, index, onAdd, busy }: { stop: BriefStopFull; index: nu
             <p className="text-[11px] text-muted-foreground">
               {pending ? "Finding more places, usually under a minute." : stop.aiMoreStatus === "failed" ? "AI didn't find anything new last time." : stop.aiMoreStatus === "full" ? `That's every place AI keeps for ${stop.icao}.` : more.length ? "Want different options?" : `No other AI picks at ${stop.icao} yet.`}
             </p>
-            {stop.aiMoreStatus !== "full" && (
-              <button type="button" onClick={() => find.mutate()} disabled={pending || find.isPending} data-testid={`button-find-more-${index}`}
-                className="inline-flex h-8 items-center gap-1.5 rounded-full bg-violet-600 px-3 text-[11px] font-semibold text-white hover-elevate disabled:opacity-60">
-                {pending || find.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}Find more places
-              </button>
-            )}
+            {stop.aiMoreStatus !== "full" && <FindMore icao={stop.icao} pending={pending} testId={`find-more-${index}`} />}
           </div>
         </div>
       )}

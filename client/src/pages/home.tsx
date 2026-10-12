@@ -11,7 +11,7 @@ import { CUISINES, cuisinesOf, cuisineLabel } from "@shared/cuisine";
 import { COST_LABELS, PACES, costOptions, costRange, costText, paceLabel, paceOf, paceMatches, type PaceId } from "@shared/cost";
 import { CostChoice } from "@/lib/costChip";
 import { PROGRAMS, programOf, type ProgramId } from "@shared/loyalty";
-import { AiPicksPanel, ProgramChip } from "@/lib/aiPicks";
+import { AiPicksPanel, ProgramChip, useMyPrograms } from "@/lib/aiPicks";
 import { getPosition, type NearAirport } from "@/lib/geo";
 import { useToast } from "@/hooks/use-toast";
 import { trustScore } from "@shared/vetting";
@@ -204,6 +204,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
     } finally { setLocating(false); }
   }
 
+  const myPrograms = useMyPrograms();
   const filtered = useMemo(() => {
     let list = (data?.spots || []).filter((x) => x.category === cat);
     if (showTime && bucket) list = list.filter((x) => totalMinutes(x) <= bucket.max);
@@ -218,8 +219,10 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
       close: (a: SpotWithStats, b: SpotWithStats) => (a.milesFromField ?? 0) - (b.milesFromField ?? 0),
       new: (a: SpotWithStats, b: SpotWithStats) => b.createdAt - a.createdAt,
     };
-    return [...list].sort(sorters[s.sort]);
-  }, [data, cat, s.time, s.pace, s.food, s.rewards, budget, s.sort, s.vettedOnly, showTime, showPace, showCost]);
+    // hotels from the member's own rewards programs first, then the chosen order
+    const mine = (x: SpotWithStats) => (x.category === "stay" && myPrograms.includes(programOf(x) as ProgramId) ? 1 : 0);
+    return [...list].sort((a, b) => (myPrograms.length ? mine(b) - mine(a) : 0) || sorters[s.sort](a, b));
+  }, [data, cat, s.time, s.pace, s.food, s.rewards, budget, s.sort, s.vettedOnly, showTime, showPace, showCost, myPrograms]);
   // hotels per rewards program in these results (before the program filter)
   const programCounts = useMemo(() => {
     const n = new Map<string, number>();
@@ -298,9 +301,9 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
           <p className="text-xs font-medium text-muted-foreground mb-1.5">Rewards program</p>
           <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4">
             <Chip active={!s.rewards} onClick={() => set({ rewards: null })} testId="chip-rewards-any">Any</Chip>
-            {PROGRAMS.map((p) => (
+            {[...PROGRAMS].sort((a, b) => Number(myPrograms.includes(b.id)) - Number(myPrograms.includes(a.id))).map((p) => (
               <Chip key={p.id} active={s.rewards === p.id} onClick={() => set({ rewards: s.rewards === p.id ? null : p.id })} testId={`chip-rewards-${p.id}`}>
-                {p.short} {programCounts.get(p.id) ? <span className="ml-1 font-code text-[10px] opacity-70 tabular">{programCounts.get(p.id)}</span> : null}
+                {p.short}{myPrograms.includes(p.id) ? " ★" : ""} {programCounts.get(p.id) ? <span className="ml-1 font-code text-[10px] opacity-70 tabular">{programCounts.get(p.id)}</span> : null}
               </Chip>
             ))}
           </div>
@@ -484,7 +487,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
                 body="Be the first crew to drop one here."
                 icao={g.icao}
               />
-              {g.icao && !(data?.spots || []).some((x) => x.icao === g.icao && x.category === cat) && <AiPicksPanel icao={g.icao} category={cat} program={showRewards ? s.rewards : null} />}
+              {g.icao && !(data?.spots || []).some((x) => x.icao === g.icao && x.category === cat && !(showPace && s.food && !cuisinesOf(x).includes(s.food))) && <AiPicksPanel icao={g.icao} category={cat} program={showRewards ? s.rewards : null} food={showPace ? s.food : null} />}
               </>
             ) : (
               <>

@@ -201,8 +201,11 @@ export class DatabaseStorage {
     const r = (await db().select().from(spots).where(eq(spots.id, id)))[0];
     return r ? (await withStats([r], voter))[0] : undefined;
   }
-  async createSpot(s: InsertSpot) { invalidateActivity(); return (await db().insert(spots).values({ ...s, createdAt: Date.now() }).returning())[0]; }
-  async updateSpot(id: number, s: Partial<InsertSpot>) { invalidateActivity(); return (await db().update(spots).set(s).where(eq(spots.id, id)).returning())[0]; }
+  /** Called with a spot id whenever that listing or one of its ratings goes live (first-to-rate bonus for AI picks). */
+  liveHooks: ((spotId: number) => void)[] = [];
+  private live(spotId: number | undefined, status: string | undefined) { if (spotId && status === "live") for (const h of this.liveHooks) { try { h(spotId); } catch { /* never block a write */ } } }
+  async createSpot(s: InsertSpot) { invalidateActivity(); const r = (await db().insert(spots).values({ ...s, createdAt: Date.now() }).returning())[0]; this.live(r?.id, r?.status); return r; }
+  async updateSpot(id: number, s: Partial<InsertSpot>) { invalidateActivity(); const r = (await db().update(spots).set(s).where(eq(spots.id, id)).returning())[0]; if ((s as any).status) this.live(r?.id, r?.status); return r; }
   async deleteSpots(ids: number[]) {
     if (!ids.length) return 0;
     invalidateActivity();
@@ -266,7 +269,7 @@ export class DatabaseStorage {
     invalidateActivity();
     return (await db().update(reviews).set(patch).where(eq(reviews.id, id)).returning())[0];
   }
-  async createReview(r: InsertReview) { invalidateActivity(); return (await db().insert(reviews).values({ ...r, createdAt: Date.now() }).returning())[0]; }
+  async createReview(r: InsertReview) { invalidateActivity(); const x = (await db().insert(reviews).values({ ...r, createdAt: Date.now() }).returning())[0]; this.live(x?.spotId, x?.status); return x; }
   async deleteReview(id: number) {
     invalidateActivity();
     await db().delete(votes).where(and(eq(votes.targetType, "review"), eq(votes.targetId, id)));
@@ -276,10 +279,10 @@ export class DatabaseStorage {
   // ---- moderation ----
   async rawSpot(id: number) { return Number.isFinite(id) ? (await db().select().from(spots).where(eq(spots.id, id)))[0] : undefined; }
   async setSpotMod(id: number, patch: Partial<Pick<Spot, "status" | "modState" | "modNote" | "modAttempts" | "pendingEdit">>) {
-    invalidateActivity(); return (await db().update(spots).set(patch).where(eq(spots.id, id)).returning())[0];
+    invalidateActivity(); const r = (await db().update(spots).set(patch).where(eq(spots.id, id)).returning())[0]; if (patch.status) this.live(r?.id, r?.status); return r;
   }
   async setReviewMod(id: number, patch: Partial<Pick<Review, "status" | "modState" | "modNote" | "modAttempts" | "pendingEdit" | "rating" | "comment" | "costLevel">>) {
-    invalidateActivity(); return (await db().update(reviews).set(patch).where(eq(reviews.id, id)).returning())[0];
+    invalidateActivity(); const r = (await db().update(reviews).set(patch).where(eq(reviews.id, id)).returning())[0]; if (patch.status) this.live(r?.spotId, r?.status); return r;
   }
   /** Work queue for the background checker (oldest first). */
   async modQueue(limit = 4) {

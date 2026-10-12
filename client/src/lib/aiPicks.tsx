@@ -3,11 +3,13 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { Link } from "wouter";
-import { ExternalLink, Loader2, MapPin, Plus, Sparkles, Users } from "lucide-react";
+import { Check, ExternalLink, Hotel, Loader2, MapPin, Plus, Sparkles, Users } from "lucide-react";
 import type { SpotWithStats } from "@shared/schema";
 import { MEAL_LABEL } from "@shared/briefing";
 import { costRange, costText } from "@shared/cost";
-import { programOf, programShort, type ProgramId } from "@shared/loyalty";
+import { PROGRAMS, programOf, programShort, type ProgramId } from "@shared/loyalty";
+import { CUISINES, cuisineLabel } from "@shared/cuisine";
+import { useToast } from "@/hooks/use-toast";
 import { CAT_META, fmtMinutes } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import type { AiPick } from "@/lib/briefPdf";
@@ -23,9 +25,11 @@ export function PickTag({ ai, className }: { ai: boolean; className?: string }) 
 
 /** Rewards-program chip on hotels (Hilton, Marriott…), read from the hotel's name. */
 export function ProgramChip({ spot }: { spot: Pick<SpotWithStats, "category" | "name" | "description" | "website" | "id"> }) {
+  const mine = useMyPrograms();
   const p = programOf(spot);
   if (!p) return null;
-  return <span className="rounded-md bg-sky-500/10 px-1.5 py-0.5 text-[11px] font-medium leading-4 text-sky-800 dark:text-sky-300" data-testid={`text-program-${spot.id}`}>{programShort(p)}</span>;
+  const yours = mine.includes(p);
+  return <span className={cn("rounded-md px-1.5 py-0.5 text-[11px] font-medium leading-4", yours ? "bg-sky-600 text-white" : "bg-sky-500/10 text-sky-800 dark:text-sky-300")} title={yours ? "One of your hotel programs" : undefined} data-testid={`text-program-${spot.id}`}>{programShort(p)}{yours ? " · yours" : ""}</span>;
 }
 
 function AiCard({ spot }: { spot: AiPick }) {
@@ -52,9 +56,88 @@ function AiCard({ spot }: { spot: AiPick }) {
       {spot.address && <a href={`https://maps.apple.com/?q=${encodeURIComponent(spot.name + " " + spot.address)}`} target="_blank" rel="noopener noreferrer" className="mt-1.5 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"><MapPin className="h-3 w-3" />{spot.address}</a>}
       <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
         <a href={out} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"><ExternalLink className="h-3 w-3" />{spot.website ? "Website" : "Maps"}</a>
-        <Link href={`/add/${spot.icao}?name=${encodeURIComponent(spot.name)}&cat=${spot.category}`} className="inline-flex items-center gap-1 font-semibold text-primary" data-testid={`link-ai-add-${-spot.id}`}><Plus className="h-3.5 w-3.5" />Been here? Add it for crews</Link>
+        <Link href={aiAddHref(spot)} className="inline-flex items-center gap-1 font-semibold text-primary" data-testid={`link-ai-add-${-spot.id}`}><Plus className="h-3.5 w-3.5" />Been here? Add it for crews</Link>
       </div>
+      <FirstRateNote />
     </article>
+  );
+}
+
+/** Add-a-spot link prefilled from an AI pick; the id lets the server credit the first-to-rate bonus. */
+export const aiAddHref = (spot: AiPick) => `/add/${spot.icao}?name=${encodeURIComponent(spot.name)}&cat=${spot.category}&ai=${-spot.id}${spot.address ? `&addr=${encodeURIComponent(spot.address)}` : ""}`;
+export function FirstRateNote({ className }: { className?: string }) {
+  return <p className={cn("mt-1.5 text-[11px] text-emerald-700 dark:text-emerald-400", className)} data-testid="text-first-rate">+10 points if you're the first crew member to add and rate it.</p>;
+}
+
+/** Hotel rewards programs the member collects (Logbook). Their hotels come first in AI picks, briefs and search. */
+export function useMyPrograms(): ProgramId[] {
+  const { me } = useAuth();
+  const { data } = useQuery<{ programs: ProgramId[] }>({ queryKey: ["/api/me/programs"], enabled: !!me, staleTime: 5 * 60_000 });
+  return (me && data?.programs) || [];
+}
+export function ProgramsCard() {
+  const { me } = useAuth();
+  const mine = useMyPrograms();
+  const m = useMutation({
+    mutationFn: async (next: ProgramId[]) => (await apiRequest("PUT", "/api/me/programs", { programs: next })).json(),
+    onSuccess: (r) => { queryClient.setQueryData(["/api/me/programs"], r); queryClient.invalidateQueries({ queryKey: ["/api/briefings"] }); },
+  });
+  if (!me) return null;
+  const toggle = (id: ProgramId) => m.mutate(mine.includes(id) ? mine.filter((x) => x !== id) : [...mine, id]);
+  return (
+    <section id="pf-programs" className="rounded-2xl border border-card-border bg-card p-4 space-y-3 scroll-mt-24" data-testid="section-programs">
+      <div>
+        <h2 className="flex items-center gap-1.5 text-sm font-semibold"><Hotel className="h-4 w-4 text-sky-600" />My hotel programs</h2>
+        <p className="text-xs text-muted-foreground">The points you chase. Hotels from these come first in briefs, AI picks and search.</p>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {PROGRAMS.map((p) => {
+          const on = mine.includes(p.id);
+          return (
+            <button key={p.id} type="button" onClick={() => toggle(p.id)} aria-pressed={on} disabled={m.isPending} data-testid={`button-program-${p.id}`}
+              className={cn("inline-flex h-9 items-center gap-1 rounded-full border px-3 text-xs font-semibold", on ? "border-sky-600 bg-sky-600 text-white" : "border-input text-muted-foreground hover:text-foreground")}>
+              {on && <Check className="h-3.5 w-3.5" />}{p.label}
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+/** "Find more places": any food, a food type, or Surprise me (what the area is known for). */
+export function FindMore({ icao, pending, onDone, initial = "", testId = "find-more", compact }: { icao: string; pending?: boolean; onDone?: () => void; initial?: string; testId?: string; compact?: boolean }) {
+  const { me } = useAuth();
+  const { toast } = useToast();
+  const [focus, setFocus] = useState(initial);
+  useEffect(() => setFocus(initial), [initial]);
+  const m = useMutation({
+    mutationFn: async () => (await (await apiRequest("POST", "/api/ai-picks/more", { icao, focus })).json()) as { status: string },
+    onSuccess: (r) => {
+      if (r.status === "full") toast({ title: `That's plenty for ${icao}`, description: "AI has already found as many places as we keep for one airport." });
+      else if (r.status === "busy") toast({ title: "AI is at today's limit", description: "Try again tomorrow, or add a place you know." });
+      else if (r.status === "pending") toast({ title: focus === "local" ? `Finding what ${icao} is known for` : focus ? `Finding ${cuisineLabel(focus)} near ${icao}` : `Finding more places near ${icao}`, description: "Usually under a minute." });
+      queryClient.invalidateQueries({ queryKey: ["/api/briefings"] });
+      queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith("/api/ai-picks") });
+      onDone?.();
+    },
+    onError: (e: Error) => toast({ title: "Couldn't ask AI", description: e.message.replace(/^\d+: /, ""), variant: "destructive" }),
+  });
+  if (!me) return <Link href="/me" className="text-[11px] font-semibold text-violet-700 dark:text-violet-300">Sign in to ask AI for more places</Link>;
+  const busy = pending || m.isPending;
+  return (
+    <div className={cn("flex flex-wrap items-center gap-2", compact && "w-full")} data-testid={testId}>
+      <select value={focus} onChange={(e) => setFocus(e.target.value)} disabled={busy} aria-label="What kind of places" data-testid={`${testId}-focus`}
+        className="h-8 min-w-0 flex-1 rounded-full border border-input bg-background px-3 text-[11px] font-semibold sm:flex-none">
+        <option value="">Any food and things to do</option>
+        <option value="local">Surprise me: what {icao} is known for</option>
+        <optgroup label="Food type">{CUISINES.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</optgroup>
+      </select>
+      <button type="button" onClick={() => m.mutate()} disabled={busy} data-testid={`${testId}-go`}
+        className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-violet-600 px-3 text-[11px] font-semibold text-white hover-elevate disabled:opacity-60">
+        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}{focus === "local" ? "Surprise me" : "Find more places"}
+      </button>
+    </div>
   );
 }
 
@@ -100,7 +183,7 @@ export function AiPrefCard() {
 }
 
 /** Search fallback: when crews have nothing at an airport in this category, offer (or, with Prefer AI, show) AI picks. */
-export function AiPicksPanel({ icao, category, program }: { icao: string; category: string; program?: ProgramId | null }) {
+export function AiPicksPanel({ icao, category, program, food }: { icao: string; category: string; program?: ProgramId | null; food?: string | null }) {
   const pref = useAiPref();
   const [asked, setAsked] = useState(false);
   const { data: cfg } = useQuery<{ ai?: boolean }>({ queryKey: ["/api/config"] });
@@ -114,13 +197,13 @@ export function AiPicksPanel({ icao, category, program }: { icao: string; catego
         className="inline-flex h-9 items-center gap-1.5 rounded-full bg-violet-600 px-3.5 text-xs font-semibold text-white hover-elevate"><Sparkles className="h-3.5 w-3.5" />Pick with AI</button>
     </div>
   );
-  return <AiPicksList icao={icao} category={category} program={program} on={on} />;
+  return <AiPicksList icao={icao} category={category} program={program} food={category === "eat" ? food : null} on={on} />;
 }
 
-function AiPicksList({ icao, category, program, on }: { icao: string; category: string; program?: ProgramId | null; on: boolean }) {
-  const { data, isLoading, refetch } = useQuery<{ status: string; picks: AiPick[] }>({
-    queryKey: [`/api/ai-picks?icao=${icao}&cat=${category}`], enabled: on, staleTime: 60_000,
-    refetchInterval: (q) => (q.state.data?.status === "pending" ? 5000 : false),
+function AiPicksList({ icao, category, program, food, on }: { icao: string; category: string; program?: ProgramId | null; food?: string | null; on: boolean }) {
+  const { data, isLoading, refetch } = useQuery<{ status: string; picks: AiPick[]; total?: number; more?: string }>({
+    queryKey: [`/api/ai-picks?icao=${icao}&cat=${category}${food ? `&food=${food}` : ""}`], enabled: on, staleTime: 60_000,
+    refetchInterval: (q) => (q.state.data?.status === "pending" || q.state.data?.more === "pending" ? 5000 : false),
   });
   if (!on || isLoading || !data || data.status === "crew" || data.status === "off") return null;
   const picks = program ? data.picks.filter((p) => programOf(p) === program) : data.picks;
@@ -128,6 +211,12 @@ function AiPicksList({ icao, category, program, on }: { icao: string; category: 
     <p className="flex items-start gap-2 rounded-xl bg-violet-500/10 px-3 py-2.5 text-xs" data-testid="text-ai-search-pending">
       <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-violet-600" />No crew has listed one at {icao} yet. Finding AI picks, usually under a minute.
     </p>
+  );
+  if (!picks.length && data.status === "ready") return (
+    <div className="space-y-2 rounded-xl border border-dashed border-violet-400/60 px-3 py-3" data-testid={`box-ai-none-${icao}`}>
+      <p className="text-xs text-muted-foreground">{food ? `No ${cuisineLabel(food)} AI picks at ${icao} yet.` : program ? `No ${programShort(program)} hotels in the AI picks at ${icao}.` : `No AI picks here.`}</p>
+      {category !== "stay" && <FindMore icao={icao} initial={food || ""} pending={data.more === "pending"} testId={`find-more-search-${icao}`} />}
+    </div>
   );
   if (!picks.length) return data.status === "failed" ? (
     <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-dashed border-border px-3 py-2.5" data-testid={`box-ai-failed-${icao}`}>
@@ -140,6 +229,12 @@ function AiPicksList({ icao, category, program, on }: { icao: string; category: 
       <p className="flex items-start gap-2 text-xs text-muted-foreground"><Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-violet-600" />
         <span>No crew picks here yet, so these are AI picks. They aren't crew-rated: check hours before you go, and add the ones you try so they become crew picks.</span></p>
       {picks.map((p) => <AiCard key={p.id} spot={p} />)}
+      {category !== "stay" && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-dashed border-violet-400/60 px-3 py-2.5" data-testid={`box-find-more-${icao}`}>
+          <p className="text-[11px] text-muted-foreground">{data.more === "pending" ? "Finding more places, usually under a minute." : "Want something different?"}</p>
+          <FindMore icao={icao} initial={food || ""} pending={data.more === "pending"} testId={`find-more-search-${icao}`} />
+        </div>
+      )}
     </section>
   );
 }

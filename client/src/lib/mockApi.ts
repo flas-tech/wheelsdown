@@ -241,6 +241,7 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
   if (method === "POST" && path === "/api/auth/reset") throw new HttpError(400, "Password reset works on the live site only.");
   if (method === "GET" && path === "/api/config") return { contactEmail: "", emailEnabled: false, moderated: false, ai: false };
   if (path === "/api/me/ai-pref") return { pref: "crew" };
+  if (path === "/api/me/programs") return { programs: method === "PUT" && Array.isArray((body as any)?.programs) ? (body as any).programs : [] };
   if (method === "GET" && path === "/api/ai-picks") return { status: "off", picks: [] }; // AI picks need the live server
   if (method === "DELETE" && path === "/api/me") {
     const u = needUser();
@@ -655,6 +656,17 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
       ads: db.ads.map((x) => ({ id: x.id, advertiser: x.advertiser, headline: x.headline, targetIcao: x.targetIcao || "", active: !!x.active, impressions: 0, clicks: 0, lifetimeImpressions: x.impressions, lifetimeClicks: x.clicks })),
       audience: { crew: db.users.length, newCrew: 0, roles: tally(db.users.map((u: any) => u.crewRole || "")), aircraft: [], homeBases: tally(db.users.map((u: any) => String(u.homeBase || "").toUpperCase())).slice(0, 12), interests: [] },
       content: { listings: live.length, airports: new Set(live.map((x) => x.icao)).size, eat: live.filter((x) => x.category === "eat").length, do: live.filter((x) => x.category === "do").length, stay: live.filter((x) => x.category === "stay").length, fbo: live.filter((x) => x.category === "fbo").length, ratings: db.reviews.length } };
+  }
+  // the demo has no server, so there are no server errors or AI runs to log
+  if (method === "GET" && path === "/api/admin/errors") { admin(); return { rows: [], total: 0, facets: { source: {}, level: {} }, last24h: 0, trend: [] }; }
+  if (method === "POST" && path === "/api/admin/errors/resolve") { admin(); return { updated: 0 }; }
+  if (method === "GET" && path === "/api/admin/changes") { admin(); return { rows: [], total: 0, facets: { kind: {}, entity: {}, actor: {} } }; }
+  if (method === "GET" && path === "/api/admin/ai-picks") { admin(); return { enabled: false, rows: [], states: {}, cap: 0, usedToday: 0 }; }
+  if (method === "GET" && path === "/api/admin/overview") {
+    admin();
+    return { listings: db.spots.filter((s) => s.status === "live").length, pending: db.spots.filter((s) => s.status === "pending").length, users: db.users.length, newUsers: 0,
+      reviews: db.reviews.length, reviewsWeek: 0, feedbackNew: 0, errorsOpen: 0, errors24: 0, aiAirports: 0, aiRows: 0, aiClaimed: 0, aiBonus: 0, changesWeek: 0,
+      aiCallsToday: 0, aiFailuresToday: 0, release: null, recentErrors: [], recentChanges: [] };
   }
   if (method === "GET" && path === "/api/admin/stats") {
     return {

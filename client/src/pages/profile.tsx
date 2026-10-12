@@ -8,7 +8,7 @@ import { FeedbackCard } from "@/lib/feedback";
 import { LogbookTabs } from "@/pages/notifications";
 import { AirportCheckInCard, CheckInList, ProfileMap } from "@/lib/checkins";
 import { InviteCard } from "@/lib/share";
-import { AiPrefCard } from "@/lib/aiPicks";
+import { AiPrefCard, ProgramsCard } from "@/lib/aiPicks";
 import { BIO_MAX } from "@shared/interests";
 import { aircraftList } from "@shared/aircraft";
 import { useEffect, useState } from "react";
@@ -153,6 +153,7 @@ export default function ProfilePage() {
       <ProfileSettings />
 
       <AiPrefCard />
+      <ProgramsCard />
 
       <ActivityLog items={contrib?.activity} loading={isLoading} />
 

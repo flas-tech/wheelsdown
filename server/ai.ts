@@ -356,7 +356,7 @@ const PICKS_SCHEMA = { name: "ai_picks", schema: {
     } } } } } };
 
 /** Real, currently open places near an airport for crews on a layover. Used only where crews haven't listed anything yet. */
-export async function suggestAirportPicks(ap: { icao: string; name: string; city: string; region?: string | null; country?: string | null; lat: number | null; lon: number | null }, avoidNames: string[], effort: "low" | "medium" = "low", more = false): Promise<AiPickDraft[]> {
+export async function suggestAirportPicks(ap: { icao: string; name: string; city: string; region?: string | null; country?: string | null; lat: number | null; lon: number | null }, avoidNames: string[], effort: "low" | "medium" = "low", more = false, focus: { label: string; local?: boolean } | null = null, programs: string[] = []): Promise<AiPickDraft[]> {
   const system = `You suggest places for Wheelsdown, a guide for airline, corporate and charter flight crews on layovers. Crews have not listed these yet, so your picks fill the gap.
 Use web search. Only suggest real businesses that are open now, near this airport (hotels and food within about 10 miles if possible, never more than 25). Never invent places, addresses, prices or hours.
 Return about 14 picks. Restaurants and things to do matter most; hotels least. Always return picks: every town near an airport has somewhere to eat and something to see, even if it is small.
@@ -371,7 +371,10 @@ Fields:
 - tags: up to 4, ${TAG_HINT}.
 - sources: URLs you relied on.
 Do not repeat any of these places, which are already listed: ${avoidNames.slice(0, 80).join("; ") || "(none)"}.${more ? `
-This is a request for MORE options: the places above are already known. Return about 12 new, different places: mostly restaurants (any meal) and things to do, at most 1 hotel. Look a little further out (up to 15 miles) if the closest options are used up.` : ""}`;
+This is a request for MORE options: the places above are already known. Return about 12 new, different places: mostly restaurants (any meal) and things to do, at most 1 hotel. Look a little further out (up to 15 miles) if the closest options are used up.` : ""}${focus?.local ? `
+The crew asked to be surprised: favor what this area is known for. Signature local dishes and the places that are famous for them, long-running local institutions, and the attractions locals are proud of. Mention in the description why it is a local favorite. Avoid national chains.` : focus ? `
+The crew wants ${focus.label} food: make at least 8 of the eat picks ${focus.label} restaurants (any meal). If there are fewer nearby, include all you can confirm and fill the rest with other local favorites.` : ""}${programs.length ? `
+For hotels, prefer these rewards programs, which this crew collects: ${programs.join(", ")}.` : ""}`;
   const user = JSON.stringify({ airport: { code: ap.icao, name: ap.name, city: ap.city, region: ap.region || "", country: ap.country || "", lat: ap.lat, lon: ap.lon } });
   const v = await callModel<{ picks: AiPickDraft[] }>(system, user, { purpose: "picks", search: true, schema: PICKS_SCHEMA, timeoutMs: 170_000, effort });
   const raw = v.picks || [];

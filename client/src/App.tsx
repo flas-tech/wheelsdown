@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Switch, Route, Router, Link, useLocation } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
 // match routes on the path only, so links like #/map?route=KPDK still find /map
@@ -82,6 +83,7 @@ function Shell() {
       </header>
 
       <main className={cn("mx-auto w-full flex-1 px-4 pt-5 pb-28 sm:pb-12", isAdmin ? "max-w-6xl" : "max-w-xl")}>
+        <ErrorBoundary resetKey={loc}>
         <Switch>
           <Route path="/" component={Home} />
           <Route path="/map" component={MapRoute} />
@@ -108,6 +110,7 @@ function Shell() {
           <Route path="/about" component={LegalPage} />
           <Route component={NotFound} />
         </Switch>
+        </ErrorBoundary>
         {!isAdmin && (
           <footer className="print:hidden mt-12 space-y-3 text-xs text-muted-foreground">
             <div className="flex items-center justify-between gap-3">

@@ -50,8 +50,10 @@ export default function AddPage() {
   const [time, setTime] = useState<string | null>(null);
   const [miles, setMiles] = useState("");
   const [crewTip, setCrewTip] = useState("");
-  const [more, setMore] = useState(false);
-  const [address, setAddress] = useState("");
+  const linkAddr = (linkQ.get("addr") || "").slice(0, 200);
+  const aiPickId = Number(linkQ.get("ai")) || null; // from an AI pick: first crew to add and rate it earns +10
+  const [more, setMore] = useState(!!linkAddr);
+  const [address, setAddress] = useState(linkAddr);
   const [website, setWebsite] = useState("");
   const [tags, setTags] = useState("");
   const [avoid, setAvoid] = useState(false); // new listings only: "Go around", crews should avoid this place
@@ -202,6 +204,7 @@ export default function AddPage() {
         await apiRequest(editId ? "PATCH" : "POST", editId ? `/api/spots/${editId}` : "/api/spots", {
           icao: c,
           airportCity: unknown ? city : undefined,
+          ...(!editId && aiPickId ? { aiPickId } : {}),
           category,
           name,
           description,
@@ -248,6 +251,11 @@ export default function AddPage() {
         {!editId && (
           <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium" data-testid="text-add-points">
             +{POINTS.listing} pts · +{POINTS.listingVetted} more when crews vet it{me ? "" : " · sign-in required"}
+          </p>
+        )}
+        {!editId && aiPickId && (
+          <p className="mt-2 rounded-xl bg-emerald-500/10 px-3 py-2 text-xs text-emerald-800 dark:text-emerald-300" data-testid="text-add-first-rate">
+            This was an AI pick. Add it, then rate it: the first crew member to rate it earns a +10 point bonus.
           </p>
         )}
       </header>
