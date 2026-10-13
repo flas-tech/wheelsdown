@@ -2,7 +2,7 @@
 // One renderer for the on-screen map and the PDF, so what crews see is what gets exported.
 // Tiles are fetched only for the area being viewed (no prefetching), per the OSM tile usage policy.
 
-export type MapPin = { lat: number; lng: number; label: string; kind: "airport" | "eat" | "do" | "stay" | "fbo"; /** small unlabeled dot in this color (profile maps) */ dot?: string };
+export type MapPin = { lat: number; lng: number; label: string; kind: "airport" | "eat" | "do" | "stay" | "fbo"; /** small unlabeled dot in this color (profile maps) */ dot?: string; /** AI pick: hollow pin with a dashed ring */ ai?: boolean };
 
 const TILE = 256;
 const TILE_URL = (z: number, x: number, y: number) => `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
@@ -148,9 +148,17 @@ export async function drawStaticMap(canvas: HTMLCanvasElement, pins: MapPin[], w
     {
       const r = 11;
       ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-      ctx.fillStyle = PIN_COLORS[p.kind]; ctx.fill();
-      ctx.lineWidth = 2.5; ctx.strokeStyle = "#FFFFFF"; ctx.stroke();
-      ctx.fillStyle = "#FFFFFF"; ctx.font = "700 11px system-ui, -apple-system, sans-serif";
+      if (p.ai) {
+        // AI pick: white pin, dashed ring and number in the category color
+        ctx.fillStyle = "#FFFFFF"; ctx.fill();
+        ctx.setLineDash([3, 2]); ctx.lineWidth = 2.5; ctx.strokeStyle = PIN_COLORS[p.kind]; ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillStyle = PIN_COLORS[p.kind];
+      } else {
+        ctx.fillStyle = PIN_COLORS[p.kind]; ctx.fill();
+        ctx.lineWidth = 2.5; ctx.strokeStyle = "#FFFFFF"; ctx.stroke();
+        ctx.fillStyle = "#FFFFFF";
+      }
+      ctx.font = "700 11px system-ui, -apple-system, sans-serif";
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillText(p.label, p.x, p.y + 0.5);
     }

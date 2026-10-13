@@ -176,7 +176,9 @@ export const LAYOVERS = [
 export type LayoverId = (typeof LAYOVERS)[number]["id"];
 /** ai: true = fill gaps with AI picks, false = never; unset = follow the owner's Prefer AI / Prefer crew setting. */
 /** aiAdd: AI picks the owner added on top of the automatic ones (ai_picks ids). */
-export type BriefingStop = { icao: string; layover: LayoverId; nights?: number; picks: number[]; ai?: boolean; aiAdd?: number[] };
+/** aiHide: automatic AI picks the owner removed (ai_picks ids); order: the owner's order of everything at the stop
+ *  (listing ids, AI picks as negative ids). */
+export type BriefingStop = { icao: string; layover: LayoverId; nights?: number; picks: number[]; ai?: boolean; aiAdd?: number[]; aiHide?: number[]; order?: number[] };
 export const briefingSchema = z.object({
   title: z.string().trim().max(80).default(""),
   stops: z.array(z.object({
@@ -186,6 +188,8 @@ export const briefingSchema = z.object({
     picks: z.array(z.coerce.number().int()).max(20).default([]),
     ai: z.boolean().optional(),
     aiAdd: z.array(z.coerce.number().int().positive()).max(20).optional(),
+    aiHide: z.array(z.coerce.number().int().positive()).max(40).optional(),
+    order: z.array(z.coerce.number().int()).max(80).optional(),
   })).min(1, "Add at least one stop").max(12),
 });
 

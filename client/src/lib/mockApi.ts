@@ -497,7 +497,7 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
       const favHere = all.filter((s) => fv.has(s.id)).map((s) => s.id);
       const ids = [...favHere.filter((i) => !st.picks.includes(i)), ...st.picks];
       return { icao: airport?.icao || st.icao, layover: st.layover, nights: st.nights, airport, favoriteIds: favHere, picks: ids.map((i) => all.find((s) => s.id === i)).filter(Boolean),
-        candidates: withCandidates ? all : undefined, sponsor: sponsorFor(airport?.icao || st.icao) };
+        order: st.order, candidates: withCandidates ? all : undefined, sponsor: sponsorFor(airport?.icao || st.icao) };
     }),
   });
   const cleanStops = (raw: any): BriefingStop[] => {
@@ -508,7 +508,7 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
       const a = resolve(String(st.icao || ""));
       if (!a) throw new HttpError(400, `Unknown airport ${String(st.icao || "").toUpperCase()}`);
       const layover = ["quick", "hours", "overnight", "multi"].includes(st.layover) ? st.layover : "hours";
-      return { icao: a.icao, layover, nights: st.nights ? Number(st.nights) : undefined, picks: (Array.isArray(st.picks) ? st.picks : []).map(Number).slice(0, 20) };
+      return { icao: a.icao, layover, nights: st.nights ? Number(st.nights) : undefined, picks: (Array.isArray(st.picks) ? st.picks : []).map(Number).slice(0, 20), ...(Array.isArray(st.order) ? { order: st.order.map(Number).slice(0, 80) } : {}) };
     });
   };
   if (method === "POST" && path === "/api/briefings/suggest") {

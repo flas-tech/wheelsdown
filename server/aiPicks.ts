@@ -11,6 +11,8 @@ import { refAirport } from "./airportsData";
 import { milesBetween } from "@shared/cost";
 import { similarity } from "@shared/similar";
 import { pickable, slotsFor, unmetSlots, slotMatches, type Meal, type Slot } from "@shared/briefing";
+import { isFocus, focusCategory, focusLabel, matchesFocus } from "@shared/focus";
+import { activitiesOf, ACTIVITIES } from "@shared/activities";
 import type { LayoverId, SpotWithStats } from "@shared/schema";
 import { CUISINES, cuisineLabel, cuisinesOf } from "@shared/cuisine";
 import { PROGRAMS, programLabel, programOf, type ProgramId } from "@shared/loyalty";
@@ -33,6 +35,7 @@ export async function programsOf(userId: number | null | undefined): Promise<Pro
   if (!userId) return [];
   try { const v = JSON.parse((await storage.getSetting(`programs:${userId}`)) || "[]"); return Array.isArray(v) ? v.filter((x) => PROGRAMS.some((p) => p.id === x)) : []; } catch { return []; }
 }
+const rowActs = (r: Row) => Array.from(new Set([...(r.focus?.startsWith("act:") ? [r.focus.slice(4)] : []), ...activitiesOf({ name: r.name, description: r.description, tags: r.tags })]));
 const rowFoods = (r: Row) => Array.from(new Set([...(r.focus && r.focus !== "local" ? [r.focus] : []), ...cuisinesOf({ name: r.name, description: r.description, tags: r.tags })]));
 
 export const FIRST_RATE_BONUS = 10;
@@ -68,7 +71,8 @@ export async function checkFirstRate(spotId: number) {
   } catch (e) { console.error("[ai-picks] first-rate bonus:", String((e as any)?.message || e).slice(0, 200)); }
 }
 /** An AI pick shaped like a crew listing so cards, maps and the PDF can show it. Negative id = not a crew listing. */
-export type AiPickCard = SpotWithStats & { ai: { meal: Meal | null; sources: string[]; createdAt: number; extra?: boolean; focus?: string; foods?: string[]; bonus?: number } };
+/** slot: the briefing gap an automatic pick fills; focus: what the member asked for when it was found. */
+export type AiPickCard = SpotWithStats & { ai: { meal: Meal | null; sources: string[]; createdAt: number; extra?: boolean; focus?: string; foods?: string[]; acts?: string[]; bonus?: number; slot?: Slot } };
 
 const FRESH_MS = 120 * 86400_000; // regenerate an airport's picks after ~4 months
 const RETRY_MS = 2 * 60_000; // after a failure, a new request may try again shortly
@@ -124,7 +128,7 @@ export async function findMore(icao: string, focus: Focus = "", programs: string
   if (today >= DAILY_CAP) return "busy";
   today++;
   moreFailed.delete(icao);
-  moreFocus.set(icao, { focus: focus === "local" || CUISINES.some((c) => c.id === focus) ? focus : "", programs });
+  moreFocus.set(icao, { focus: isFocus(focus) ? focus : "", programs });
   queue.push(icao + "+");
   pump();
   return "pending";
@@ -153,7 +157,9 @@ async function generate(icao: string, more = false) {
   const avoid = [...crew.map((s) => s.name), ...existing.map((r) => r.name)];
   // the model occasionally returns an empty or thin list; ask once more, a little harder, before giving up
   const mf = more ? moreFocus.get(icao) : undefined;
-  const focusArg = mf?.focus === "local" ? { label: "local", local: true } : mf?.focus ? { label: cuisineLabel(mf.focus) } : null;
+  const f = mf?.focus || "";
+  const fc = focusCategory(f);
+  const focusArg = f === "local" ? { label: "local", local: true } : f ? { label: focusLabel(f), cat: fc, kind: (f === fc ? "category" : fc === "do" ? "activity" : "food") as "category" | "activity" | "food" } : null;
   const progs = (mf?.programs || []).map((p) => programLabel(p as ProgramId)).filter(Boolean);
   let drafts = await suggestAirportPicks(ap as any, avoid, "low", more, focusArg, progs);
   if (drafts.length < 6) {
@@ -182,7 +188,7 @@ async function generate(icao: string, more = false) {
   for (const k of keep) {
     await db().execute(sql`INSERT INTO ai_picks (icao, category, meal, name, address, website, description, cost_level, pace, minutes_needed, tags, lat, lng, miles, sources, status, created_at, focus)
       VALUES (${ap.icao}, ${k.category}, ${k.meal === "none" ? "" : k.meal}, ${k.name}, ${k.address}, ${k.website}, ${k.description}, ${k.costLevel}, ${k.pace}, ${k.minutesNeeded},
-        ${JSON.stringify(k.tags)}, ${k.lat}, ${k.lng}, ${k.miles}, ${JSON.stringify(k.sources)}, 'live', ${now}, ${k.category === "eat" ? mf?.focus || "" : ""})`);
+        ${JSON.stringify(k.tags)}, ${k.lat}, ${k.lng}, ${k.miles}, ${JSON.stringify(k.sources)}, 'live', ${now}, ${f && (fc === null || fc === k.category) ? f : ""})`);
   }
   if (!more) await setState(ap.icao, keep.length ? "ready" : "failed");
   console.log(`[ai-picks] ${ap.icao}${more ? "+" : ""}: ${keep.length} of ${drafts.length} kept`);
@@ -197,7 +203,7 @@ export function toCard(r: Row, airport?: any): AiPickCard {
     placeRef: null, modState: "", modNote: "", modAttempts: 0, pendingEdit: null,
     avgRating: null, reviewCount: 0, airport, vet: { up: 0, down: 0, score: 0, level: "new", lastUpAt: null, reasons: {}, myVote: 0 },
     cost: r.cost_level, costVotes: 0, goArounds: 0,
-    ai: { meal: (r.meal || null) as Meal | null, sources: parse(r.sources), createdAt: Number(r.created_at), focus: r.focus || "", foods: r.category === "eat" ? rowFoods(r) : [], bonus: FIRST_RATE_BONUS },
+    ai: { meal: (r.meal || null) as Meal | null, sources: parse(r.sources), createdAt: Number(r.created_at), focus: r.focus || "", foods: r.category === "eat" ? rowFoods(r) : [], acts: r.category === "do" ? rowActs(r) : [], bonus: FIRST_RATE_BONUS },
   } as AiPickCard;
 }
 const aiMealOf = (r: Row) => ({ category: r.category, name: r.name, description: r.description, tags: r.tags, pace: r.pace, meal: (r.meal || null) as Meal | null });
@@ -209,7 +215,7 @@ const CAT_ORDER: Record<string, number> = { eat: 0, do: 1, stay: 2 };
  * fill it (if crews have one and it was removed from the plan, it stays removed). aiAdd are extra AI picks the owner chose
  * with "Pick more"; aiMore lists the other AI picks at the airport they can still add.
  */
-export async function fillStop(icao: string, layover: LayoverId, nights: number | undefined, picks: SpotWithStats[], all: SpotWithStats[], airport?: any, useAi = true, aiAdd: number[] = [], programs: ProgramId[] = []): Promise<StopFill> {
+export async function fillStop(icao: string, layover: LayoverId, nights: number | undefined, picks: SpotWithStats[], all: SpotWithStats[], airport?: any, useAi = true, aiAdd: number[] = [], programs: ProgramId[] = [], aiHide: number[] = []): Promise<StopFill> {
   const empty = { aiMore: [], aiMoreStatus: "idle" as const };
   const open = unmetSlots(slotsFor(layover, nights), picks);
   const crewOk = all.filter((s) => pickable(s) && (s.milesFromField ?? 0) <= MAX_MILES && !picks.some((p) => p.id === s.id));
@@ -219,22 +225,29 @@ export async function fillStop(icao: string, layover: LayoverId, nights: number 
   const status = await ensurePicks(icao);
   const rows = (await rowsFor(icao)).filter((r) => !all.some((c) => similarity({ name: r.name }, c) >= 0.8));
   // extras the owner added stay put even after the airport's picks are refreshed (unless an admin hid them)
-  const added = aiAdd.length ? ((await db().execute(sql`SELECT id, icao, category, meal, name, address, website, description, cost_level, pace, minutes_needed, tags, lat, lng, miles, sources, status, created_at::float8 AS created_at
+  const added = aiAdd.length ? ((await db().execute(sql`SELECT id, icao, category, meal, name, address, website, description, cost_level, pace, minutes_needed, tags, lat, lng, miles, sources, status, focus, created_at::float8 AS created_at
     FROM ai_picks WHERE id IN (${sql.join(aiAdd.map((x) => sql`${x}`), sql`, `)}) AND icao = ${icao} AND status <> 'hidden'`)).rows as any as Row[]) : [];
   const used = new Set<number>(added.map((r) => r.id)); // extras are on top of the automatic picks, never instead of them
   const out: AiPickCard[] = [];
   const byDistance = (a: Row, b: Row) => (a.miles ?? 99) - (b.miles ?? 99);
   // hotels from the member's rewards programs come first
   const inProg = (r: Row) => (r.category === "stay" && programs.length && programs.includes(programOf(r) as ProgramId) ? 1 : 0);
+  // an automatic pick the owner removed leaves its gap open: each removed pick cancels one gap it would have filled
+  const hidden = rows.filter((r) => aiHide.includes(r.id));
   for (const sl of needAi) {
+    const h = hidden.findIndex((x) => slotMatches(sl, aiMealOf(x)));
+    if (h >= 0) { used.add(hidden[h].id); hidden.splice(h, 1); continue; }
     const r = rows.filter((x) => !used.has(x.id) && slotMatches(sl, aiMealOf(x))).sort((a, b) =>
       // the exact meal first, then the closest
       (sl.meal ? Number(b.meal === sl.meal) - Number(a.meal === sl.meal) : 0) || inProg(b) - inProg(a) || byDistance(a, b))[0];
-    if (r) { used.add(r.id); out.push(toCard(r, airport)); }
+    if (r) { used.add(r.id); const c = toCard(r, airport); c.ai.slot = sl; out.push(c); }
   }
+  // a day reads in order: breakfast, lunch, dinner, then things to do, then the hotel
+  const rank = (c: AiPickCard) => ({ breakfast: 0, lunch: 1, dinner: 2 } as Record<string, number>)[c.ai.slot?.meal || ""] ?? (c.category === "eat" ? 3 : c.category === "do" ? 4 : 5);
+  out.sort((a, b) => rank(a) - rank(b));
   const order = new Map(aiAdd.map((x, k) => [x, k]));
   for (const r of [...added].sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))) out.push({ ...toCard(r, airport), ai: { ...toCard(r).ai, extra: true } } as AiPickCard);
-  const more = rows.filter((r) => !used.has(r.id)).sort((a, b) => (CAT_ORDER[a.category] - CAT_ORDER[b.category]) || inProg(b) - inProg(a) || byDistance(a, b)).map((r) => toCard(r, airport));
+  const more = rows.filter((r) => !used.has(r.id) || (aiHide.includes(r.id) && !added.some((a) => a.id === r.id))).sort((a, b) => (CAT_ORDER[a.category] - CAT_ORDER[b.category]) || inProg(b) - inProg(a) || byDistance(a, b)).map((r) => toCard(r, airport));
   const ms = moreStatus(icao);
   return { aiPicks: out, aiStatus: rows.length || added.length ? "ready" : status, aiSlots: needAi, aiMore: more, aiMoreStatus: ms === "idle" && rows.length >= MAX_ROWS ? "full" : ms };
 }
@@ -259,16 +272,17 @@ export function registerAiPicks(app: Express, o: { requireAdmin: Mw; requireUser
     const ap = (await storage.resolveCode(code)) || refAirport(code);
     const cat = String(req.query.cat || "");
     if (!ap || !["eat", "do", "stay"].includes(cat)) return res.status(400).json({ message: "icao and cat (eat, do, stay) required" });
-    const foodQ = cat === "eat" ? String(req.query.food || "") : "";
-    // with a food type chosen, AI can help when no crew listing of that type exists here
-    const crew = (await storage.searchSpots([ap.icao])).filter((s) => s.category === cat && pickable(s) && (!foodQ || cuisinesOf(s).includes(foodQ)));
+    // a food type (eat) or a type of thing to do ("act:golf", do) narrows both crew listings and AI picks
+    const raw = String(req.query.food || "");
+    const typeQ = raw && isFocus(raw) && focusCategory(raw) === cat ? raw : "";
+    // with a type chosen, AI can help when no crew listing of that type exists here
+    const crew = (await storage.searchSpots([ap.icao])).filter((s) => s.category === cat && pickable(s) && (!typeQ || matchesFocus(s, typeQ)));
     if (crew.length) return res.json({ status: "crew", picks: [] });
     const status = await ensurePicks(ap.icao);
-    const food = String(req.query.food || "");
     const progs = await programsOf((await o.userOf(req).catch(() => undefined))?.id);
     const prog = (r: Row) => (cat === "stay" && progs.includes(programOf(r) as ProgramId) ? 1 : 0);
     const all = (await rowsFor(ap.icao)).filter((r) => r.category === cat);
-    const picks = all.filter((r) => !food || rowFoods(r).includes(food)).sort((a, b) => prog(b) - prog(a) || (a.miles ?? 99) - (b.miles ?? 99)).map((r) => toCard(r, ap));
+    const picks = all.sort((a, b) => prog(b) - prog(a) || (a.miles ?? 99) - (b.miles ?? 99)).map((r) => toCard(r, ap)).filter((c) => !typeQ || matchesFocus(c, typeQ));
     res.json({ status: all.length ? "ready" : status, picks, total: all.length, more: moreStatus(ap.icao) });
   });
 

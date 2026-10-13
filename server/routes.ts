@@ -113,6 +113,7 @@ async function ensureAirport(code: string, city?: string, name?: string) {
 
 const msg = (e: z.ZodError) => e.issues[0]?.message || "Invalid";
 
+const BOOT_ID = Date.now().toString(36);
 export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
   // Rate limits: tight on auth, moderate on writes. Keyed by client IP (app sets trust proxy).
   const authLimit = rateLimit({ windowMs: 15 * 60_000, limit: 20, standardHeaders: "draft-8", legacyHeaders: false, message: { message: "Too many attempts. Try again in a few minutes." } });
@@ -124,6 +125,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     try { await storage.health(); res.json({ ok: true, db: "up", time: new Date().toISOString() }); }
     catch { res.status(503).json({ ok: false, db: "down" }); }
   });
+  // the running release, so open copies of the app (home-screen shortcuts) know when to reload
+  app.get("/api/version", (_req, res) => { res.set("Cache-Control", "no-store"); res.json({ version: String(process.env.RENDER_GIT_COMMIT || BOOT_ID).slice(0, 12) }); });
   app.get("/api/config", (_req, res) => res.json({ contactEmail: process.env.CONTACT_EMAIL || "", emailEnabled: !!process.env.RESEND_API_KEY, moderated: MODERATE || AI_ENABLED, ai: AI_ENABLED }));
 
   // ---------- accounts ----------
@@ -242,7 +245,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.get("/api/highlights", async (req, res) => {
     const cat = req.query.category ? String(req.query.category) : null;
-    res.json(buildHighlights(await storage.searchSpots([], false, await voterOf(req)), { category: cat }));
+    // "Most visited": crew ratings plus check-ins at each listing
+    const visits = new Map<number, number>(((await storage.checkinCounts().catch(() => [])) as { spotId: number; n: number }[]).map((r) => [r.spotId, r.n]));
+    res.json(buildHighlights(await storage.searchSpots([], false, await voterOf(req)), { category: cat, visits }));
   });
 
   registerSimilar(app, { userOf });
@@ -543,10 +548,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const all = airport?.icao ? await storage.searchSpots([airport.icao]) : [];
       const byId = new Map(all.map((s) => [s.id, s]));
       const picks = withFavorites(st.picks, all, favs).map((i) => byId.get(i)).filter(Boolean) as SpotWithStats[];
-      const fill = airport?.icao ? await fillStop(airport.icao, st.layover, st.nights, picks, all, airport, st.ai ?? pref === "ai", st.aiAdd || [], programs).catch(() => ({ aiPicks: [], aiStatus: "failed" as const, aiSlots: [], aiMore: [], aiMoreStatus: "idle" as const })) : { aiPicks: [], aiStatus: "none" as const, aiSlots: [], aiMore: [], aiMoreStatus: "idle" as const };
+      const fill = airport?.icao ? await fillStop(airport.icao, st.layover, st.nights, picks, all, airport, st.ai ?? pref === "ai", st.aiAdd || [], programs, st.aiHide || []).catch(() => ({ aiPicks: [], aiStatus: "failed" as const, aiSlots: [], aiMore: [], aiMoreStatus: "idle" as const })) : { aiPicks: [], aiStatus: "none" as const, aiSlots: [], aiMore: [], aiMoreStatus: "idle" as const };
       out.push({
         icao: airport?.icao || st.icao.toUpperCase(), layover: st.layover, nights: st.nights, ai: st.ai, airport,
-        picks, aiPicks: fill.aiPicks, aiStatus: fill.aiStatus, aiSlots: fill.aiSlots, aiAdd: st.aiAdd, aiMore: withCandidates ? fill.aiMore : undefined, aiMoreStatus: fill.aiMoreStatus,
+        picks, aiPicks: fill.aiPicks, aiStatus: fill.aiStatus, aiSlots: fill.aiSlots, aiAdd: st.aiAdd, aiHide: st.aiHide, order: st.order, aiMore: withCandidates ? fill.aiMore : undefined, aiMoreStatus: fill.aiMoreStatus,
         favoriteIds: all.filter((s) => favs.has(s.id)).map((s) => s.id),
         candidates: withCandidates ? all : undefined,
         sponsor: await sponsorFor(airport?.icao || st.icao.toUpperCase()),

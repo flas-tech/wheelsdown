@@ -1,13 +1,14 @@
 import { createContext, lazy, Suspense, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
-import { ArrowRight, Map as MapIcon, SlidersHorizontal, ChevronDown, MapPin, Clock, Search, Plus, X, ChevronRight, Lightbulb, ShieldCheck, List, Sparkles, Trophy, LocateFixed, Loader2, Utensils } from "lucide-react";
+import { ArrowRight, Map as MapIcon, SlidersHorizontal, ChevronDown, MapPin, Clock, Search, Plus, X, ChevronRight, Lightbulb, ShieldCheck, List, Sparkles, Trophy, LocateFixed, Loader2, Utensils, Flame } from "lucide-react";
 import type { Highlights } from "@shared/highlights";
 import { TIME_BUCKETS, type Category, type SpotWithStats, type Airport } from "@shared/schema";
 import { apiRequest, IS_STATIC } from "@/lib/queryClient";
 import { CAT_META, fmtMinutes, totalMinutes, parseTags, Stars, AdBanner, Chip, VetBadge, GoAroundBadge } from "@/lib/ui";
 import { FavoriteButton } from "@/lib/favorites";
 import { CUISINES, cuisinesOf, cuisineLabel } from "@shared/cuisine";
+import { ACTIVITIES, activitiesOf, activityLabel } from "@shared/activities";
 import { COST_LABELS, PACES, costOptions, costRange, costText, paceLabel, paceOf, paceMatches, type PaceId } from "@shared/cost";
 import { CostChoice } from "@/lib/costChip";
 import { PROGRAMS, programOf, type ProgramId } from "@shared/loyalty";
@@ -25,6 +26,8 @@ type SearchState = {
   pace: PaceId | null;
   /** food type (pizza, BBQ…), eat only */
   food: string | null;
+  /** type of thing to do (golf, fishing…), do only */
+  act: string | null;
   /** hotel rewards program (Hilton, Marriott…), stay only */
   rewards: ProgramId | null;
   cost: number | null;
@@ -38,11 +41,11 @@ type SearchState = {
   focus: number | null;
 };
 const SearchCtx = createContext<[SearchState, (p: Partial<SearchState>) => void]>([
-  { category: null, route: "", time: null, pace: null, food: null, rewards: null, cost: null, sort: "trusted", vettedOnly: false, browse: false, view: "list", focus: null },
+  { category: null, route: "", time: null, pace: null, food: null, act: null, rewards: null, cost: null, sort: "trusted", vettedOnly: false, browse: false, view: "list", focus: null },
   () => {},
 ]);
 export function SearchProvider({ children }: { children: React.ReactNode }) {
-  const [s, set] = useState<SearchState>({ category: null, route: "", time: null, pace: null, food: null, rewards: null, cost: null, sort: "trusted", vettedOnly: false, browse: false, view: "list", focus: null });
+  const [s, set] = useState<SearchState>({ category: null, route: "", time: null, pace: null, food: null, act: null, rewards: null, cost: null, sort: "trusted", vettedOnly: false, browse: false, view: "list", focus: null });
   return <SearchCtx.Provider value={[s, (p) => set((o) => ({ ...o, ...p }))]}>{children}</SearchCtx.Provider>;
 }
 export const useSearch = () => useContext(SearchCtx);
@@ -121,7 +124,7 @@ function Prompt({ onPick }: { onPick: (c: Category) => void }) {
         {count > 0 && <p className="ml-auto text-right text-[11px] leading-tight text-muted-foreground" data-testid="text-count-spots"><span className="font-code font-bold text-foreground tabular">{count}</span> picks<br /><span className="font-code font-bold text-foreground tabular" data-testid="text-count-fields">{fields}</span> airfields</p>}
       </div>
 
-      <Rail title="Top rated by crews" icon={Trophy} spots={hl?.top.slice(0, 5)} testId="rail-top" />
+      <SwitchRail hl={hl} limit={5} testId="rail-top" />
 
       <button type="button" onClick={() => set({ category: "eat", browse: true, route: "", view: "list" })} data-testid="button-browse-all-home"
         className="inline-flex items-center gap-1 text-sm font-medium text-primary">
@@ -145,12 +148,39 @@ function BrowseButton({ onClick, testId, sub, title = "Browse everything" }: { c
   );
 }
 
+const RAIL_KEY = "wheelsdown-rail";
+const RAILS = [["top", "Top rated", Trophy], ["visited", "Most visited", Flame], ["newest", "Newest", Sparkles]] as const;
+type RailId = (typeof RAILS)[number][0];
+/** Highlights with a switch: Top rated, Most visited (ratings + check-ins) or Newest. Remembers the last choice. */
+function SwitchRail({ hl, limit, what, testId }: { hl?: Highlights; limit: number; what?: string; testId: string }) {
+  const [id, setId] = useState<RailId>(() => { try { const v = localStorage.getItem(RAIL_KEY) as RailId; return RAILS.some((r) => r[0] === v) ? v : "top"; } catch { return "top"; } });
+  const pick = (v: RailId) => { setId(v); try { localStorage.setItem(RAIL_KEY, v); } catch { /* ignore */ } };
+  const spots = hl ? (hl[id] || []).slice(0, limit) : undefined;
+  const r = RAILS.find((x) => x[0] === id)!;
+  const RIcon = r[2];
+  return (
+    <section className="space-y-2" data-testid={testId}>
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold flex items-center gap-1.5"><RIcon className="h-4 w-4 text-primary" />{r[1]}{what ? ` ${what}` : id === "top" ? " by crews" : ""}</h2>
+        <div className="inline-flex shrink-0 rounded-full border border-border p-0.5" role="tablist" aria-label="Highlights">
+          {RAILS.map(([k, label]) => (
+            <button key={k} type="button" role="tab" aria-selected={id === k} onClick={() => pick(k)} data-testid={`${testId}-tab-${k}`}
+              className={cn("h-7 rounded-full px-2.5 text-[11px] font-semibold", id === k ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground")}>{label}</button>
+          ))}
+        </div>
+      </div>
+      {spots && spots.length === 0 ? <p className="text-xs text-muted-foreground" data-testid={`${testId}-empty`}>{id === "visited" ? "No ratings or check-ins here yet." : "Nothing here yet."}</p>
+        : <Rail title="" icon={RIcon} spots={spots} testId={`${testId}-${id}`} bare />}
+    </section>
+  );
+}
+
 /** Horizontal strip of compact cards, used for highlights instead of dumping the whole catalog. */
-function Rail({ title, icon: Icon, spots, testId }: { title: string; icon: any; spots?: SpotWithStats[]; testId: string }) {
+function Rail({ title, icon: Icon, spots, testId, bare }: { title: string; icon: any; spots?: SpotWithStats[]; testId: string; bare?: boolean }) {
   if (spots && spots.length === 0) return null;
   return (
     <section className="space-y-2" data-testid={testId}>
-      <h2 className="text-sm font-semibold flex items-center gap-1.5"><Icon className="h-4 w-4 text-primary" />{title}</h2>
+      {!bare && <h2 className="text-sm font-semibold flex items-center gap-1.5"><Icon className="h-4 w-4 text-primary" />{title}</h2>}
       <div className="flex gap-3 overflow-x-auto no-scrollbar -mx-4 px-4 snap-x pb-1">
         {!spots && [0, 1, 2].map((i) => <Skeleton key={i} className="h-[132px] w-[220px] shrink-0 rounded-2xl" />)}
         {spots?.map((sp) => {
@@ -212,6 +242,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
     if (showCost && budget != null) list = list.filter((x) => x.cost != null && x.cost <= budget);
     if (s.vettedOnly) list = list.filter((x) => x.vet.level === "vetted");
     if (showPace && s.food) list = list.filter((x) => cuisinesOf(x).includes(s.food!));
+    if (showTime && s.act) list = list.filter((x) => activitiesOf(x).includes(s.act!));
     if (showRewards && s.rewards) list = list.filter((x) => programOf(x) === s.rewards);
     const sorters = {
       trusted: (a: SpotWithStats, b: SpotWithStats) => trustScore(b.vet) - trustScore(a.vet) || (b.avgRating ?? 0) - (a.avgRating ?? 0),
@@ -222,7 +253,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
     // hotels from the member's own rewards programs first, then the chosen order
     const mine = (x: SpotWithStats) => (x.category === "stay" && myPrograms.includes(programOf(x) as ProgramId) ? 1 : 0);
     return [...list].sort((a, b) => (myPrograms.length ? mine(b) - mine(a) : 0) || sorters[s.sort](a, b));
-  }, [data, cat, s.time, s.pace, s.food, s.rewards, budget, s.sort, s.vettedOnly, showTime, showPace, showCost, myPrograms]);
+  }, [data, cat, s.time, s.pace, s.food, s.act, s.rewards, budget, s.sort, s.vettedOnly, showTime, showPace, showCost, myPrograms]);
   // hotels per rewards program in these results (before the program filter)
   const programCounts = useMemo(() => {
     const n = new Map<string, number>();
@@ -236,6 +267,13 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
     for (const x of data?.spots || []) if (x.category === "eat") for (const id of cuisinesOf(x)) n.set(id, (n.get(id) || 0) + 1);
     return CUISINES.filter((c) => n.has(c.id)).map((c) => ({ id: c.id, n: n.get(c.id)! })).sort((a, b) => b.n - a.n);
   }, [data, showPace]);
+  // types of things to do in these results (before the filter), most common first
+  const actTypes = useMemo(() => {
+    if (!showTime) return [] as { id: string; n: number }[];
+    const n = new Map<string, number>();
+    for (const x of data?.spots || []) if (x.category === "do") for (const id of activitiesOf(x)) n.set(id, (n.get(id) || 0) + 1);
+    return ACTIVITIES.filter((a) => n.has(a.id)).map((a) => ({ id: a.id, n: n.get(a.id)! })).sort((a, b) => b.n - a.n);
+  }, [data, showTime]);
 
   const legs = data?.legs || [];
   const icaos = legs.filter((l) => l.airport).map((l) => l.airport!.icao);
@@ -255,7 +293,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
   const PAGE = 10, PER_AIRPORT = 6;
   const [shown, setShown] = useState(PAGE);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  useEffect(() => { setShown(PAGE); setExpanded(new Set()); }, [cat, route, s.time, s.pace, s.food, s.rewards, s.cost, s.vettedOnly, s.sort, s.browse]);
+  useEffect(() => { setShown(PAGE); setExpanded(new Set()); }, [cat, route, s.time, s.pace, s.food, s.act, s.rewards, s.cost, s.vettedOnly, s.sort, s.browse]);
   const mode: "choose" | "browse" | "route" = route ? "route" : s.browse ? "browse" : "choose";
   const { data: hl } = useQuery<Highlights>({ queryKey: [`/api/highlights?category=${cat}`], enabled: mode === "choose" });
 
@@ -269,6 +307,23 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
               <Chip key={b.id} active={s.time === b.id} onClick={() => set({ time: b.id })} testId={`chip-time-${b.id}`}>
                 {b.label} <span className={cn("ml-1 text-xs", s.time === b.id ? "opacity-80" : "text-muted-foreground")}>{b.sub}</span>
               </Chip>
+            ))}
+          </div>
+        </div>
+      )}
+      {showTime && (
+        <div data-testid="filter-act">
+          <p className="text-xs font-medium text-muted-foreground mb-1.5">Type of thing to do</p>
+          <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4">
+            <Chip active={!s.act} onClick={() => set({ act: null })} testId="chip-act-any">All</Chip>
+            {actTypes.map((a) => (
+              <Chip key={a.id} active={s.act === a.id} onClick={() => set({ act: s.act === a.id ? null : a.id })} testId={`chip-act-${a.id}`}>
+                {activityLabel(a.id)} <span className="ml-1 font-code text-[10px] opacity-70 tabular">{a.n}</span>
+              </Chip>
+            ))}
+            {/* every type stays choosable, so AI can help where crews haven't listed one yet */}
+            {ACTIVITIES.filter((a) => !actTypes.some((x) => x.id === a.id)).map((a) => (
+              <Chip key={a.id} active={s.act === a.id} onClick={() => set({ act: s.act === a.id ? null : a.id })} testId={`chip-act-${a.id}`}>{a.label}</Chip>
             ))}
           </div>
         </div>
@@ -413,8 +468,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
 
       {mode === "choose" ? (
         <div className="space-y-5" data-testid="section-choose">
-          <Rail title={`Top rated ${M.label.toLowerCase()}`} icon={Trophy} spots={hl?.top.slice(0, 4)} testId="rail-cat-top" />
-          <Rail title="Just added" icon={Sparkles} spots={hl?.newest.slice(0, 4)} testId="rail-cat-new" />
+          <SwitchRail hl={hl} limit={5} what={M.label.toLowerCase()} testId="rail-cat" />
           <BrowseButton onClick={() => set({ browse: true })} testId="button-browse-all" title={`Browse all ${M.label.toLowerCase()} picks`} sub="No route in mind? Scroll everything, with filters" />
           <AdBanner slot="footer" icaos={[]} />
         </div>
@@ -426,7 +480,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
         </div>
       )}
       {s.view === "map" ? (
-        <MapFilters active={[s.time && showTime, s.pace && showPace, s.food && showPace, s.rewards && showRewards, budget != null, s.vettedOnly].filter(Boolean).length}>{filtersEl}</MapFilters>
+        <MapFilters active={[s.time && showTime, s.pace && showPace, s.food && showPace, s.act && showTime, s.rewards && showRewards, budget != null, s.vettedOnly].filter(Boolean).length}>{filtersEl}</MapFilters>
       ) : filtersEl}
 
       {s.view === "list" && <AdBanner slot="top" icaos={icaos} />}
@@ -483,11 +537,11 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
             {g.spots.length === 0 ? (
               <>
               <Empty
-                title={`No ${M.label.toLowerCase()} picks${s.time || s.pace || s.food || s.rewards || budget != null || s.vettedOnly ? " match these filters" : " yet"}`}
+                title={`No ${M.label.toLowerCase()} picks${s.time || s.pace || s.food || s.act || s.rewards || budget != null || s.vettedOnly ? " match these filters" : " yet"}`}
                 body="Be the first crew to drop one here."
                 icao={g.icao}
               />
-              {g.icao && !(data?.spots || []).some((x) => x.icao === g.icao && x.category === cat && !(showPace && s.food && !cuisinesOf(x).includes(s.food))) && <AiPicksPanel icao={g.icao} category={cat} program={showRewards ? s.rewards : null} food={showPace ? s.food : null} />}
+              {g.icao && !(data?.spots || []).some((x) => x.icao === g.icao && x.category === cat && !(showPace && s.food && !cuisinesOf(x).includes(s.food)) && !(showTime && s.act && !activitiesOf(x).includes(s.act))) && <AiPicksPanel icao={g.icao} category={cat} program={showRewards ? s.rewards : null} food={showPace ? s.food : showTime && s.act ? `act:${s.act}` : null} />}
               </>
             ) : (
               <>
@@ -628,7 +682,7 @@ export function MapRoute() {
     const cat = q.get("cat") as Category | null;
     const spot = Number(q.get("spot")) || null;
     set({ category: cat && cat in CAT_META ? cat : "eat", route: (q.get("icao") || q.get("route") || "").toUpperCase(), browse: true, view: "map", focus: spot,
-      time: null, pace: null, food: null, cost: null, vettedOnly: false });
+      time: null, pace: null, food: null, act: null, cost: null, vettedOnly: false });
     navigate("/", { replace: true });
   }, []); // eslint-disable-line
   return null;

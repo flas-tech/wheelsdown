@@ -1,4 +1,5 @@
 // Trip briefing → PDF (US Letter), built in the browser so nothing leaves the device until the crew shares it.
+import { focusLabel } from "@shared/focus";
 import type { Airport, SpotWithStats } from "@shared/schema";
 import { LAYOVERS } from "@shared/schema";
 import { costText, paceLabel, paceOf, costRange } from "@shared/cost";
@@ -13,9 +14,23 @@ export type BriefStopFull = {
   aiPicks?: AiPick[]; aiStatus?: "ready" | "pending" | "off" | "failed" | "none" | "offer"; ai?: boolean; aiSlots?: { cat: string; meal?: string }[];
   /** "Pick more": AI picks the owner added, the others still available, and whether a find-more run is going. */
   aiAdd?: number[]; aiMore?: AiPick[]; aiMoreStatus?: "pending" | "failed" | "idle" | "full";
+  /** automatic AI picks the owner removed, and the owner's order of everything at the stop (AI picks negative) */
+  aiHide?: number[]; order?: number[];
 };
-export type AiPick = SpotWithStats & { ai: { meal: "breakfast" | "lunch" | "dinner" | null; sources: string[]; createdAt: number; extra?: boolean } };
+export type AiPick = SpotWithStats & { ai: { meal: "breakfast" | "lunch" | "dinner" | null; sources: string[]; createdAt: number; extra?: boolean; focus?: string; foods?: string[]; acts?: string[]; slot?: { cat: string; meal?: string } } };
 export const isAi = (s: SpotWithStats): s is AiPick => s.id < 0 || !!(s as any).ai;
+const SLOT_FILL: Record<string, string> = { breakfast: "breakfast", lunch: "lunch", dinner: "dinner" };
+/** Why an AI pick is in a briefing: the gap it fills, or what the owner asked for when it was found. */
+export function aiReason(s: AiPick): { text: string; kind: "fill" | "asked" | "local" | "added" } {
+  const a = s.ai || ({} as AiPick["ai"]);
+  if (a.slot && !a.extra) {
+    const sl = a.slot;
+    return { kind: "fill", text: sl.cat === "eat" ? `Fills ${sl.meal ? SLOT_FILL[sl.meal] || "a meal" : "a meal"}` : sl.cat === "do" ? "Fills things to do" : "Fills the hotel" };
+  }
+  if (a.focus === "local") return { kind: "local", text: "Surprise me · local favorite" };
+  if (a.focus) return { kind: "asked", text: `${focusLabel(a.focus)} · you asked` };
+  return { kind: "added", text: "You added it" };
+}
 export type BriefFull = { id: number; title: string; shareToken: string; createdAt: number; updatedAt: number; stops: BriefStopFull[] };
 
 export const CAT_NAMES: Record<string, string> = { eat: "Eat", do: "Do", stay: "Stay", fbo: "FBO" };
@@ -29,9 +44,13 @@ export const routeText = (b: { stops: { icao: string }[] }) => b.stops.map((s) =
 /** Pins for a stop: airport plus numbered picks that have coordinates. */
 export function stopPins(st: BriefStopFull): { pins: MapPin[]; numbered: { n: number; spot: SpotWithStats; mapped: boolean; ai: boolean }[] } {
   const pins: MapPin[] = [];
-  const numbered = [...st.picks, ...(st.aiPicks || [])].map((spot, i) => {
+  // the owner's order first; anything new since (a favorite, an added pick) follows in its natural place
+  const natural = [...st.picks, ...(st.aiPicks || [])];
+  const pos = new Map((st.order || []).map((id, k) => [id, k]));
+  const items = pos.size ? natural.map((s, k) => ({ s, k })).sort((a, b) => (pos.get(a.s.id) ?? 1000 + a.k) - (pos.get(b.s.id) ?? 1000 + b.k)).map((x) => x.s) : natural;
+  const numbered = items.map((spot, i) => {
     const mapped = spot.lat != null && spot.lng != null;
-    if (mapped) pins.push({ lat: spot.lat!, lng: spot.lng!, label: String(i + 1), kind: spot.category as MapPin["kind"] });
+    if (mapped) pins.push({ lat: spot.lat!, lng: spot.lng!, label: String(i + 1), kind: spot.category as MapPin["kind"], ai: isAi(spot) });
     return { n: i + 1, spot, mapped, ai: isAi(spot) };
   });
   if (st.airport?.lat != null && st.airport?.lon != null) pins.push({ lat: st.airport.lat, lng: st.airport.lon, label: st.icao, kind: "airport" });
@@ -163,9 +182,19 @@ export async function buildBriefPdf(b: BriefFull, opts: { appUrl: string; prepar
         doc.setFont("courier", "bold"); doc.setFontSize(12); doc.setTextColor(...navy); doc.text(`${s.icao} (continued)`, M, yy); yy += 18;
       }
       // number badge
-      doc.setFillColor(...hex(PIN_COLORS[spot.category as MapPin["kind"]] || "#475569"));
-      doc.circle(M + 9, yy - 4, 9, "F");
-      doc.setTextColor(255, 255, 255); doc.setFont("helvetica", "bold"); doc.setFontSize(9);
+      const pc = hex(PIN_COLORS[spot.category as MapPin["kind"]] || "#475569");
+      if (ai) { // AI pick: white badge, dashed ring and number in the category color (same as the map)
+        doc.setFillColor(255, 255, 255); doc.setDrawColor(...pc); doc.setLineWidth(1.6);
+        (doc as any).setLineDashPattern?.([2.2, 1.6], 0);
+        doc.circle(M + 9, yy - 4, 8.2, "FD");
+        (doc as any).setLineDashPattern?.([], 0); doc.setLineWidth(0.5);
+        doc.setTextColor(...pc);
+      } else {
+        doc.setFillColor(...pc);
+        doc.circle(M + 9, yy - 4, 9, "F");
+        doc.setTextColor(255, 255, 255);
+      }
+      doc.setFont("helvetica", "bold"); doc.setFontSize(9);
       doc.text(String(n), M + 9, yy - 0.8, { align: "center" });
       // name + meta
       doc.setTextColor(...navy); doc.setFontSize(11.5);
@@ -196,6 +225,7 @@ export async function buildBriefPdf(b: BriefFull, opts: { appUrl: string; prepar
       yy += 13;
       const meta = [
         ai && (spot as AiPick).ai.meal ? `${CAT_NAMES[spot.category]} (${(spot as AiPick).ai.meal})` : CAT_NAMES[spot.category] || spot.category,
+        ai ? aiReason(spot as AiPick).text : "",
         spot.milesFromField ? `${spot.milesFromField} mi from field` : ai ? "" : "On field",
         spot.category === "eat" ? paceLabel(paceOf(spot)) : spot.category === "do" ? fmtMinutes(totalMinutes(spot)) : "",
         spot.address || "",

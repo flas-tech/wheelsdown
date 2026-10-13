@@ -2,7 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useRoute } from "wouter";
 import {
-  ArrowLeft, ChevronRight, ClipboardList, FileDown, Link2, Loader2, MapPin, Plus, RefreshCw, Share2, Trash2, X, Plane, Lightbulb, Heart, Sparkles, Users, ExternalLink } from "lucide-react";
+  ArrowLeft, ChevronRight, ClipboardList, FileDown, Link2, Loader2, MapPin, Plus, RefreshCw, Share2, Trash2, X, Plane, Lightbulb, Heart, Sparkles, Users, ExternalLink,
+  ChevronUp, ChevronDown, Utensils, Compass, BedDouble, CheckCircle2, Eye } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { matchesFocus, focusLabel } from "@shared/focus";
+import { CUISINES } from "@shared/cuisine";
+import { ACTIVITIES } from "@shared/activities";
 import { LAYOVERS, type LayoverId, type SpotWithStats } from "@shared/schema";
 import { costRange, costText, paceLabel, paceOf } from "@shared/cost";
 import { LAYOVER_PLAN, MEAL_LABEL } from "@shared/briefing";
@@ -13,15 +18,16 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { drawStaticMap, PIN_COLORS } from "@/lib/staticMap";
-import { buildBriefPdf, shareOrDownload, stopPins, layoverText, routeText, CAT_NAMES, isAi, type AiPick, type BriefFull, type BriefStopFull } from "@/lib/briefPdf";
+import { buildBriefPdf, shareOrDownload, stopPins, layoverText, routeText, CAT_NAMES, isAi, aiReason, type AiPick, type BriefFull, type BriefStopFull } from "@/lib/briefPdf";
 import { errText } from "./add";
 import { PickTag, FindMore, aiAddHref } from "@/lib/aiPicks";
 
-type StopInput = { icao: string; layover: LayoverId; nights?: number; picks: number[]; ai?: boolean; aiAdd?: number[] };
+type StopInput = { icao: string; layover: LayoverId; nights?: number; picks: number[]; ai?: boolean; aiAdd?: number[]; aiHide?: number[]; order?: number[] };
+const uniq = (a: number[]) => Array.from(new Set(a));
 type BriefSummary = { id: number; title: string; stops: { icao: string; layover: LayoverId }[]; updatedAt: number };
 const parseCodes = (r: string) => r.toUpperCase().split(/[^A-Z0-9]+/).filter((c) => c.length === 3 || c.length === 4).slice(0, 12);
 const appUrl = () => `${window.location.origin}${window.location.pathname}`;
-const toInput = (b: BriefFull): StopInput[] => b.stops.map((s) => ({ icao: s.icao, layover: s.layover as LayoverId, nights: s.nights, picks: s.picks.map((p) => p.id), ...(s.ai != null ? { ai: s.ai } : {}), ...(s.aiAdd?.length ? { aiAdd: s.aiAdd } : {}) }));
+const toInput = (b: BriefFull): StopInput[] => b.stops.map((s) => ({ icao: s.icao, layover: s.layover as LayoverId, nights: s.nights, picks: s.picks.map((p) => p.id), ...(s.ai != null ? { ai: s.ai } : {}), ...(s.aiAdd?.length ? { aiAdd: s.aiAdd } : {}), ...(s.aiHide?.length ? { aiHide: s.aiHide } : {}), ...(s.order?.length ? { order: s.order } : {}) }));
 
 /** Refetch every few seconds while AI picks are still being found for a stop (they take about a minute). */
 const aiPolling = (q: { state: { data?: BriefFull } }) => (q.state.data?.stops.some((s) => s.aiStatus === "pending" || s.aiMoreStatus === "pending") ? 5000 : false);
@@ -276,22 +282,30 @@ export function BriefEditorPage() {
 
       <BriefOverview brief={brief} />
 
-      {brief.stops.map((st, i) => (
-        <StopSection key={`${i}-${st.icao}`} stop={st} index={i}
-          onRemovePick={(sid) => update(input.map((s, k) => (k === i ? { ...s, picks: s.picks.filter((p) => p !== sid) } : s)))}
-          onAddPick={(sid) => update(input.map((s, k) => (k === i ? { ...s, picks: [...s.picks, sid] } : s)))}
-          onMove={(sid, dir) => update(input.map((s, k) => {
-            if (k !== i) return s;
-            const a = [...s.picks]; const j = a.indexOf(sid); const t = j + dir;
-            if (j < 0 || t < 0 || t >= a.length) return s;
-            [a[j], a[t]] = [a[t], a[j]]; return { ...s, picks: a };
-          }))}
-          onResuggest={() => update(input.map((s, k) => (k === i ? { ...s, picks: [] } : s)), true)}
-          onAi={(on) => update(input.map((s, k) => (k === i ? { ...s, ai: on, ...(on ? {} : { aiAdd: [] }) } : s)))}
-          onAiAdd={(rowId) => update(input.map((s, k) => (k === i ? { ...s, ai: s.ai ?? true, aiAdd: Array.from(new Set([...(s.aiAdd || []), rowId])).slice(-20) } : s)))}
-          onAiRemove={(rowId) => update(input.map((s, k) => (k === i ? { ...s, aiAdd: (s.aiAdd || []).filter((x) => x !== rowId) } : s)))}
-          busy={save.isPending} />
-      ))}
+      {brief.stops.map((st, i) => {
+        const put = (f: (s: StopInput) => StopInput, suggest = false) => update(input.map((s, k) => (k === i ? f(s) : s)), suggest);
+        const dropOrder = (s: StopInput, id: number) => (s.order || []).filter((x) => x !== id);
+        return (
+          <StopSection key={`${i}-${st.icao}`} stop={st} index={i} busy={save.isPending}
+            // crew listings leave the plan; AI picks added from More places are dropped; automatic AI picks stay removed
+            onRemove={(spot) => put((s) => !isAi(spot) ? { ...s, picks: s.picks.filter((p) => p !== spot.id), order: dropOrder(s, spot.id) }
+              : (spot as AiPick).ai.extra ? { ...s, aiAdd: (s.aiAdd || []).filter((x) => x !== -spot.id), order: dropOrder(s, spot.id) }
+              : { ...s, aiHide: uniq([...(s.aiHide || []), -spot.id]).slice(-40), order: dropOrder(s, spot.id) })}
+            onMove={(keys, sid, dir) => put((s) => {
+              const a = [...keys]; const j = a.indexOf(sid); const t = j + dir;
+              if (j < 0 || t < 0 || t >= a.length) return s;
+              [a[j], a[t]] = [a[t], a[j]];
+              const crew = a.filter((x) => x > 0 && s.picks.includes(x));
+              return { ...s, order: a, picks: [...crew, ...s.picks.filter((p) => !crew.includes(p))] };
+            })}
+            onAddPick={(sid) => put((s) => ({ ...s, picks: [...s.picks, sid] }))}
+            onResuggest={() => put((s) => ({ ...s, picks: [], aiHide: [], order: [] }), true)}
+            onAi={(on) => put((s) => ({ ...s, ai: on, ...(on ? {} : { aiAdd: [], aiHide: [], order: (s.order || []).filter((x) => x > 0) }) }))}
+            onAiAdd={(rowId) => put((s) => ({ ...s, ai: s.ai ?? true, aiAdd: uniq([...(s.aiAdd || []), rowId]).slice(-20), aiHide: (s.aiHide || []).filter((x) => x !== rowId) }))} />
+        );
+      })}
+
+      <FinalizeBar brief={brief} preparedBy={me.displayName} />
 
       <DeleteBriefing id={Number(id)} onDone={() => navigate("/brief")} />
     </div>
@@ -384,10 +398,10 @@ function BriefOverview({ brief }: { brief: BriefFull }) {
   return <MapCanvas pins={pins} height={190} route testId="map-brief-overview" />;
 }
 
-function StopSection({ stop, index, onRemovePick, onAddPick, onMove, onResuggest, onAi, onAiAdd, onAiRemove, busy }: {
+function StopSection({ stop, index, onRemove, onAddPick, onMove, onResuggest, onAi, onAiAdd, busy }: {
   stop: BriefStopFull; index: number; busy: boolean;
-  onRemovePick: (id: number) => void; onAddPick: (id: number) => void; onMove: (id: number, dir: -1 | 1) => void; onResuggest: () => void; onAi: (on: boolean) => void;
-  onAiAdd: (rowId: number) => void; onAiRemove: (rowId: number) => void;
+  onRemove: (spot: SpotWithStats) => void; onAddPick: (id: number) => void; onMove: (keys: number[], id: number, dir: -1 | 1) => void; onResuggest: () => void; onAi: (on: boolean) => void;
+  onAiAdd: (rowId: number) => void;
 }) {
   const [adding, setAdding] = useState(false);
   const { pins, numbered } = useMemo(() => stopPins(stop), [stop]);
@@ -424,13 +438,14 @@ function StopSection({ stop, index, onRemovePick, onAddPick, onMove, onResuggest
         </div>
       )}
 
+      {numbered.some((x) => x.ai) && <PickLegend />}
       <ol className="space-y-2">
-        {numbered.map(({ n, spot, ai }) => <PickRow key={spot.id} n={n} spot={spot} count={stop.picks.length} readOnly={ai}
-          favorite={favs.has(spot.id)} onRemove={() => onRemovePick(spot.id)} onUp={() => onMove(spot.id, -1)} onDown={() => onMove(spot.id, 1)} busy={busy}
-          onRemoveAi={ai && (spot as AiPick).ai.extra ? () => onAiRemove(-spot.id) : undefined} />)}
+        {numbered.map(({ n, spot }) => <PickRow key={spot.id} n={n} spot={spot} count={numbered.length}
+          favorite={favs.has(spot.id)} onRemove={() => onRemove(spot)} busy={busy}
+          onUp={() => onMove(numbered.map((x) => x.spot.id), spot.id, -1)} onDown={() => onMove(numbered.map((x) => x.spot.id), spot.id, 1)} />)}
       </ol>
 
-      {((stop.aiPicks?.length || 0) > 0 || (stop.aiMore?.length || 0) > 0) && <PickMore stop={stop} index={index} onAdd={onAiAdd} busy={busy} />}
+      {(stop.aiStatus === "ready" || (stop.aiPicks?.length || 0) > 0 || (stop.aiMore?.length || 0) > 0) && <MorePlaces stop={stop} index={index} onAdd={onAiAdd} busy={busy} />}
 
       {others.length > 0 && (
         <div>
@@ -463,8 +478,7 @@ function StopSection({ stop, index, onRemovePick, onAddPick, onMove, onResuggest
   );
 }
 
-function PickRow({ n, spot, count, onRemove, onUp, onDown, busy, readOnly, favorite, onRemoveAi }: {
-  onRemoveAi?: () => void;
+function PickRow({ n, spot, count, onRemove, onUp, onDown, busy, readOnly, favorite }: {
   n: number; spot: SpotWithStats; count: number; onRemove?: () => void; onUp?: () => void; onDown?: () => void; busy?: boolean; readOnly?: boolean; favorite?: boolean;
 }) {
   const M = CAT_META[spot.category as keyof typeof CAT_META];
@@ -475,7 +489,7 @@ function PickRow({ n, spot, count, onRemove, onUp, onDown, busy, readOnly, favor
   return (
     <li className={cn("rounded-2xl border bg-card p-3.5", ai ? "border-dashed border-violet-400/60" : "border-card-border")} data-testid={ai ? `pick-ai-${-spot.id}` : `pick-${spot.id}`}>
       <div className="flex items-start gap-3">
-        <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full text-[11px] font-bold text-white" style={{ background: PIN_COLORS[spot.category as keyof typeof PIN_COLORS] }}>{n}</span>
+        <NumBadge n={n} spot={spot} className="mt-0.5" />
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
             {ai ? <a href={outLink} target="_blank" rel="noopener noreferrer" className="text-sm font-semibold leading-snug hover:underline underline-offset-2">{spot.name}</a>
@@ -484,7 +498,8 @@ function PickRow({ n, spot, count, onRemove, onUp, onDown, busy, readOnly, favor
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
             <PickTag ai={ai} />
-            {meal && <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold" data-testid={`text-meal-${-spot.id}`}>{MEAL_LABEL[meal]}</span>}
+            {ai && <ReasonChip spot={spot as AiPick} />}
+            {meal && !(ai && (spot as AiPick).ai.slot?.meal === meal && !(spot as AiPick).ai.extra) && <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold" data-testid={`text-meal-${-spot.id}`}>{MEAL_LABEL[meal]}</span>}
           </div>
           {favorite && <p className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-semibold text-rose-600 dark:text-rose-400" data-testid={`text-pick-favorite-${spot.id}`}><Heart className="h-3 w-3" fill="currentColor" />Favorite{readOnly ? "" : " · always included"}</p>}
           <p className="mt-0.5 text-[11px] text-muted-foreground">
@@ -508,13 +523,12 @@ function PickRow({ n, spot, count, onRemove, onUp, onDown, busy, readOnly, favor
         <div className="mt-2 flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-[11px]">
           <a href={outLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"><ExternalLink className="h-3 w-3" />{spot.website ? "Website" : "Maps"}</a>
           <Link href={aiAddHref(spot as AiPick)} className="inline-flex items-center gap-1 font-semibold text-primary" data-testid={`link-ai-add-${-spot.id}`} title="+10 points if you're the first to add and rate it"><Plus className="h-3 w-3" />Been here? Add it, +10 pts</Link>
-          {onRemoveAi && <button type="button" onClick={onRemoveAi} disabled={busy} className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground disabled:opacity-50" data-testid={`button-remove-ai-${-spot.id}`}><X className="h-3 w-3" />Remove</button>}
         </div>
       )}
       {!readOnly && (
         <div className="mt-2.5 flex items-center justify-end gap-1">
-          <button onClick={onUp} disabled={busy || n === 1} className="h-7 px-2 rounded-full text-[11px] border border-border hover-elevate disabled:opacity-30" aria-label="Move up" data-testid={`button-pick-up-${spot.id}`}>Up</button>
-          <button onClick={onDown} disabled={busy || n === count} className="h-7 px-2 rounded-full text-[11px] border border-border hover-elevate disabled:opacity-30" aria-label="Move down" data-testid={`button-pick-down-${spot.id}`}>Down</button>
+          <button onClick={onUp} disabled={busy || n === 1} className="h-7 px-2 rounded-full text-[11px] border border-border hover-elevate disabled:opacity-30 inline-flex items-center gap-0.5" aria-label="Move up" data-testid={`button-pick-up-${spot.id}`}><ChevronUp className="h-3 w-3" />Up</button>
+          <button onClick={onDown} disabled={busy || n === count} className="h-7 px-2 rounded-full text-[11px] border border-border hover-elevate disabled:opacity-30 inline-flex items-center gap-0.5" aria-label="Move down" data-testid={`button-pick-down-${spot.id}`}><ChevronDown className="h-3 w-3" />Down</button>
           {!favorite && <button onClick={onRemove} disabled={busy} className="h-7 px-2 rounded-full text-[11px] border border-border hover-elevate disabled:opacity-30 inline-flex items-center gap-1" data-testid={`button-pick-remove-${spot.id}`}><X className="h-3 w-3" />Remove</button>}
         </div>
       )}
@@ -614,54 +628,153 @@ function AiNote({ stop, onAi, busy }: { stop: BriefStopFull; onAi?: (on: boolean
   );
 }
 
-const MORE_CATS = [["all", "All"], ["eat", "Eat"], ["do", "Do"], ["stay", "Stay"]] as const;
-/** "Pick more with AI": add other AI picks found for this airport, or ask AI for more places. */
-function PickMore({ stop, index, onAdd, busy }: { stop: BriefStopFull; index: number; onAdd: (rowId: number) => void; busy: boolean }) {
+/** Number badge: solid in the category color for crew listings; white with a dashed ring for AI picks (same on the map and PDF). */
+function NumBadge({ n, spot, className }: { n: number; spot: SpotWithStats; className?: string }) {
+  const c = PIN_COLORS[spot.category as keyof typeof PIN_COLORS];
+  return isAi(spot)
+    ? <span className={cn("grid h-6 w-6 shrink-0 place-items-center rounded-full border-2 border-dashed bg-background text-[11px] font-bold", className)} style={{ borderColor: c, color: c }} title="AI pick" data-testid={`badge-ai-${n}`}>{n}</span>
+    : <span className={cn("grid h-6 w-6 shrink-0 place-items-center rounded-full text-[11px] font-bold text-white", className)} style={{ background: c }} title="Crew pick" data-testid={`badge-crew-${n}`}>{n}</span>;
+}
+function PickLegend() {
+  return (
+    <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground" data-testid="text-pick-legend">
+      <span className="inline-flex items-center gap-1.5"><span className="h-3.5 w-3.5 rounded-full bg-muted-foreground/70" />Crew pick</span>
+      <span className="inline-flex items-center gap-1.5"><span className="h-3.5 w-3.5 rounded-full border-2 border-dashed border-muted-foreground/70" />AI pick</span>
+    </p>
+  );
+}
+/** Why AI put this place in the briefing. */
+function ReasonChip({ spot }: { spot: AiPick }) {
+  const r = aiReason(spot);
+  return <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", r.kind === "fill" ? "bg-muted text-muted-foreground" : "bg-violet-500/10 text-violet-800 dark:text-violet-200")} data-testid={`text-ai-reason-${-spot.id}`}>{r.text}</span>;
+}
+
+type MoreKind = "" | "eat" | "do" | "stay" | "local";
+const MORE_KINDS: [MoreKind, string, typeof Utensils][] = [["", "All", Sparkles], ["eat", "Food", Utensils], ["do", "Things to do", Compass], ["stay", "Hotels", BedDouble], ["local", "Surprise me", Sparkles]];
+/** More places: choose what you're after, see every AI pick of that kind at the airport, tap + to add, or ask AI for more. */
+function MorePlaces({ stop, index, onAdd, busy }: { stop: BriefStopFull; index: number; onAdd: (rowId: number) => void; busy: boolean }) {
   const [open, setOpen] = useState(false);
-  const [cat, setCat] = useState<(typeof MORE_CATS)[number][0]>("all");
+  const [kind, setKind] = useState<MoreKind>("");
+  const [sub, setSub] = useState("");
+  useEffect(() => setSub(""), [kind]);
+  const focus = kind === "local" ? "local" : kind === "eat" ? sub || "eat" : kind === "do" ? (sub ? `act:${sub}` : "do") : kind;
   const more = stop.aiMore || [];
-  const list = cat === "all" ? more : more.filter((m) => m.category === cat);
+  const list = more.filter((m) => matchesFocus(m, focus));
   const pending = stop.aiMoreStatus === "pending";
-  const counts = Object.fromEntries(MORE_CATS.map(([c]) => [c, c === "all" ? more.length : more.filter((m) => m.category === c).length]));
+  const subs = kind === "eat" ? CUISINES : kind === "do" ? ACTIVITIES : [];
+  const subCount = (id: string) => more.filter((m) => matchesFocus(m, kind === "eat" ? id : `act:${id}`)).length;
+  const subList = subs.map((x) => ({ ...x, n: subCount(x.id) })).sort((a, b) => Number(b.n > 0) - Number(a.n > 0));
+  const kindCount = (k: MoreKind) => more.filter((m) => matchesFocus(m, k)).length;
   return (
     <div data-testid={`section-pick-more-${index}`}>
       <button type="button" onClick={() => setOpen(!open)} className="inline-flex items-center gap-1 text-xs font-medium text-violet-700 dark:text-violet-300" data-testid={`button-pick-more-${index}`}>
-        <Sparkles className="h-3.5 w-3.5" /> {open ? "Done picking" : more.length ? `Pick more with AI · ${more.length} more at ${stop.icao}` : "Pick more with AI"}
+        <Sparkles className="h-3.5 w-3.5" /> {open ? "Done adding" : more.length ? `More places at ${stop.icao} · ${more.length}` : `More places at ${stop.icao}`}
       </button>
       {open && (
         <div className="mt-2 rounded-2xl border border-dashed border-violet-400/60 bg-card">
-          {more.length > 0 && (
-            <div className="flex gap-1.5 overflow-x-auto no-scrollbar px-3 pt-3">
-              {MORE_CATS.map(([c, label]) => counts[c] > 0 || c === "all" ? (
-                <button key={c} type="button" onClick={() => setCat(c)} aria-pressed={cat === c} data-testid={`chip-more-${c}-${index}`}
-                  className={cn("h-7 shrink-0 rounded-full border px-2.5 text-[11px] font-semibold", cat === c ? "border-violet-500 bg-violet-500/15 text-violet-800 dark:text-violet-200" : "border-border text-muted-foreground")}>
-                  {label} <span className="font-code opacity-70">{counts[c]}</span>
+          <div className="space-y-2 px-3 pt-3">
+            <p className="text-[11px] font-semibold text-muted-foreground">What are you looking for?</p>
+            <div className="flex gap-1.5 overflow-x-auto no-scrollbar" role="group" aria-label="Kind of place">
+              {MORE_KINDS.map(([k, label, Icon]) => (
+                <button key={k || "all"} type="button" onClick={() => setKind(k)} aria-pressed={kind === k} data-testid={`chip-more-${k || "all"}-${index}`}
+                  className={cn("inline-flex h-8 shrink-0 items-center gap-1 rounded-full border px-3 text-[11px] font-semibold", kind === k ? "border-violet-500 bg-violet-500/15 text-violet-800 dark:text-violet-200" : "border-border text-muted-foreground")}>
+                  <Icon className="h-3.5 w-3.5" />{label}{k !== "local" && <span className="font-code opacity-70">{kindCount(k)}</span>}
                 </button>
-              ) : null)}
+              ))}
             </div>
-          )}
-          <div className="divide-y divide-border">
+            {subs.length > 0 && (
+              <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-0.5" role="group" aria-label={kind === "eat" ? "Food type" : "Type of thing to do"}>
+                <button type="button" onClick={() => setSub("")} aria-pressed={!sub} className={cn("h-7 shrink-0 rounded-full border px-2.5 text-[11px] font-medium", !sub ? "border-foreground/40 bg-muted text-foreground" : "border-border text-muted-foreground")} data-testid={`chip-sub-any-${index}`}>Any</button>
+                {subList.map((x) => (
+                  <button key={x.id} type="button" onClick={() => setSub(sub === x.id ? "" : x.id)} aria-pressed={sub === x.id} data-testid={`chip-sub-${x.id}-${index}`}
+                    className={cn("h-7 shrink-0 rounded-full border px-2.5 text-[11px] font-medium", sub === x.id ? "border-foreground/40 bg-muted text-foreground" : "border-border text-muted-foreground", !x.n && sub !== x.id && "opacity-60")}>
+                    {x.label}{x.n > 0 && <span className="ml-1 font-code opacity-70">{x.n}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="mt-2 divide-y divide-border border-t border-border">
             {list.map((s) => {
               const meal = (s as AiPick).ai.meal;
+              const r = aiReason(s as AiPick);
               return (
                 <button key={s.id} type="button" onClick={() => onAdd(-s.id)} disabled={busy} className="w-full flex items-center justify-between gap-3 px-3.5 py-2.5 text-left hover-elevate disabled:opacity-50" data-testid={`button-add-ai-${-s.id}`}>
                   <span className="min-w-0">
                     <span className="block text-sm font-medium truncate">{s.name}</span>
-                    <span className="block text-[11px] text-muted-foreground truncate">{CAT_NAMES[s.category]}{meal ? ` · ${MEAL_LABEL[meal]}` : ""}{s.milesFromField ? ` · ${s.milesFromField} mi` : ""}{s.cost != null ? ` · ${costText(s)}` : ""}{s.description ? ` · ${s.description}` : ""}</span>
+                    <span className="block text-[11px] text-muted-foreground truncate">{CAT_NAMES[s.category]}{meal ? ` · ${MEAL_LABEL[meal]}` : ""}{s.milesFromField ? ` · ${s.milesFromField} mi` : ""}{s.cost != null ? ` · ${costText(s)}` : ""}{r.kind === "local" || r.kind === "asked" ? ` · ${r.text.replace(" · you asked", "")}` : ""}{s.description ? ` · ${s.description}` : ""}</span>
                   </span>
-                  <Plus className="h-4 w-4 text-violet-600 shrink-0" />
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-violet-400/60 text-violet-700 dark:text-violet-300" aria-label="Add to briefing"><Plus className="h-4 w-4" /></span>
                 </button>
               );
             })}
+            {!list.length && (
+              <p className="px-3.5 py-3 text-xs text-muted-foreground" data-testid={`text-more-empty-${index}`}>
+                {pending ? "Finding places, usually under a minute." : focus ? `No ${focusLabel(focus).toLowerCase()} in the AI list for ${stop.icao} yet. Ask AI below.` : `No other AI picks at ${stop.icao} yet. Choose what you're looking for, then ask AI.`}
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-3.5 py-2.5">
-            <p className="text-[11px] text-muted-foreground">
-              {pending ? "Finding more places, usually under a minute." : stop.aiMoreStatus === "failed" ? "AI didn't find anything new last time." : stop.aiMoreStatus === "full" ? `That's every place AI keeps for ${stop.icao}.` : more.length ? "Want different options?" : `No other AI picks at ${stop.icao} yet.`}
+            <p className="min-w-0 flex-1 basis-40 text-[11px] text-muted-foreground">
+              {pending ? "Finding more places, usually under a minute." : stop.aiMoreStatus === "failed" ? "AI didn't find anything new last time." : stop.aiMoreStatus === "full" ? `That's every place AI keeps for ${stop.icao}.` : focus ? `Want more ${focusLabel(focus).toLowerCase()}?` : "Choose Food, Things to do, Hotels or Surprise me to ask AI for more."}
             </p>
-            {stop.aiMoreStatus !== "full" && <FindMore icao={stop.icao} pending={pending} testId={`find-more-${index}`} />}
+            {focus && stop.aiMoreStatus !== "full" && <FindMore icao={stop.icao} pending={pending} fixed={focus} testId={`find-more-${index}`} />}
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** End of the briefing: preview everything in one place, then share it, without scrolling back up. */
+function FinalizeBar({ brief, preparedBy }: { brief: BriefFull; preparedBy?: string }) {
+  const [open, setOpen] = useState(false);
+  const total = brief.stops.reduce((n, s) => n + stopPins(s).numbered.length, 0);
+  return (
+    <div className="rounded-2xl border border-primary/40 bg-primary/5 p-4" data-testid="panel-finalize">
+      <p className="text-sm font-semibold">Done planning?</p>
+      <p className="mt-0.5 text-xs text-muted-foreground">{brief.stops.length} stop{brief.stops.length > 1 ? "s" : ""} · {total} place{total === 1 ? "" : "s"}. Preview it, then send the PDF or a link to the crew.</p>
+      <button type="button" onClick={() => setOpen(true)} className="mt-3 inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-full taxi-sign text-sm font-semibold hover-elevate" data-testid="button-finalize">
+        <Eye className="h-4 w-4" />Finalize briefing
+      </button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-h-[88vh] max-w-lg overflow-y-auto rounded-2xl p-0" data-testid="dialog-finalize">
+          <div className="sticky top-0 z-10 border-b border-border bg-background px-5 pb-3 pt-5">
+            <DialogTitle className="text-base font-semibold leading-snug">{brief.title || "Trip briefing"}</DialogTitle>
+            <DialogDescription className="font-code text-xs font-bold tracking-wide text-foreground">{routeText(brief)}</DialogDescription>
+          </div>
+          <div className="space-y-4 px-5 py-4">
+            {brief.stops.map((st, i) => {
+              const { numbered } = stopPins(st);
+              return (
+                <section key={i} data-testid={`preview-stop-${i}`}>
+                  <div className="flex items-center gap-2">
+                    <span className="font-code text-xs font-bold rounded-md taxi-sign px-1.5 py-0.5">{st.icao}</span>
+                    <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[11px] font-semibold">{layoverText(st)}</span>
+                    <span className="truncate text-[11px] text-muted-foreground">{st.airport?.city}</span>
+                  </div>
+                  {numbered.length ? (
+                    <ol className="mt-2 space-y-1.5">
+                      {numbered.map(({ n, spot, ai }) => (
+                        <li key={spot.id} className="flex items-center gap-2.5 text-sm">
+                          <NumBadge n={n} spot={spot} />
+                          <span className="min-w-0 flex-1 truncate">{spot.name}</span>
+                          <span className="shrink-0 text-[11px] text-muted-foreground">{ai ? aiReason(spot as AiPick).text : CAT_NAMES[spot.category]}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  ) : <p className="mt-1.5 text-xs text-muted-foreground">No picks for this stop.</p>}
+                </section>
+              );
+            })}
+            <PickLegend />
+          </div>
+          <div className="sticky bottom-0 border-t border-border bg-background p-3">
+            <ExportBar brief={brief} preparedBy={preparedBy} />
+            <button type="button" onClick={() => setOpen(false)} className="mt-2 h-9 w-full rounded-full text-xs font-medium text-muted-foreground hover:text-foreground" data-testid="button-finalize-edit">Keep editing</button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

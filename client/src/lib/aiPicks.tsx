@@ -1,3 +1,5 @@
+import { focusLabel, isFocus, focusCategory } from "@shared/focus";
+import { ACTIVITIES } from "@shared/activities";
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -106,17 +108,19 @@ export function ProgramsCard() {
 }
 
 /** "Find more places": any food, a food type, or Surprise me (what the area is known for). */
-export function FindMore({ icao, pending, onDone, initial = "", testId = "find-more", compact }: { icao: string; pending?: boolean; onDone?: () => void; initial?: string; testId?: string; compact?: boolean }) {
+/** Ask AI for more places. `fixed` = the choice was already made (briefing More places), so only the button shows. */
+export function FindMore({ icao, pending, onDone, initial = "", testId = "find-more", compact, fixed }: { icao: string; pending?: boolean; onDone?: () => void; initial?: string; testId?: string; compact?: boolean; fixed?: string }) {
   const { me } = useAuth();
   const { toast } = useToast();
-  const [focus, setFocus] = useState(initial);
+  const [chosen, setFocus] = useState(initial);
   useEffect(() => setFocus(initial), [initial]);
+  const focus = fixed ?? chosen;
   const m = useMutation({
     mutationFn: async () => (await (await apiRequest("POST", "/api/ai-picks/more", { icao, focus })).json()) as { status: string },
     onSuccess: (r) => {
       if (r.status === "full") toast({ title: `That's plenty for ${icao}`, description: "AI has already found as many places as we keep for one airport." });
       else if (r.status === "busy") toast({ title: "AI is at today's limit", description: "Try again tomorrow, or add a place you know." });
-      else if (r.status === "pending") toast({ title: focus === "local" ? `Finding what ${icao} is known for` : focus ? `Finding ${cuisineLabel(focus)} near ${icao}` : `Finding more places near ${icao}`, description: "Usually under a minute." });
+      else if (r.status === "pending") toast({ title: focus === "local" ? `Finding what ${icao} is known for` : focus ? `Finding ${focusLabel(focus).toLowerCase()} near ${icao}` : `Finding more places near ${icao}`, description: "Usually under a minute." });
       queryClient.invalidateQueries({ queryKey: ["/api/briefings"] });
       queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith("/api/ai-picks") });
       onDone?.();
@@ -127,15 +131,19 @@ export function FindMore({ icao, pending, onDone, initial = "", testId = "find-m
   const busy = pending || m.isPending;
   return (
     <div className={cn("flex flex-wrap items-center gap-2", compact && "w-full")} data-testid={testId}>
-      <select value={focus} onChange={(e) => setFocus(e.target.value)} disabled={busy} aria-label="What kind of places" data-testid={`${testId}-focus`}
+      {fixed === undefined && <select value={focus} onChange={(e) => setFocus(e.target.value)} disabled={busy} aria-label="What kind of places" data-testid={`${testId}-focus`}
         className="h-8 min-w-0 flex-1 rounded-full border border-input bg-background px-3 text-[11px] font-semibold sm:flex-none">
         <option value="">Any food and things to do</option>
         <option value="local">Surprise me: what {icao} is known for</option>
+        <option value="eat">Any food</option>
         <optgroup label="Food type">{CUISINES.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</optgroup>
-      </select>
+        <option value="do">Any things to do</option>
+        <optgroup label="Things to do">{ACTIVITIES.map((a) => <option key={a.id} value={`act:${a.id}`}>{a.label}</option>)}</optgroup>
+        <option value="stay">Hotels</option>
+      </select>}
       <button type="button" onClick={() => m.mutate()} disabled={busy} data-testid={`${testId}-go`}
         className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-violet-600 px-3 text-[11px] font-semibold text-white hover-elevate disabled:opacity-60">
-        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}{focus === "local" ? "Surprise me" : "Find more places"}
+        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}{focus === "local" ? "Surprise me" : fixed ? `Ask AI for more ${focusLabel(fixed).toLowerCase()}` : "Find more places"}
       </button>
     </div>
   );
@@ -197,7 +205,7 @@ export function AiPicksPanel({ icao, category, program, food }: { icao: string; 
         className="inline-flex h-9 items-center gap-1.5 rounded-full bg-violet-600 px-3.5 text-xs font-semibold text-white hover-elevate"><Sparkles className="h-3.5 w-3.5" />Pick with AI</button>
     </div>
   );
-  return <AiPicksList icao={icao} category={category} program={program} food={category === "eat" ? food : null} on={on} />;
+  return <AiPicksList icao={icao} category={category} program={program} food={food && isFocus(food) && focusCategory(food) === category ? food : null} on={on} />;
 }
 
 function AiPicksList({ icao, category, program, food, on }: { icao: string; category: string; program?: ProgramId | null; food?: string | null; on: boolean }) {
@@ -214,7 +222,7 @@ function AiPicksList({ icao, category, program, food, on }: { icao: string; cate
   );
   if (!picks.length && data.status === "ready") return (
     <div className="space-y-2 rounded-xl border border-dashed border-violet-400/60 px-3 py-3" data-testid={`box-ai-none-${icao}`}>
-      <p className="text-xs text-muted-foreground">{food ? `No ${cuisineLabel(food)} AI picks at ${icao} yet.` : program ? `No ${programShort(program)} hotels in the AI picks at ${icao}.` : `No AI picks here.`}</p>
+      <p className="text-xs text-muted-foreground">{food ? `No ${focusLabel(food)} AI picks at ${icao} yet.` : program ? `No ${programShort(program)} hotels in the AI picks at ${icao}.` : `No AI picks here.`}</p>
       {category !== "stay" && <FindMore icao={icao} initial={food || ""} pending={data.more === "pending"} testId={`find-more-search-${icao}`} />}
     </div>
   );

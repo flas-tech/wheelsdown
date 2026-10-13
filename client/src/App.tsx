@@ -33,6 +33,7 @@ import { Logo, ThemeProvider, ThemeToggle } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { FeedbackLink } from "@/lib/feedback";
 import { TourHost, TourLink } from "@/lib/tour";
+import { UpdateBar } from "@/lib/update";
 import { IS_STATIC } from "@/lib/queryClient";
 
 function Shell() {
@@ -129,6 +130,7 @@ function Shell() {
         )}
       </main>
       <TourHost />
+      <UpdateBar />
 
       {/* iOS-style tab bar */}
       {!isAdmin && (

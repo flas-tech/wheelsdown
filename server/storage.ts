@@ -361,6 +361,11 @@ export class DatabaseStorage {
     await db().update(ads).set({ [kind]: sql`${ads[kind]} + 1` }).where(eq(ads.id, id));
   }
 
+  /** Check-ins per listing, for "Most visited". */
+  async checkinCounts(): Promise<{ spotId: number; n: number }[]> {
+    return (await db().execute(sql`SELECT spot_id AS "spotId", count(*)::int AS n FROM checkins WHERE spot_id IS NOT NULL GROUP BY spot_id`)).rows as any;
+  }
+
   // ---- accounts ----
   async createUser(u: { handle: string; password: string; displayName: string; crewRole: string; homeBase?: string; anonymous?: boolean; email?: string; ref?: number }) {
     const d = db();

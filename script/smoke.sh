@@ -22,6 +22,7 @@ check "preview image"      '200'            "$(curl -s -o /dev/null -w '%{http_c
 check "airports"          'KMIA'           "$(curl -s $BASE/api/airports)"
 check "route search"      '"legs"'         "$(curl -s "$BASE/api/search?route=MIA%20TEB")"
 check "highlights"        '"top"'          "$(curl -s "$BASE/api/highlights?category=eat")"
+check "version"          '"version"'      "$(curl -s "$BASE/api/version")"
 check "vote needs login"  'Sign in'        "$(curl -s -XPOST $BASE/api/spots/1/vote -H "$J" -d '{"value":1}')"
 
 R=$(curl -s -XPOST $BASE/api/auth/signup -H "$J" -d "{\"handle\":\"$H\",\"password\":\"smoke-pass-123\",\"displayName\":\"Smoke Test\",\"crewRole\":\"Pilot\",\"email\":\"$H@example.com\",\"acceptTerms\":true}")
