@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { ArrowUpDown, BellRing, CircleHelp, ClipboardCheck, Compass, Flame, ListPlus, RefreshCw, Sparkles, Star, Undo2 } from "lucide-react";
+import { PanelBottom, ArrowUpDown, BellRing, CircleHelp, ClipboardCheck, Compass, Flame, ListPlus, RefreshCw, Sparkles, Star, Undo2 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -14,6 +14,12 @@ type Item = { icon: typeof Star; title: string; body: string; to?: string };
 export type Release = { id: number; date: string; items: Item[] };
 
 export const RELEASES: Release[] = [
+  {
+    id: 5, date: "October 14, 2026",
+    items: [
+      { icon: PanelBottom, title: "Tab bar stays at the bottom", body: "On iPhone, the tab bar could float partway up the screen after the keyboard closed. It now stays at the bottom, and it steps aside while you type." },
+    ],
+  },
   {
     id: 4, date: "October 13, 2026",
     items: [

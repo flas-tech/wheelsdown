@@ -139,7 +139,7 @@ function Shell() {
 
       {/* iOS-style tab bar */}
       {!isAdmin && (
-        <nav className="print:hidden sm:hidden fixed bottom-0 inset-x-0 z-30 border-t border-border bg-background/90 backdrop-blur pb-safe">
+        <nav className="tabbar print:hidden sm:hidden fixed bottom-0 inset-x-0 z-30 border-t border-border bg-background/90 backdrop-blur pb-safe" data-testid="nav-tabbar">
           <div className="mx-auto max-w-xl grid grid-cols-6 px-safe">
             {nav.map((n) => (
               <Link key={n.href} href={n.href} data-testid={`tab-${n.label}`} className={cn("flex min-w-0 flex-col items-center gap-0.5 pt-2 pb-1 text-[10px] font-medium tracking-tight", n.active ? "text-primary" : "text-muted-foreground")}>
