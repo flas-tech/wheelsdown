@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { noteVisit, clearVisit } from "@/lib/visits";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useRoute } from "wouter";
 import { ArrowLeft, Map as MapIcon, MapPin, Clock, Globe, Lightbulb, User, AlertTriangle, Pencil } from "lucide-react";
@@ -32,10 +33,15 @@ export default function SpotPage() {
     refetchInterval: (q) => { const d = q.state.data; return d && (d.mod?.state === "checking" || d.mod?.state === "awaiting" || d.reviews.some((r) => (r.modState === "checking" || r.modState === "awaiting") && r.userId === me?.id)) ? 4000 : false; },
   });
 
+  // from a "Been there?" reminder: jump straight to the rating
+  const loaded = !!data;
+  useEffect(() => { if (loaded && /[?&]rate=1/.test(window.location.hash + window.location.search)) setTimeout(() => document.getElementById("rate")?.scrollIntoView({ behavior: "smooth", block: "start" }), 250); }, [loaded, id]);
+
   if (isLoading) return <div className="space-y-4"><Skeleton className="h-8 w-40" /><Skeleton className="h-40 rounded-2xl" /><Skeleton className="h-24 rounded-2xl" /></div>;
   if (isError || !data) return <p className="text-sm text-muted-foreground">This spot isn't available. <Link href="/" className="text-primary underline">Back to search</Link></p>;
 
   const { spot, reviews: allReviews, mod } = data;
+  const went = () => noteVisit({ id: spot.id, name: spot.name, icao: spot.icao });
   const reviews = allReviews.filter((r) => r.status === "live"); // the author's own unpublished ratings are listed but don't count
   const M = CAT_META[spot.category as Category];
   const tags = parseTags(spot.tags);
@@ -91,9 +97,9 @@ export default function SpotPage() {
         )}
         <div className="space-y-1.5 text-sm text-muted-foreground">
           {spot.address && <p className="flex items-center gap-2"><MapPin className="h-4 w-4" />
-            <a className="hover:text-foreground underline-offset-2 hover:underline" target="_blank" rel="noopener noreferrer" href={`https://maps.apple.com/?q=${encodeURIComponent(spot.name + " " + spot.address)}`} onClick={() => trackOut("map")} data-testid="link-map">{spot.address}</a></p>}
+            <a className="hover:text-foreground underline-offset-2 hover:underline" target="_blank" rel="noopener noreferrer" href={`https://maps.apple.com/?q=${encodeURIComponent(spot.name + " " + spot.address)}`} onClick={() => { trackOut("map"); went(); }} data-testid="link-map">{spot.address}</a></p>}
           {spot.lat != null && spot.lng != null && <p className="flex items-center gap-2"><MapIcon className="h-4 w-4" /><Link href={`/map?cat=${spot.category}&icao=${spot.icao}&spot=${spot.id}`} className="font-medium text-primary hover:underline" data-testid="link-see-on-map">See on the {spot.icao} map</Link></p>}
-          {spot.website && <p className="flex items-center gap-2"><Globe className="h-4 w-4" /><a className="hover:text-foreground hover:underline" target="_blank" rel="noopener noreferrer" href={spot.website} onClick={() => trackOut("website")} data-testid="link-website">Website</a></p>}
+          {spot.website && <p className="flex items-center gap-2"><Globe className="h-4 w-4" /><a className="hover:text-foreground hover:underline" target="_blank" rel="noopener noreferrer" href={spot.website} onClick={() => { trackOut("website"); went(); }} data-testid="link-website">Website</a></p>}
           {spot.category === "do" && <p className="flex items-center gap-2"><Clock className="h-4 w-4" />Time estimate includes ~2 min/mile each way from the field</p>}
         </div>
         {tags.length > 0 && (
@@ -159,7 +165,7 @@ export default function SpotPage() {
         ))}
       </section>
 
-      <ReviewForm spotId={spot.id} category={spot.category} />
+      <div id="rate" className="scroll-mt-24"><ReviewForm spotId={spot.id} category={spot.category} /></div>
     </div>
   );
 }
@@ -188,6 +194,7 @@ function ReviewForm({ spotId, category, edit, onDone }: { spotId: number; catego
       ? await apiRequest("PATCH", `/api/reviews/${edit.id}`, { rating, comment, costLevel: paid })
       : await apiRequest("POST", `/api/spots/${spotId}/reviews`, { rating, comment, costLevel: paid })).json(),
     onSuccess: (r: { modState?: string }) => {
+      clearVisit(spotId);
       if (r?.modState === "checking") toast({ title: edit ? "Edit saved" : "Rating saved", description: "It posts after a quick automatic check, usually under a minute." });
       for (const k of [["/api/spots", String(spotId)], ["/api/search"], ["/api/me"], ["/api/crew"], ["/api/leaderboard"], ["/api/highlights"], ["/api/me/favorites"]]) queryClient.invalidateQueries({ queryKey: k });
       if (edit) { if (r?.modState !== "checking") toast({ title: "Rating updated" }); onDone?.(); return; }

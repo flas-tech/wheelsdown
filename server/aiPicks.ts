@@ -220,9 +220,18 @@ export async function fillStop(icao: string, layover: LayoverId, nights: number 
   const open = unmetSlots(slotsFor(layover, nights), picks);
   const crewOk = all.filter((s) => pickable(s) && (s.milesFromField ?? 0) <= MAX_MILES && !picks.some((p) => p.id === s.id));
   const needAi = open.filter((sl) => !crewOk.some((s) => slotMatches(sl, s)));
-  if (!useAi) return { aiPicks: [], aiStatus: needAi.length ? (AI_ENABLED ? "offer" : "off") : "none", aiSlots: needAi, ...empty };
-  if (!needAi.length && !aiAdd.length) return { aiPicks: [], aiStatus: "none", aiSlots: [], ...empty };
-  const status = await ensurePicks(icao);
+  // Prefer crew (AI not switched on for this stop): gaps aren't filled, but the AI places already found here stay
+  // browsable in Add places, and any the owner added stay in the plan
+  if (!useAi && !aiAdd.length) {
+    const offer = needAi.length ? (AI_ENABLED ? "offer" : "off") : "none";
+    if (!AI_ENABLED) return { aiPicks: [], aiStatus: offer, aiSlots: needAi, ...empty };
+    const have = (await rowsFor(icao)).filter((r) => !all.some((c) => similarity({ name: r.name }, c) >= 0.8));
+    const ms = moreStatus(icao);
+    return { aiPicks: [], aiStatus: offer, aiSlots: needAi, aiMore: have.sort((a, b) => (CAT_ORDER[a.category] - CAT_ORDER[b.category]) || (a.miles ?? 99) - (b.miles ?? 99)).map((r) => toCard(r, airport)),
+      aiMoreStatus: ms === "idle" && have.length >= MAX_ROWS ? "full" : ms };
+  }
+  if (useAi && !needAi.length && !aiAdd.length) return { aiPicks: [], aiStatus: "none", aiSlots: [], ...empty };
+  const status = useAi ? await ensurePicks(icao) : "ready";
   const rows = (await rowsFor(icao)).filter((r) => !all.some((c) => similarity({ name: r.name }, c) >= 0.8));
   // extras the owner added stay put even after the airport's picks are refreshed (unless an admin hid them)
   const added = aiAdd.length ? ((await db().execute(sql`SELECT id, icao, category, meal, name, address, website, description, cost_level, pace, minutes_needed, tags, lat, lng, miles, sources, status, focus, created_at::float8 AS created_at
@@ -234,7 +243,7 @@ export async function fillStop(icao: string, layover: LayoverId, nights: number 
   const inProg = (r: Row) => (r.category === "stay" && programs.length && programs.includes(programOf(r) as ProgramId) ? 1 : 0);
   // an automatic pick the owner removed leaves its gap open: each removed pick cancels one gap it would have filled
   const hidden = rows.filter((r) => aiHide.includes(r.id));
-  for (const sl of needAi) {
+  for (const sl of useAi ? needAi : []) {
     const h = hidden.findIndex((x) => slotMatches(sl, aiMealOf(x)));
     if (h >= 0) { used.add(hidden[h].id); hidden.splice(h, 1); continue; }
     const r = rows.filter((x) => !used.has(x.id) && slotMatches(sl, aiMealOf(x))).sort((a, b) =>
@@ -249,7 +258,8 @@ export async function fillStop(icao: string, layover: LayoverId, nights: number 
   for (const r of [...added].sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))) out.push({ ...toCard(r, airport), ai: { ...toCard(r).ai, extra: true } } as AiPickCard);
   const more = rows.filter((r) => !used.has(r.id) || (aiHide.includes(r.id) && !added.some((a) => a.id === r.id))).sort((a, b) => (CAT_ORDER[a.category] - CAT_ORDER[b.category]) || inProg(b) - inProg(a) || byDistance(a, b)).map((r) => toCard(r, airport));
   const ms = moreStatus(icao);
-  return { aiPicks: out, aiStatus: rows.length || added.length ? "ready" : status, aiSlots: needAi, aiMore: more, aiMoreStatus: ms === "idle" && rows.length >= MAX_ROWS ? "full" : ms };
+  const st: AiStatus = !useAi ? (needAi.length ? "offer" : "none") : rows.length || added.length ? "ready" : status;
+  return { aiPicks: out, aiStatus: st, aiSlots: needAi, aiMore: more, aiMoreStatus: ms === "idle" && rows.length >= MAX_ROWS ? "full" : ms };
 }
 
 export function registerAiPicks(app: Express, o: { requireAdmin: Mw; requireUser: Mw; userOf: (req: Request) => Promise<any> }) {
@@ -276,12 +286,15 @@ export function registerAiPicks(app: Express, o: { requireAdmin: Mw; requireUser
     const raw = String(req.query.food || "");
     const typeQ = raw && isFocus(raw) && focusCategory(raw) === cat ? raw : "";
     // with a type chosen, AI can help when no crew listing of that type exists here
-    const crew = (await storage.searchSpots([ap.icao])).filter((s) => s.category === cat && pickable(s) && (!typeQ || matchesFocus(s, typeQ)));
-    if (crew.length) return res.json({ status: "crew", picks: [] });
+    const listed = (await storage.searchSpots([ap.icao])).filter((s) => s.category === cat);
+    const crew = listed.filter((s) => pickable(s) && (!typeQ || matchesFocus(s, typeQ)));
+    // all=1: "More places" under crew results, so AI picks show alongside them (never duplicating a crew listing)
+    const alongside = req.query.all === "1";
+    if (crew.length && !alongside) return res.json({ status: "crew", picks: [] });
     const status = await ensurePicks(ap.icao);
     const progs = await programsOf((await o.userOf(req).catch(() => undefined))?.id);
     const prog = (r: Row) => (cat === "stay" && progs.includes(programOf(r) as ProgramId) ? 1 : 0);
-    const all = (await rowsFor(ap.icao)).filter((r) => r.category === cat);
+    const all = (await rowsFor(ap.icao)).filter((r) => r.category === cat && !(alongside && listed.some((c) => similarity({ name: r.name }, c) >= 0.8)));
     const picks = all.sort((a, b) => prog(b) - prog(a) || (a.miles ?? 99) - (b.miles ?? 99)).map((r) => toCard(r, ap)).filter((c) => !typeQ || matchesFocus(c, typeQ));
     res.json({ status: all.length ? "ready" : status, picks, total: all.length, more: moreStatus(ap.icao) });
   });

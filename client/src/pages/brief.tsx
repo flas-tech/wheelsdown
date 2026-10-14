@@ -10,7 +10,7 @@ import { CUISINES } from "@shared/cuisine";
 import { ACTIVITIES } from "@shared/activities";
 import { LAYOVERS, type LayoverId, type SpotWithStats } from "@shared/schema";
 import { costRange, costText, paceLabel, paceOf } from "@shared/cost";
-import { LAYOVER_PLAN, MEAL_LABEL } from "@shared/briefing";
+import { LAYOVER_PLAN, MEAL_LABEL, pickScore } from "@shared/briefing";
 import { apiRequest, queryClient, IS_STATIC } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { CAT_META, Chip, Stars, fmtMinutes, totalMinutes } from "@/lib/ui";
@@ -21,6 +21,7 @@ import { drawStaticMap, PIN_COLORS } from "@/lib/staticMap";
 import { buildBriefPdf, shareOrDownload, stopPins, layoverText, routeText, CAT_NAMES, isAi, aiReason, type AiPick, type BriefFull, type BriefStopFull } from "@/lib/briefPdf";
 import { errText } from "./add";
 import { PickTag, FindMore, aiAddHref } from "@/lib/aiPicks";
+import { noteVisit } from "@/lib/visits";
 
 type StopInput = { icao: string; layover: LayoverId; nights?: number; picks: number[]; ai?: boolean; aiAdd?: number[]; aiHide?: number[]; order?: number[] };
 const uniq = (a: number[]) => Array.from(new Set(a));
@@ -301,7 +302,7 @@ export function BriefEditorPage() {
             onAddPick={(sid) => put((s) => ({ ...s, picks: [...s.picks, sid] }))}
             onResuggest={() => put((s) => ({ ...s, picks: [], aiHide: [], order: [] }), true)}
             onAi={(on) => put((s) => ({ ...s, ai: on, ...(on ? {} : { aiAdd: [], aiHide: [], order: (s.order || []).filter((x) => x > 0) }) }))}
-            onAiAdd={(rowId) => put((s) => ({ ...s, ai: s.ai ?? true, aiAdd: uniq([...(s.aiAdd || []), rowId]).slice(-20), aiHide: (s.aiHide || []).filter((x) => x !== rowId) }))} />
+            onAiAdd={(rowId) => put((s) => ({ ...s, aiAdd: uniq([...(s.aiAdd || []), rowId]).slice(-20), aiHide: (s.aiHide || []).filter((x) => x !== rowId) }))} />
         );
       })}
 
@@ -313,7 +314,7 @@ export function BriefEditorPage() {
 }
 
 // ---------------- export / share ----------------
-function ExportBar({ brief, preparedBy }: { brief: BriefFull; preparedBy?: string }) {
+function ExportBar({ brief, preparedBy, onShared }: { brief: BriefFull; preparedBy?: string; onShared?: () => void }) {
   const { toast } = useToast();
   const [pdf, setPdf] = useState<{ blob: Blob; fileName: string; key: number } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -335,14 +336,16 @@ function ExportBar({ brief, preparedBy }: { brief: BriefFull; preparedBy?: strin
     if (!pdf) return;
     const r = await shareOrDownload(pdf.blob, pdf.fileName, brief.title || "Trip briefing");
     if (r === "downloaded") toast({ title: "PDF downloaded", description: pdf.fileName });
+    if (r !== "cancelled") onShared?.();
   }
   async function copyLink() {
     const nav = navigator as Navigator & { share?: (d: ShareData) => Promise<void> };
     if (nav.share && /iPhone|iPad|Android/i.test(navigator.userAgent)) {
-      try { await nav.share({ url: shareUrl, title: brief.title || "Trip briefing" }); return; } catch (e) { if ((e as Error).name === "AbortError") return; }
+      try { await nav.share({ url: shareUrl, title: brief.title || "Trip briefing" }); onShared?.(); return; } catch (e) { if ((e as Error).name === "AbortError") return; }
     }
     try { await navigator.clipboard.writeText(shareUrl); toast({ title: "Link copied", description: "Anyone with the link can view this briefing." }); }
     catch { toast({ title: "Share link", description: shareUrl }); }
+    onShared?.();
   }
 
   return (
@@ -403,7 +406,6 @@ function StopSection({ stop, index, onRemove, onAddPick, onMove, onResuggest, on
   onRemove: (spot: SpotWithStats) => void; onAddPick: (id: number) => void; onMove: (keys: number[], id: number, dir: -1 | 1) => void; onResuggest: () => void; onAi: (on: boolean) => void;
   onAiAdd: (rowId: number) => void;
 }) {
-  const [adding, setAdding] = useState(false);
   const { pins, numbered } = useMemo(() => stopPins(stop), [stop]);
   const picked = new Set(stop.picks.map((p) => p.id));
   const favs = new Set(stop.favoriteIds || []);
@@ -445,28 +447,8 @@ function StopSection({ stop, index, onRemove, onAddPick, onMove, onResuggest, on
           onUp={() => onMove(numbered.map((x) => x.spot.id), spot.id, -1)} onDown={() => onMove(numbered.map((x) => x.spot.id), spot.id, 1)} />)}
       </ol>
 
-      {(stop.aiStatus === "ready" || (stop.aiPicks?.length || 0) > 0 || (stop.aiMore?.length || 0) > 0) && <MorePlaces stop={stop} index={index} onAdd={onAiAdd} busy={busy} />}
-
-      {others.length > 0 && (
-        <div>
-          <button onClick={() => setAdding(!adding)} className="text-xs font-medium text-primary inline-flex items-center gap-1" data-testid={`button-add-pick-${index}`}>
-            <Plus className="h-3.5 w-3.5" /> {adding ? "Done adding" : `Add from ${others.length} other ${stop.icao} listing${others.length > 1 ? "s" : ""}`}
-          </button>
-          {adding && (
-            <div className="mt-2 rounded-2xl border border-card-border bg-card divide-y divide-border">
-              {others.map((s) => (
-                <button key={s.id} onClick={() => onAddPick(s.id)} disabled={busy} className="w-full flex items-center justify-between gap-3 px-3.5 py-2.5 text-left hover-elevate disabled:opacity-50" data-testid={`button-add-candidate-${s.id}`}>
-                  <span className="min-w-0">
-                    <span className="block text-sm font-medium truncate">{s.name}</span>
-                    <span className="block text-[11px] text-muted-foreground">{CAT_NAMES[s.category]} · {s.milesFromField ? `${s.milesFromField} mi` : "On field"}{s.avgRating ? ` · ${s.avgRating.toFixed(1)}★` : ""}</span>
-                  </span>
-                  <Plus className="h-4 w-4 text-primary shrink-0" />
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      {/* one way to add anything: crew listings first, then AI picks, by type, with a way to ask AI for more */}
+      <AddPlaces stop={stop} index={index} others={others} onAddCrew={onAddPick} onAddAi={onAiAdd} busy={busy} />
 
       {stop.sponsor && (
         <a href={stop.sponsor.url || "#"} target="_blank" rel="noopener noreferrer sponsored" className="block rounded-xl bg-muted/60 px-3 py-2 text-xs hover-elevate" data-testid={`sponsor-${index}`}>
@@ -486,6 +468,7 @@ function PickRow({ n, spot, count, onRemove, onUp, onDown, busy, readOnly, favor
   const meal = ai ? (spot as AiPick).ai.meal : null;
   const extra = spot.category === "eat" ? (ai && !spot.pace ? "" : paceLabel(paceOf(spot))) : spot.category === "do" ? fmtMinutes(totalMinutes(spot)) : "";
   const outLink = spot.website || `https://maps.apple.com/?q=${encodeURIComponent(spot.name + " " + (spot.address || ""))}`;
+  const went = () => noteVisit(isAi(spot) ? { id: spot.id, name: spot.name, icao: spot.icao, href: aiAddHref(spot as AiPick) } : { id: spot.id, name: spot.name, icao: spot.icao });
   return (
     <li className={cn("rounded-2xl border bg-card p-3.5", ai ? "border-dashed border-violet-400/60" : "border-card-border")} data-testid={ai ? `pick-ai-${-spot.id}` : `pick-${spot.id}`}>
       <div className="flex items-start gap-3">
@@ -513,7 +496,7 @@ function PickRow({ n, spot, count, onRemove, onUp, onDown, busy, readOnly, favor
             <p className="mt-1.5 flex gap-1.5 text-xs text-muted-foreground">{ai ? <Sparkles className="h-3.5 w-3.5 shrink-0 mt-0.5 text-violet-600" /> : <Lightbulb className="h-3.5 w-3.5 shrink-0 mt-0.5 text-primary" />}<span className="line-clamp-2">{spot.crewTip || spot.description}</span></p>
           )}
           {spot.address && (
-            <a href={`https://maps.apple.com/?q=${encodeURIComponent(spot.name + " " + spot.address)}`} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
+            <a href={`https://maps.apple.com/?q=${encodeURIComponent(spot.name + " " + spot.address)}`} onClick={went} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
               <MapPin className="h-3 w-3" />{spot.address}
             </a>
           )}
@@ -521,7 +504,7 @@ function PickRow({ n, spot, count, onRemove, onUp, onDown, busy, readOnly, favor
       </div>
       {ai && (
         <div className="mt-2 flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-[11px]">
-          <a href={outLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"><ExternalLink className="h-3 w-3" />{spot.website ? "Website" : "Maps"}</a>
+          <a href={outLink} onClick={went} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"><ExternalLink className="h-3 w-3" />{spot.website ? "Website" : "Maps"}</a>
           <Link href={aiAddHref(spot as AiPick)} className="inline-flex items-center gap-1 font-semibold text-primary" data-testid={`link-ai-add-${-spot.id}`} title="+10 points if you're the first to add and rate it"><Plus className="h-3 w-3" />Been here? Add it, +10 pts</Link>
         </div>
       )}
@@ -650,34 +633,65 @@ function ReasonChip({ spot }: { spot: AiPick }) {
 }
 
 type MoreKind = "" | "eat" | "do" | "stay" | "local";
-const MORE_KINDS: [MoreKind, string, typeof Utensils][] = [["", "All", Sparkles], ["eat", "Food", Utensils], ["do", "Things to do", Compass], ["stay", "Hotels", BedDouble], ["local", "Surprise me", Sparkles]];
-/** More places: choose what you're after, see every AI pick of that kind at the airport, tap + to add, or ask AI for more. */
-function MorePlaces({ stop, index, onAdd, busy }: { stop: BriefStopFull; index: number; onAdd: (rowId: number) => void; busy: boolean }) {
+const MORE_KINDS: [MoreKind, string, typeof Utensils][] = [["", "All", Plus], ["eat", "Food", Utensils], ["do", "Things to do", Compass], ["stay", "Hotels", BedDouble], ["local", "Surprise me", Sparkles]];
+type MoreSort = "best" | "near";
+const miles = (s: SpotWithStats) => s.milesFromField ?? 99;
+/**
+ * Add places: one panel for everything. Choose what you're after, then crew listings come first (vetted and best rated
+ * on top), then AI picks. Tap + to add either. Ask AI for more of the chosen type at the bottom.
+ */
+function AddPlaces({ stop, index, others, onAddCrew, onAddAi, busy }: { stop: BriefStopFull; index: number; others: SpotWithStats[]; onAddCrew: (id: number) => void; onAddAi: (rowId: number) => void; busy: boolean }) {
   const [open, setOpen] = useState(false);
   const [kind, setKind] = useState<MoreKind>("");
   const [sub, setSub] = useState("");
+  const [sort, setSort] = useState<MoreSort>("best");
+  const { data: cfg } = useQuery<{ ai?: boolean }>({ queryKey: ["/api/config"] });
   useEffect(() => setSub(""), [kind]);
   const focus = kind === "local" ? "local" : kind === "eat" ? sub || "eat" : kind === "do" ? (sub ? `act:${sub}` : "do") : kind;
   const more = stop.aiMore || [];
-  const list = more.filter((m) => matchesFocus(m, focus));
+  const crewOf = (f: string) => (f === "local" ? [] : others.filter((c) => matchesFocus(c, f)));
+  const crew = crewOf(focus).sort((a, b) => (sort === "near" ? miles(a) - miles(b) : pickScore(b) - pickScore(a) || miles(a) - miles(b)));
+  const ai = more.filter((m) => matchesFocus(m, focus)).sort((a, b) => (sort === "near" ? miles(a) - miles(b) : 0));
   const pending = stop.aiMoreStatus === "pending";
   const subs = kind === "eat" ? CUISINES : kind === "do" ? ACTIVITIES : [];
-  const subCount = (id: string) => more.filter((m) => matchesFocus(m, kind === "eat" ? id : `act:${id}`)).length;
-  const subList = subs.map((x) => ({ ...x, n: subCount(x.id) })).sort((a, b) => Number(b.n > 0) - Number(a.n > 0));
-  const kindCount = (k: MoreKind) => more.filter((m) => matchesFocus(m, k)).length;
+  const fOf = (id: string) => (kind === "eat" ? id : `act:${id}`);
+  const subList = subs.map((x) => ({ ...x, n: crewOf(fOf(x.id)).length + more.filter((m) => matchesFocus(m, fOf(x.id))).length })).sort((a, b) => Number(b.n > 0) - Number(a.n > 0));
+  const kindCount = (k: MoreKind) => crewOf(k).length + more.filter((m) => matchesFocus(m, k)).length;
+  const total = others.length + more.length;
+  const aiOn = cfg?.ai !== false;
+  const row = (s: SpotWithStats, onClick: () => void, meta: string, badge?: React.ReactNode, testId?: string) => (
+    <button key={s.id} type="button" onClick={onClick} disabled={busy} className="w-full flex items-center justify-between gap-3 px-3.5 py-2.5 text-left hover-elevate disabled:opacity-50" data-testid={testId}>
+      <span className="min-w-0">
+        <span className="flex items-center gap-1.5"><span className="truncate text-sm font-medium">{s.name}</span>{badge}</span>
+        <span className="block truncate text-[11px] text-muted-foreground">{meta}</span>
+      </span>
+      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border text-foreground" aria-label="Add to briefing"><Plus className="h-4 w-4" /></span>
+    </button>
+  );
+  const head = (Icon: typeof Users, label: string, n: number, tone: string, testId: string) => (
+    <p className={cn("flex items-center gap-1.5 bg-muted/50 px-3.5 py-1.5 text-[11px] font-semibold", tone)} data-testid={testId}><Icon className="h-3.5 w-3.5" />{label}<span className="font-code opacity-70">{n}</span></p>
+  );
   return (
     <div data-testid={`section-pick-more-${index}`}>
-      <button type="button" onClick={() => setOpen(!open)} className="inline-flex items-center gap-1 text-xs font-medium text-violet-700 dark:text-violet-300" data-testid={`button-pick-more-${index}`}>
-        <Sparkles className="h-3.5 w-3.5" /> {open ? "Done adding" : more.length ? `More places at ${stop.icao} · ${more.length}` : `More places at ${stop.icao}`}
+      <button type="button" onClick={() => setOpen(!open)} aria-expanded={open}
+        className={cn("inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-full border text-sm font-semibold hover-elevate", open ? "border-foreground/30 bg-muted" : "border-border")} data-testid={`button-pick-more-${index}`}>
+        {open ? <><CheckCircle2 className="h-4 w-4" />Done adding</> : <><Plus className="h-4 w-4" />Add places at {stop.icao}{total ? <span className="ml-1 font-code text-xs text-muted-foreground">· {total}</span> : null}</>}
       </button>
       {open && (
-        <div className="mt-2 rounded-2xl border border-dashed border-violet-400/60 bg-card">
+        <div className="mt-2 rounded-2xl border border-card-border bg-card overflow-hidden">
           <div className="space-y-2 px-3 pt-3">
-            <p className="text-[11px] font-semibold text-muted-foreground">What are you looking for?</p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[11px] font-semibold text-muted-foreground">What are you looking for?</p>
+              <label className="flex items-center gap-1 text-[11px] text-muted-foreground">Sort
+                <select value={sort} onChange={(e) => setSort(e.target.value as MoreSort)} className="h-7 rounded-full border border-border bg-background px-2 text-[11px] font-medium text-foreground" data-testid={`select-more-sort-${index}`}>
+                  <option value="best">Crew-rated first</option><option value="near">Closest</option>
+                </select>
+              </label>
+            </div>
             <div className="flex gap-1.5 overflow-x-auto no-scrollbar" role="group" aria-label="Kind of place">
-              {MORE_KINDS.map(([k, label, Icon]) => (
+              {MORE_KINDS.filter(([k]) => aiOn || k !== "local").map(([k, label, Icon]) => (
                 <button key={k || "all"} type="button" onClick={() => setKind(k)} aria-pressed={kind === k} data-testid={`chip-more-${k || "all"}-${index}`}
-                  className={cn("inline-flex h-8 shrink-0 items-center gap-1 rounded-full border px-3 text-[11px] font-semibold", kind === k ? "border-violet-500 bg-violet-500/15 text-violet-800 dark:text-violet-200" : "border-border text-muted-foreground")}>
+                  className={cn("inline-flex h-8 shrink-0 items-center gap-1 rounded-full border px-3 text-[11px] font-semibold", kind === k ? "border-foreground/40 bg-foreground text-background" : "border-border text-muted-foreground")}>
                   <Icon className="h-3.5 w-3.5" />{label}{k !== "local" && <span className="font-code opacity-70">{kindCount(k)}</span>}
                 </button>
               ))}
@@ -694,32 +708,43 @@ function MorePlaces({ stop, index, onAdd, busy }: { stop: BriefStopFull; index: 
               </div>
             )}
           </div>
-          <div className="mt-2 divide-y divide-border border-t border-border">
-            {list.map((s) => {
-              const meal = (s as AiPick).ai.meal;
-              const r = aiReason(s as AiPick);
-              return (
-                <button key={s.id} type="button" onClick={() => onAdd(-s.id)} disabled={busy} className="w-full flex items-center justify-between gap-3 px-3.5 py-2.5 text-left hover-elevate disabled:opacity-50" data-testid={`button-add-ai-${-s.id}`}>
-                  <span className="min-w-0">
-                    <span className="block text-sm font-medium truncate">{s.name}</span>
-                    <span className="block text-[11px] text-muted-foreground truncate">{CAT_NAMES[s.category]}{meal ? ` · ${MEAL_LABEL[meal]}` : ""}{s.milesFromField ? ` · ${s.milesFromField} mi` : ""}{s.cost != null ? ` · ${costText(s)}` : ""}{r.kind === "local" || r.kind === "asked" ? ` · ${r.text.replace(" · you asked", "")}` : ""}{s.description ? ` · ${s.description}` : ""}</span>
-                  </span>
-                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-violet-400/60 text-violet-700 dark:text-violet-300" aria-label="Add to briefing"><Plus className="h-4 w-4" /></span>
-                </button>
-              );
-            })}
-            {!list.length && (
+          <div className="mt-2 border-t border-border">
+            {crew.length > 0 && <>
+              {head(Users, "Crew listings", crew.length, "text-emerald-700 dark:text-emerald-300", `head-more-crew-${index}`)}
+              <div className="divide-y divide-border">
+                {crew.map((s) => row(s, () => onAddCrew(s.id),
+                  `${CAT_NAMES[s.category]} · ${s.milesFromField ? `${s.milesFromField} mi` : "On field"}${s.avgRating ? ` · ${s.avgRating.toFixed(1)}★ (${s.reviewCount})` : " · Not rated yet"}${s.cost != null ? ` · ${costText(s)}` : ""}`,
+                  s.vet?.level === "vetted" ? <span className="shrink-0 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">Vetted</span> : null,
+                  `button-add-candidate-${s.id}`))}
+              </div>
+            </>}
+            {ai.length > 0 && <>
+              {head(Sparkles, "AI picks", ai.length, "text-violet-700 dark:text-violet-300", `head-more-ai-${index}`)}
+              <div className="divide-y divide-border">
+                {ai.map((s) => {
+                  const meal = (s as AiPick).ai.meal;
+                  const r = aiReason(s as AiPick);
+                  return row(s, () => onAddAi(-s.id),
+                    `${CAT_NAMES[s.category]}${meal ? ` · ${MEAL_LABEL[meal]}` : ""}${s.milesFromField ? ` · ${s.milesFromField} mi` : ""}${s.cost != null ? ` · ${costText(s)}` : ""}${r.kind === "local" || r.kind === "asked" ? ` · ${r.text.replace(" · you asked", "")}` : ""}${s.description ? ` · ${s.description}` : ""}`,
+                    <span className="shrink-0 rounded-full bg-violet-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-violet-700 dark:text-violet-300">AI</span>,
+                    `button-add-ai-${-s.id}`);
+                })}
+              </div>
+            </>}
+            {!crew.length && !ai.length && (
               <p className="px-3.5 py-3 text-xs text-muted-foreground" data-testid={`text-more-empty-${index}`}>
-                {pending ? "Finding places, usually under a minute." : focus ? `No ${focusLabel(focus).toLowerCase()} in the AI list for ${stop.icao} yet. Ask AI below.` : `No other AI picks at ${stop.icao} yet. Choose what you're looking for, then ask AI.`}
+                {pending ? "Finding places, usually under a minute." : focus ? `Nothing else for ${focusLabel(focus).toLowerCase()} at ${stop.icao} yet.${aiOn ? " Ask AI below." : ""}` : `Everything listed at ${stop.icao} is already in the plan.${aiOn ? " Choose a type to ask AI for more." : ""}`}
               </p>
             )}
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-3.5 py-2.5">
-            <p className="min-w-0 flex-1 basis-40 text-[11px] text-muted-foreground">
-              {pending ? "Finding more places, usually under a minute." : stop.aiMoreStatus === "failed" ? "AI didn't find anything new last time." : stop.aiMoreStatus === "full" ? `That's every place AI keeps for ${stop.icao}.` : focus ? `Want more ${focusLabel(focus).toLowerCase()}?` : "Choose Food, Things to do, Hotels or Surprise me to ask AI for more."}
-            </p>
-            {focus && stop.aiMoreStatus !== "full" && <FindMore icao={stop.icao} pending={pending} fixed={focus} testId={`find-more-${index}`} />}
-          </div>
+          {aiOn && (
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-3.5 py-2.5">
+              <p className="min-w-0 flex-1 basis-40 text-[11px] text-muted-foreground">
+                {pending ? "Finding more places, usually under a minute." : stop.aiMoreStatus === "failed" ? "AI didn't find anything new last time." : stop.aiMoreStatus === "full" ? `That's every place AI keeps for ${stop.icao}.` : focus ? `Want more ${focusLabel(focus).toLowerCase()}?` : "Choose Food, Things to do, Hotels or Surprise me to ask AI for more."}
+              </p>
+              {focus && stop.aiMoreStatus !== "full" && <FindMore icao={stop.icao} pending={pending} fixed={focus} testId={`find-more-${index}`} />}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -729,6 +754,9 @@ function MorePlaces({ stop, index, onAdd, busy }: { stop: BriefStopFull; index: 
 /** End of the briefing: preview everything in one place, then share it, without scrolling back up. */
 function FinalizeBar({ brief, preparedBy }: { brief: BriefFull; preparedBy?: string }) {
   const [open, setOpen] = useState(false);
+  const [shared, setShared] = useState(false);
+  const [, navigate] = useLocation();
+  useEffect(() => { if (!open) setShared(false); }, [open]);
   const total = brief.stops.reduce((n, s) => n + stopPins(s).numbered.length, 0);
   return (
     <div className="rounded-2xl border border-primary/40 bg-primary/5 p-4" data-testid="panel-finalize">
@@ -770,8 +798,12 @@ function FinalizeBar({ brief, preparedBy }: { brief: BriefFull; preparedBy?: str
             <PickLegend />
           </div>
           <div className="sticky bottom-0 border-t border-border bg-background p-3">
-            <ExportBar brief={brief} preparedBy={preparedBy} />
-            <button type="button" onClick={() => setOpen(false)} className="mt-2 h-9 w-full rounded-full text-xs font-medium text-muted-foreground hover:text-foreground" data-testid="button-finalize-edit">Keep editing</button>
+            {shared && <p className="mb-2 flex items-center gap-1.5 rounded-xl bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-800 dark:text-emerald-200" data-testid="text-finalize-shared"><CheckCircle2 className="h-4 w-4 shrink-0" />Sent. It's saved under Briefings.</p>}
+            <ExportBar brief={brief} preparedBy={preparedBy} onShared={() => setShared(true)} />
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setOpen(false)} className="h-10 rounded-full border border-border text-xs font-semibold hover-elevate" data-testid="button-finalize-edit">Keep editing</button>
+              <button type="button" onClick={() => { setOpen(false); navigate("/brief"); }} className={cn("h-10 rounded-full text-xs font-semibold hover-elevate", shared ? "bg-foreground text-background" : "border border-border")} data-testid="button-finalize-done">Done · All briefings</button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

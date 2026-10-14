@@ -214,6 +214,16 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.get("/api/leaderboard/bases", async (_req, res) => res.json(await storage.homeBases()));
 
   // ---------- favorites (private, no points) ----------
+  // the newest release notes this member has seen (so What's new shows once per release, on any device)
+  app.get("/api/me/release-seen", requireUser, async (req, res) => {
+    const v = await storage.getSetting(`relseen:${(req as any).user.id}`);
+    res.json({ seen: v == null ? null : Number(v) || 0 });
+  });
+  app.put("/api/me/release-seen", requireUser, async (req, res) => {
+    const n = Math.max(0, Math.min(10_000, Math.floor(Number(req.body?.seen) || 0)));
+    await storage.setSetting(`relseen:${(req as any).user.id}`, String(n));
+    res.json({ seen: n });
+  });
   app.get("/api/me/favorites", requireUser, async (req, res) => res.json(await storage.favoriteSpots((req as any).user.id)));
   app.get("/api/me/favorites/ids", requireUser, async (req, res) => res.json(await storage.favoriteIds((req as any).user.id)));
   app.put("/api/spots/:id/favorite", requireUser, writeLimit, async (req, res) => {

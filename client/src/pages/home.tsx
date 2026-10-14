@@ -12,7 +12,8 @@ import { ACTIVITIES, activitiesOf, activityLabel } from "@shared/activities";
 import { COST_LABELS, PACES, costOptions, costRange, costText, paceLabel, paceOf, paceMatches, type PaceId } from "@shared/cost";
 import { CostChoice } from "@/lib/costChip";
 import { PROGRAMS, programOf, type ProgramId } from "@shared/loyalty";
-import { AiPicksPanel, ProgramChip, useMyPrograms } from "@/lib/aiPicks";
+import { VisitReminder } from "@/lib/visits";
+import { AiPicksPanel, MoreAiPlaces, ProgramChip, useMyPrograms } from "@/lib/aiPicks";
 import { getPosition, type NearAirport } from "@/lib/geo";
 import { useToast } from "@/hooks/use-toast";
 import { trustScore } from "@shared/vetting";
@@ -78,6 +79,7 @@ function Prompt({ onPick }: { onPick: (c: Category) => void }) {
   const fields = hl?.totals.fields ?? 0;
   return (
     <div className="space-y-6">
+      <VisitReminder />
       <section className="pt-2">
         <p className="font-code text-xs text-primary tracking-[0.2em] uppercase">Crew-sourced layover intel</p>
         <h1 className="mt-3 text-xl font-semibold leading-tight sm:text-[1.75rem] sm:leading-[1.15]">
@@ -403,6 +405,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
 
   return (
     <div className="space-y-5">
+      <VisitReminder />
       {/* Category switcher */}
       <div className="flex items-center gap-2 overflow-x-auto no-scrollbar -mx-4 px-4">
         {(Object.keys(CAT_META) as Category[]).map((c) => {
@@ -566,6 +569,8 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
                     Show all {g.spots.length} at {g.icao}
                   </button>
                 )}
+                {/* same pattern as briefings: crew picks first, then one button for AI picks of the same kind */}
+                {mode === "route" && g.icao && <MoreAiPlaces icao={g.icao} category={cat} program={showRewards ? s.rewards : null} food={showPace ? s.food : showTime && s.act ? `act:${s.act}` : null} />}
               </>
             )}
           </section>

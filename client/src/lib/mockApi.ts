@@ -241,6 +241,11 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
   if (method === "POST" && path === "/api/auth/reset") throw new HttpError(400, "Password reset works on the live site only.");
   if (method === "GET" && path === "/api/config") return { contactEmail: "", emailEnabled: false, moderated: false, ai: false };
   if (path === "/api/me/ai-pref") return { pref: "crew" };
+  if (path === "/api/me/release-seen") {
+    const k = "wheelsdown-demo-relseen";
+    if (method === "PUT") { try { localStorage.setItem(k, String(Number(body?.seen) || 0)); } catch { /* ignore */ } return { seen: Number(body?.seen) || 0 }; }
+    try { const v = localStorage.getItem(k); return { seen: v == null ? null : Number(v) }; } catch { return { seen: null }; }
+  }
   if (path === "/api/me/programs") return { programs: method === "PUT" && Array.isArray((body as any)?.programs) ? (body as any).programs : [] };
   if (method === "GET" && path === "/api/ai-picks") return { status: "off", picks: [] }; // AI picks need the live server
   if (method === "DELETE" && path === "/api/me") {

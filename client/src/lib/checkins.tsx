@@ -1,3 +1,4 @@
+import { noteVisit } from "@/lib/visits";
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { MapPinCheck, Loader2, Trash2, PlaneLanding } from "lucide-react";
@@ -33,7 +34,7 @@ export function CheckInButton({ spotId, name }: { spotId: number; name: string }
   const mine = (data || []).filter((c) => c.spotId === spotId);
   const m = useMutation({
     mutationFn: () => checkIn({ spotId }),
-    onSuccess: (r) => { refresh(); toast({ title: r.already ? "Already checked in today" : `Checked in at ${name}` }); },
+    onSuccess: (r) => { refresh(); noteVisit({ id: spotId, name, icao: "" }); toast({ title: r.already ? "Already checked in today" : `Checked in at ${name}` }); },
     onError: (e) => toast({ title: "Couldn't check in", description: errText(e), variant: "destructive" }),
   });
   return (

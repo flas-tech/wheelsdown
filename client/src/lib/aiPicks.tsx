@@ -1,3 +1,4 @@
+import { noteVisit } from "@/lib/visits";
 import { focusLabel, isFocus, focusCategory } from "@shared/focus";
 import { ACTIVITIES } from "@shared/activities";
 import { useEffect, useRef, useState } from "react";
@@ -37,6 +38,7 @@ export function ProgramChip({ spot }: { spot: Pick<SpotWithStats, "category" | "
 function AiCard({ spot }: { spot: AiPick }) {
   const M = CAT_META[spot.category as keyof typeof CAT_META];
   const out = spot.website || `https://maps.apple.com/?q=${encodeURIComponent(spot.name + " " + (spot.address || ""))}`;
+  const went = () => noteVisit({ id: spot.id, name: spot.name, icao: spot.icao, href: aiAddHref(spot) });
   return (
     <article className="rounded-2xl border border-dashed border-violet-400/60 bg-card p-4" data-testid={`card-ai-${-spot.id}`}>
       <div className="flex items-start justify-between gap-3">
@@ -55,9 +57,9 @@ function AiCard({ spot }: { spot: AiPick }) {
         {spot.cost != null && <span className="shrink-0 text-right"><span className="block font-code text-sm font-bold text-primary">{costText(spot)}</span>{spot.cost > 0 && <span className="block text-[10px] text-muted-foreground whitespace-nowrap">{costRange(spot.category, spot.cost)}</span>}</span>}
       </div>
       {spot.description && <p className="mt-2 text-sm text-muted-foreground line-clamp-3">{spot.description}</p>}
-      {spot.address && <a href={`https://maps.apple.com/?q=${encodeURIComponent(spot.name + " " + spot.address)}`} target="_blank" rel="noopener noreferrer" className="mt-1.5 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"><MapPin className="h-3 w-3" />{spot.address}</a>}
+      {spot.address && <a href={`https://maps.apple.com/?q=${encodeURIComponent(spot.name + " " + spot.address)}`} onClick={went} target="_blank" rel="noopener noreferrer" className="mt-1.5 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"><MapPin className="h-3 w-3" />{spot.address}</a>}
       <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
-        <a href={out} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"><ExternalLink className="h-3 w-3" />{spot.website ? "Website" : "Maps"}</a>
+        <a href={out} onClick={went} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"><ExternalLink className="h-3 w-3" />{spot.website ? "Website" : "Maps"}</a>
         <Link href={aiAddHref(spot)} className="inline-flex items-center gap-1 font-semibold text-primary" data-testid={`link-ai-add-${-spot.id}`}><Plus className="h-3.5 w-3.5" />Been here? Add it for crews</Link>
       </div>
       <FirstRateNote />
@@ -191,6 +193,24 @@ export function AiPrefCard() {
 }
 
 /** Search fallback: when crews have nothing at an airport in this category, offer (or, with Prefer AI, show) AI picks. */
+/** Under crew results: one button that shows AI picks of the same kind alongside them (same panel as an empty search). */
+export function MoreAiPlaces({ icao, category, program, food }: { icao: string; category: string; program?: ProgramId | null; food?: string | null }) {
+  const [open, setOpen] = useState(false);
+  const { data: cfg } = useQuery<{ ai?: boolean }>({ queryKey: ["/api/config"] });
+  useEffect(() => setOpen(false), [icao, category]);
+  if (!["eat", "do", "stay"].includes(category) || !cfg?.ai) return null;
+  const f = food && isFocus(food) && focusCategory(food) === category ? food : null;
+  return (
+    <div className="space-y-3" data-testid={`section-more-ai-${icao}`}>
+      <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} data-testid={`button-more-ai-${icao}`}
+        className={cn("inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-full border text-sm font-semibold hover-elevate", open ? "border-foreground/30 bg-muted" : "border-dashed border-violet-400/70 text-violet-700 dark:text-violet-300")}>
+        <Sparkles className="h-4 w-4" />{open ? "Hide AI picks" : `More places at ${icao}${f ? ` · ${focusLabel(f)}` : ""}`}
+      </button>
+      {open && <AiPicksList icao={icao} category={category} program={program} food={f} on alongside />}
+    </div>
+  );
+}
+
 export function AiPicksPanel({ icao, category, program, food }: { icao: string; category: string; program?: ProgramId | null; food?: string | null }) {
   const pref = useAiPref();
   const [asked, setAsked] = useState(false);
@@ -208,9 +228,9 @@ export function AiPicksPanel({ icao, category, program, food }: { icao: string; 
   return <AiPicksList icao={icao} category={category} program={program} food={food && isFocus(food) && focusCategory(food) === category ? food : null} on={on} />;
 }
 
-function AiPicksList({ icao, category, program, food, on }: { icao: string; category: string; program?: ProgramId | null; food?: string | null; on: boolean }) {
+function AiPicksList({ icao, category, program, food, on, alongside }: { icao: string; category: string; program?: ProgramId | null; food?: string | null; on: boolean; alongside?: boolean }) {
   const { data, isLoading, refetch } = useQuery<{ status: string; picks: AiPick[]; total?: number; more?: string }>({
-    queryKey: [`/api/ai-picks?icao=${icao}&cat=${category}${food ? `&food=${food}` : ""}`], enabled: on, staleTime: 60_000,
+    queryKey: [`/api/ai-picks?icao=${icao}&cat=${category}${food ? `&food=${food}` : ""}${alongside ? "&all=1" : ""}`], enabled: on, staleTime: 60_000,
     refetchInterval: (q) => (q.state.data?.status === "pending" || q.state.data?.more === "pending" ? 5000 : false),
   });
   if (!on || isLoading || !data || data.status === "crew" || data.status === "off") return null;
@@ -235,7 +255,7 @@ function AiPicksList({ icao, category, program, food, on }: { icao: string; cate
   return (
     <section className="space-y-3" data-testid={`section-ai-picks-${icao}`}>
       <p className="flex items-start gap-2 text-xs text-muted-foreground"><Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-violet-600" />
-        <span>No crew picks here yet, so these are AI picks. They aren't crew-rated: check hours before you go, and add the ones you try so they become crew picks.</span></p>
+        <span>{alongside ? "AI picks near crew listings above." : "No crew picks here yet, so these are AI picks."} They aren't crew-rated: check hours before you go, and add the ones you try so they become crew picks.</span></p>
       {picks.map((p) => <AiCard key={p.id} spot={p} />)}
       {category !== "stay" && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-dashed border-violet-400/60 px-3 py-2.5" data-testid={`box-find-more-${icao}`}>

@@ -1,3 +1,4 @@
+import { clearVisit } from "@/lib/visits";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLocation, useRoute } from "wouter";
@@ -218,6 +219,7 @@ export default function AddPage() {
         })
       ).json(),
     onSuccess: (spot: { id: number; status: string }) => {
+      if (aiPickId) clearVisit(-aiPickId);
       for (const k of ["/api/search", "/api/airports", "/api/me", "/api/crew", "/api/highlights", "/api/spots", "/api/me/favorites", "/api/briefings"]) queryClient.invalidateQueries({ queryKey: [k] });
       const checking = (spot as any).modState === "checking";
       if (editId) { toast({ title: checking ? "Edit saved" : "Listing updated", description: checking ? "It goes live after a quick automatic check." : undefined }); navigate(`/spot/${spot.id}`); return; }

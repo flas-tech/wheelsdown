@@ -1,3 +1,4 @@
+import { clearVisit } from "@/lib/visits";
 import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
@@ -88,6 +89,7 @@ export function RateInstead({ match, initial, onBack }: { match: SimilarSpot; in
   const needWhy = goAround && comment.trim().length < 10;
   const m = useMutation({
     mutationFn: async () => (await apiRequest("POST", `/api/spots/${match.id}/reviews`, { rating, comment, costLevel: paid })).json(),
+    onMutate: () => clearVisit(match.id),
     onSuccess: (r: { modState?: string }) => {
       for (const k of ["/api/spots", "/api/search", "/api/me", "/api/crew", "/api/leaderboard", "/api/highlights", "/api/me/favorites"]) queryClient.invalidateQueries({ queryKey: [k] });
       toast({ title: `Rating added to ${match.name}`, description: r?.modState === "checking" ? "It posts after a quick automatic check, usually under a minute." : "Thanks for keeping the listings tidy." });

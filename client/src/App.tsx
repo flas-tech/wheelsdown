@@ -19,6 +19,7 @@ import ProfilePage from "@/pages/profile";
 import CrewPage from "@/pages/crew";
 import ResetPage from "@/pages/reset";
 import LegalPage from "@/pages/legal";
+import FaqPage from "@/pages/faq";
 import CrewProfilePage from "@/pages/crewProfile";
 import FollowingPage from "./pages/following";
 import { ShareButton } from "@/lib/share";
@@ -34,6 +35,7 @@ import { cn } from "@/lib/utils";
 import { FeedbackLink } from "@/lib/feedback";
 import { TourHost, TourLink } from "@/lib/tour";
 import { UpdateBar } from "@/lib/update";
+import { WhatsNewHost } from "@/lib/whatsNew";
 import { IS_STATIC } from "@/lib/queryClient";
 
 function Shell() {
@@ -105,6 +107,7 @@ function Shell() {
           <Route path="/brief/:id" component={BriefEditorPage} />
           <Route path="/b/:token" component={SharedBriefPage} />
           <Route path="/reset/:token" component={ResetPage} />
+          <Route path="/faq" component={FaqPage} />
           <Route path="/terms" component={LegalPage} />
           <Route path="/privacy" component={LegalPage} />
           <Route path="/guidelines" component={LegalPage} />
@@ -120,6 +123,7 @@ function Shell() {
             </div>
             <nav className="flex flex-wrap gap-x-4 gap-y-1" data-testid="nav-legal">
               <Link href="/about" className="hover:text-foreground">About & Advertise</Link>
+              <Link href="/faq" className="hover:text-foreground" data-testid="link-footer-faq">FAQ</Link>
               <Link href="/guidelines" className="hover:text-foreground">Guidelines</Link>
               <Link href="/terms" className="hover:text-foreground">Terms</Link>
               <Link href="/privacy" className="hover:text-foreground">Privacy</Link>
@@ -131,6 +135,7 @@ function Shell() {
       </main>
       <TourHost />
       <UpdateBar />
+      <WhatsNewHost />
 
       {/* iOS-style tab bar */}
       {!isAdmin && (

@@ -17,7 +17,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { CREW_ROLES } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
-import { LogOut, Star, ThumbsUp, ThumbsDown, PlusCircle, MessageSquare, ShieldCheck, Award, Gift, Activity, ChevronRight, UserPlus } from "lucide-react";
+import { LogOut, Star, ThumbsUp, ThumbsDown, PlusCircle, MessageSquare, ShieldCheck, Award, Gift, Activity, ChevronRight, UserPlus, CircleHelp } from "lucide-react";
 import { TIERS, POINTS, tierFor, publicName, SOLO_POINTS, hasSoloed, type TierId, type ActivityItem } from "@shared/tiers";
 import type { SpotWithStats, Review } from "@shared/schema";
 import { useAuth, Insignia, tierById, PostAsToggle } from "@/lib/auth";
@@ -148,6 +148,10 @@ export default function ProfilePage() {
       {me.achievements && <BadgeProgressGrid progress={me.achievements} />}
       <InviteCard refId={me.id} referrals={b.referrals || 0} />
       <FeedbackCard />
+      <Link href="/faq" className="flex items-center justify-between gap-3 rounded-2xl border border-card-border bg-card px-4 py-3 hover-elevate" data-testid="link-me-faq">
+        <span className="flex items-center gap-3"><CircleHelp className="h-5 w-5 text-primary" /><span><span className="block text-sm font-semibold">Questions and answers</span><span className="block text-xs text-muted-foreground">Points, ratings, AI picks, briefings, privacy</span></span></span>
+        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+      </Link>
       <p className="text-center text-xs text-muted-foreground">New here, or forgot where something is? <TourLink className="font-semibold text-foreground underline hover:text-primary" /></p>
 
       <ProfileSettings />

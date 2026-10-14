@@ -3,9 +3,10 @@ import { useLocation } from "wouter";
 import { ArrowLeft, ArrowRight, Check, ClipboardList, Coffee, Heart, Hotel, List, Map as MapIcon, MapPin, MessageSquare, PlaneLanding, Search, Share2, Sparkles, Star, UserPlus, UserRound, Users, UtensilsCrossed } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { POINTS, TIERS } from "@shared/tiers";
-import { Insignia, useAuth } from "@/lib/auth";
+import { Insignia } from "@/lib/auth";
 import { GoAroundIcon, Logo } from "@/lib/ui";
 import { cn } from "@/lib/utils";
+import { skipWhatsNewForNewMember } from "@/lib/whatsNew";
 
 const DONE_KEY = "wheelsdown-tour-done";
 const VERSION_KEY = "wheelsdown-tour-v";
@@ -25,6 +26,7 @@ export function maybeShowWhatsNew() {
 }
 /** Called once a new account is created: show the tour unless they've already seen it on this device. */
 export function startTourForNewMember() {
+  skipWhatsNewForNewMember(); // the tour already covers what's new
   try { if (localStorage.getItem(DONE_KEY)) return; } catch { /* private mode: still show it */ }
   setTimeout(startTour, 700); // let the sign-in dialog close first
 }
@@ -73,7 +75,7 @@ const STEPS: { key: string; title: string; body: string; art: React.ReactNode; i
   },
   {
     key: "brief", title: "Trip briefings plan every stop", isNew: true,
-    body: "Build a briefing for your route. Overnights get breakfast, lunch, dinner, things to do and a hotel. Your favorites are always included, Pick more with AI adds options, and it all comes with a map and a printable PDF for the crew.",
+    body: "Build a briefing for your route. Overnights get breakfast, lunch, dinner, things to do and a hotel. Crew picks come first and your favorites are always included. One Add places button brings in more crew listings or AI picks. Finalize it for a map and a printable PDF for the crew.",
     art: <div className="grid grid-cols-[1fr_auto_1.3fr] items-center gap-3">
       <div className="rounded-xl bg-white/[0.06] p-3 text-center ring-1 ring-white/10"><Heart className="mx-auto h-7 w-7 fill-rose-500 text-rose-500" /><p className="mt-1.5 text-[11px] text-white/70">Favorites</p></div>
       <ArrowRight className="h-4 w-4 text-white/40" />
@@ -140,9 +142,7 @@ export function TourHost() {
   const steps = mode === "new" ? STEPS.filter((x) => x.isNew) : STEPS;
   const [, navigate] = useLocation();
   const touch = useRef<number | null>(null);
-  const { me } = useAuth();
-  // members who took the earlier tour get the new steps once, after they sign in
-  useEffect(() => { if (me) maybeShowWhatsNew(); }, [me?.id]);
+  // release notes after the tour's own "What's new" (v2) live in whatsNew.tsx, shown once per release per member
   useEffect(() => {
     const on = (e: Event) => { setMode((e as CustomEvent).detail === "new" ? "new" : "full"); setI(0); setOpen(true); };
     window.addEventListener(EVENT, on);
