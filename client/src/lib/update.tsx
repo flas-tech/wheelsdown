@@ -15,20 +15,30 @@ const busy = () => {
   return typing || !!document.querySelector("[role=dialog]");
 };
 
-async function check() {
-  if (ready) return;
+type Check = "current" | "update" | "offline";
+async function check(): Promise<Check> {
+  if (ready) return "update";
   try {
     const r = await fetch(`${API_BASE}/api/version`, { cache: "no-store" });
-    if (!r.ok) return;
+    if (!r.ok) return "offline";
     const { version } = (await r.json()) as { version?: string };
-    if (!version) return;
-    if (!base) { base = version; return; }
-    if (version === base) return;
+    if (!version) return "offline";
+    if (!base) { base = version; return "current"; }
+    if (version === base) return "current";
     ready = true;
     // coming back to the app: nothing is in progress, so just reload
-    if (document.visibilityState === "visible" && !busy()) { window.location.reload(); return; }
+    if (document.visibilityState === "visible" && !busy()) { window.location.reload(); return "update"; }
     window.dispatchEvent(new Event(EVENT));
-  } catch { /* offline: try again next time */ }
+    return "update";
+  } catch { return "offline"; /* try again next time */ }
+}
+
+/** Logbook "Check for updates": asks the server which release is live; reloads if this copy is older. */
+export async function checkForUpdate(): Promise<Check> {
+  if (IS_STATIC) return "current";
+  const r = await check();
+  if (r === "update") window.location.reload();
+  return r;
 }
 
 export function installUpdateCheck() {

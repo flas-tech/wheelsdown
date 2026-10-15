@@ -34,6 +34,7 @@ import { Logo, ThemeProvider, ThemeToggle } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { FeedbackLink } from "@/lib/feedback";
 import { TourHost, TourLink } from "@/lib/tour";
+import { VersionLine } from "@/lib/version";
 import { UpdateBar } from "@/lib/update";
 import { WhatsNewHost } from "@/lib/whatsNew";
 import { IS_STATIC } from "@/lib/queryClient";
@@ -130,6 +131,7 @@ function Shell() {
               <TourLink className="hover:text-foreground" />
               <FeedbackLink className="font-semibold text-foreground hover:text-primary" />
             </nav>
+            <VersionLine className="text-[11px] text-muted-foreground/80" />
           </footer>
         )}
       </main>

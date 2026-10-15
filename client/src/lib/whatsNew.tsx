@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { PanelBottom, ArrowUpDown, BellRing, CircleHelp, ClipboardCheck, Compass, Flame, ListPlus, RefreshCw, Sparkles, Star, Undo2 } from "lucide-react";
+import { BadgeCheck, PanelBottom, ArrowUpDown, BellRing, CircleHelp, ClipboardCheck, Compass, Flame, ListPlus, RefreshCw, Sparkles, Star, Undo2 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -14,6 +14,12 @@ type Item = { icon: typeof Star; title: string; body: string; to?: string };
 export type Release = { id: number; date: string; items: Item[] };
 
 export const RELEASES: Release[] = [
+  {
+    id: 8, date: "October 15, 2026",
+    items: [
+      { icon: BadgeCheck, title: "Version numbers", body: "Wheelsdown now shows its version, so you know you're on the latest. It's at the bottom of every page and in your Logbook, where Check for updates confirms you're current or updates on the spot.", to: "/me" },
+    ],
+  },
   {
     id: 7, date: "October 15, 2026",
     items: [
@@ -105,12 +111,12 @@ export function WhatsNewHost() {
               <DialogTitle className="text-lg font-semibold leading-tight text-white">Fresh in Wheelsdown</DialogTitle>
             </div>
           </div>
-          <DialogDescription className="relative mt-2 text-xs text-white/70">Updated {show[0].date}. Here's what changed since you last looked.</DialogDescription>
+          <DialogDescription className="relative mt-2 text-xs text-white/70">Version 1.{show[0].id} · {show[0].date}. Here's what changed since you last looked.</DialogDescription>
         </div>
         <div className="space-y-5 px-5 py-4">
           {show.map((r, k) => (
             <section key={r.id} data-testid={`section-release-${r.id}`}>
-              {(show.length > 1 || k > 0) && <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{r.date}</p>}
+              {(show.length > 1 || k > 0) && <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Version 1.{r.id} · {r.date}</p>}
               <ul className="space-y-3">
                 {r.items.map((it) => (
                   <li key={it.title} className="flex gap-3">

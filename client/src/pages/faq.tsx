@@ -62,6 +62,7 @@ const SECTIONS: { title: string; items: QA[] }[] = [
       qa("Who can see my check-ins?", "Only you. Check-ins only work when your phone confirms you're at the place, and they build the private map in your Logbook."),
       qa("Can I post anonymously?", "Yes. In your Logbook profile, choose to post anonymously. Your name comes off everything you've posted, and your bio, badges and followers stay hidden."),
       qa("How do I delete my account?", "At the bottom of your Logbook. It permanently deletes your account, ratings, comments, votes and points. Listings you added stay up, credited to Former crew member."),
+      qa("How do I know I have the latest version?", "The version number is at the bottom of every page and in your Logbook. Each release raises it by one. Updates install by themselves when you reopen the app, and Check for updates in your Logbook confirms you're current or updates on the spot."),
       qa("Something's broken or missing. Who do I tell?", "Tap Send feedback at the bottom of any page. We read every one."),
     ],
   },

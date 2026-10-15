@@ -9,6 +9,7 @@ import { LogbookTabs } from "@/pages/notifications";
 import { AirportCheckInCard, CheckInList, ProfileMap } from "@/lib/checkins";
 import { InviteCard } from "@/lib/share";
 import { AiPrefCard, ProgramsCard } from "@/lib/aiPicks";
+import { VersionCard } from "@/lib/version";
 import { BIO_MAX } from "@shared/interests";
 import { aircraftList } from "@shared/aircraft";
 import { useEffect, useState } from "react";
@@ -152,6 +153,7 @@ export default function ProfilePage() {
         <span className="flex items-center gap-3"><CircleHelp className="h-5 w-5 text-primary" /><span><span className="block text-sm font-semibold">Questions and answers</span><span className="block text-xs text-muted-foreground">Points, ratings, AI picks, briefings, privacy</span></span></span>
         <ChevronRight className="h-4 w-4 text-muted-foreground" />
       </Link>
+      <VersionCard />
       <p className="text-center text-xs text-muted-foreground">New here, or forgot where something is? <TourLink className="font-semibold text-foreground underline hover:text-primary" /></p>
 
       <ProfileSettings />
