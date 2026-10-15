@@ -276,6 +276,15 @@ export function registerAiPicks(app: Express, o: { requireAdmin: Mw; requireUser
     await storage.setSetting(`aipref:${(req as any).user.id}`, pref);
     res.json({ pref });
   });
+  /** One AI pick, so "Been here? Add it for crews" can fill in the whole listing form. */
+  app.get("/api/ai-picks/row/:id", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: "Bad id" });
+    const r = ((await db().execute(sql`SELECT id, icao, category, meal, name, address, website, description, cost_level, pace, minutes_needed, tags, lat, lng, miles, sources, status, focus, created_at::float8 AS created_at
+      FROM ai_picks WHERE id = ${id} AND status <> 'hidden'`)).rows as any as Row[])[0];
+    if (!r) return res.status(404).json({ message: "That AI pick isn't available anymore" });
+    res.json(toCard(r));
+  });
   /** Search fallback: AI picks for one airport and category, only when crews have nothing there in that category. */
   app.get("/api/ai-picks", async (req, res) => {
     const code = String(req.query.icao || "");

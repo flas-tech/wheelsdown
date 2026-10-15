@@ -88,6 +88,29 @@ export default function AddPage() {
   }, [editData, loaded]);
   const notOwner = !!editData && !!me && editData.spot.userId !== me.id;
 
+  // from an AI pick: load the whole pick and fill in everything the member hasn't typed yet
+  const { data: aiRow } = useQuery<SpotWithStats>({ queryKey: ["/api/ai-picks/row", String(aiPickId)], queryFn: () => getJson<SpotWithStats>(`/api/ai-picks/row/${aiPickId}`), enabled: !editId && !!aiPickId, retry: false, staleTime: Infinity });
+  const [fromAi, setFromAi] = useState(false);
+  useEffect(() => {
+    const r = aiRow;
+    if (!r || fromAi) return;
+    const cat = (["eat", "do", "stay", "fbo"] as const).find((x) => x === r.category) || category;
+    setCategory(cat);
+    if (r.icao && !code.trim()) setCode(r.icao);
+    if (!name.trim()) setName(r.name.slice(0, 120));
+    if (r.description) setDescription((d) => d.trim() ? d : r.description!);
+    if (cat !== "fbo" && r.costLevel != null && costOptions(cat).includes(r.costLevel)) setCost((v) => v ?? r.costLevel);
+    if (cat === "eat") setPace((v) => v ?? (isPace(r.pace) ? r.pace : paceOf(r)));
+    if (cat === "do" && r.minutesNeeded) setTime((v) => v ?? bucketFor(r.minutesNeeded));
+    if (r.address) setAddress((v) => v.trim() ? v : r.address!);
+    if (r.website) setWebsite((v) => v.trim() ? v : r.website!);
+    try { const t = JSON.parse(r.tags || "[]") as string[]; if (t.length) setTags((v) => v.trim() ? v : t.join(", ")); } catch { /* ignore */ }
+    if (r.lat != null && r.lng != null) setPlace((p) => p ?? ({ ref: "", name: r.name, address: r.address || "", lat: r.lat!, lng: r.lng!, kind: "", city: "" } as PlaceHit));
+    else if (r.milesFromField) setMiles((v) => v || String(r.milesFromField));
+    if (r.address || r.website || r.tags !== "[]") setMore(true);
+    setFromAi(true);
+  }, [aiRow, fromAi]); // eslint-disable-line
+
   // reset price when switching to a category where it isn't valid (e.g. Free for restaurants)
   useEffect(() => { if (costLevel != null && !costOptions(category).includes(costLevel)) setCost(null); }, [category]); // eslint-disable-line
 
@@ -257,7 +280,7 @@ export default function AddPage() {
         )}
         {!editId && aiPickId && (
           <p className="mt-2 rounded-xl bg-emerald-500/10 px-3 py-2 text-xs text-emerald-800 dark:text-emerald-300" data-testid="text-add-first-rate">
-            This was an AI pick. Add it, then rate it: the first crew member to rate it earns a +10 point bonus.
+            This was an AI pick. {fromAi ? "We filled in what AI found, so check it, fix anything that's off and add your crew tip. " : ""}Add it, then rate it: the first crew member to rate it earns a +10 point bonus.
           </p>
         )}
       </header>

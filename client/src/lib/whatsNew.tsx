@@ -15,6 +15,12 @@ export type Release = { id: number; date: string; items: Item[] };
 
 export const RELEASES: Release[] = [
   {
+    id: 6, date: "October 15, 2026",
+    items: [
+      { icon: ClipboardCheck, title: "Adding an AI pick fills in the form", body: "Tap Been here? Add it for crews on an AI pick and the name, address, website, price, distance, description and tags are already filled in. Check it, add your crew tip and rate it." },
+    ],
+  },
+  {
     id: 5, date: "October 14, 2026",
     items: [
       { icon: PanelBottom, title: "Tab bar stays at the bottom", body: "On iPhone, the tab bar could float partway up the screen after the keyboard closed. It now stays at the bottom, and it steps aside while you type." },
