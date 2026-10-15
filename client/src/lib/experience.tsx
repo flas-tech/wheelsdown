@@ -2,7 +2,7 @@
 // is tailored to that choice. Hidden from members for now: only super-user accounts see /start or a tailored nav;
 // everyone else keeps the classic six-item nav. The choice is stored on this device only.
 import { useSyncExternalStore } from "react";
-import { BookUser, ClipboardList, ClipboardPlus, Heart, LayoutGrid, MessagesSquare, PlusCircle, Search, Trophy, type LucideIcon } from "lucide-react";
+import { BookUser, ClipboardList, ClipboardPlus, Heart, LayoutGrid, MessagesSquare, PlaneLanding, PlusCircle, Search, Star, Trophy, Users, type LucideIcon } from "lucide-react";
 import { useAuth } from "./auth";
 
 export type Experience = "plan" | "spots" | "lounge";
@@ -47,21 +47,24 @@ export const CLASSIC_NAV: NavItem[] = [
 
 export const EXPERIENCE_NAV: Record<Experience, NavItem[]> = {
   plan: [
+    { href: "/today", label: "Today", icon: PlaneLanding, active: on("/today") },
     { href: "/brief", label: "Briefings", icon: ClipboardList, active: (l) => l === "/brief" || (on("/brief")(l) && l !== "/brief/new") || on("/b")(l) },
     { href: "/brief/new", label: "New brief", icon: ClipboardPlus, active: (l) => l === "/brief/new" },
-    { href: "/favorites", label: "Favorites", icon: Heart, active: on("/favorites") },
+    { href: "/rate", label: "Rate", icon: Star, active: on("/rate") },
     { href: "/me", label: "Logbook", icon: BookUser, active: on("/me", "/notifications") },
     SWITCH,
   ],
   spots: [
     { href: "/", label: "Search", icon: Search, active: (l) => l === "/" || l.startsWith("/spot") || l === "/map" },
     { href: "/add", label: "Add spot", icon: PlusCircle, active: on("/add") },
+    { href: "/rate", label: "Rate", icon: Star, active: on("/rate") },
     { href: "/favorites", label: "Favorites", icon: Heart, active: on("/favorites") },
     { href: "/me", label: "Logbook", icon: BookUser, active: on("/me", "/notifications") },
     SWITCH,
   ],
   lounge: [
     { href: "/lounge", label: "Lounge", icon: MessagesSquare, active: on("/lounge") },
+    { href: "/meetup", label: "Meetup", icon: Users, active: on("/meetup") },
     { href: "/crew", label: "Crew", icon: Trophy, active: on("/crew", "/following", "/followers") },
     { href: "/me", label: "Logbook", icon: BookUser, active: on("/me", "/notifications") },
     SWITCH,
@@ -69,7 +72,7 @@ export const EXPERIENCE_NAV: Record<Experience, NavItem[]> = {
 };
 
 /** Where each experience starts. */
-export const EXPERIENCE_HOME: Record<Experience, string> = { plan: "/brief", spots: "/", lounge: "/lounge" };
+export const EXPERIENCE_HOME: Record<Experience, string> = { plan: "/today", spots: "/", lounge: "/lounge" };
 
 export function useNav(): NavItem[] {
   const e = useExperience();

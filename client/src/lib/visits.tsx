@@ -26,6 +26,8 @@ export function noteVisit(v: Omit<Visit, "at">) {
   if (old?.done) return;
   write([...list.filter((x) => x.id !== v.id), { ...old, ...v, at: Date.now() }]);
 }
+/** Crew listings with an open reminder (not yet rated, added or dismissed), for the Rate a spot tab. */
+export const openVisits = () => read().filter((v) => !v.done && v.id > 0);
 /** Rated, added or dismissed: don't ask again. */
 export function clearVisit(id: number) {
   const list = read();

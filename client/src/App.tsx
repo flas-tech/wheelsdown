@@ -11,6 +11,9 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Shield } from "lucide-react";
 import StartPage from "@/pages/start";
 import LoungePage from "@/pages/lounge";
+import TodayPage from "@/pages/today";
+import MeetupPage from "@/pages/meetup";
+import RatePage from "@/pages/rate";
 import { useNav, useExperience } from "@/lib/experience";
 import FavoritesPage from "@/pages/favorites";
 import NotFound from "@/pages/not-found";
@@ -110,6 +113,9 @@ function Shell() {
           <Route path="/reset/:token" component={ResetPage} />
           <Route path="/faq" component={FaqPage} />
           <Route path="/lounge" component={LoungePage} />
+          <Route path="/today" component={TodayPage} />
+          <Route path="/meetup" component={MeetupPage} />
+          <Route path="/rate" component={RatePage} />
           <Route path="/terms" component={LegalPage} />
           <Route path="/privacy" component={LegalPage} />
           <Route path="/guidelines" component={LegalPage} />

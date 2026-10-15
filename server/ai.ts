@@ -248,6 +248,11 @@ reason: one short polite sentence (under 200 characters) to the author saying wh
   return normalize(await callModel<Verdict>(system, user, { purpose: "rating", schema: VERDICT_SCHEMA, timeoutMs: 45_000, effort: "minimal" }));
 }
 
+/** Short public notes (Crew meetup): the moderation endpoint only. True when flagged; false when fine or unavailable. */
+export async function flagShortText(text: string): Promise<boolean> {
+  try { return !!(await moderationEndpoint(text))?.flagged; } catch { return false; }
+}
+
 /** Display names and handles: a quick synchronous check. Returns a message when the name isn't allowed, null when fine or unavailable. */
 export async function checkName(name: string): Promise<string | null> {
   if (!AI_ENABLED || !name.trim()) return null;

@@ -2,6 +2,12 @@
 export type Release = { date: string; sha?: string; title: string; notes: string[] };
 
 export const RELEASES: Release[] = [
+  { date: "2026-10-15", title: "Version 0: Layover Today, Crew meetup, Rate a spot (admins only, not in What's new)", notes: [
+    "Layover Today (/today, first tab in Plan a layover): the field you checked in at (or your latest briefing stop), local time, METAR from aviationweather.gov with flight category, sunrise and sunset, your briefing picks there, top crew picks, your favorites, and links to Meetup and Rate.",
+    "Crew meetup (/meetup, in Crew Lounge): opt-in 'I'm at KXXX' for 2 to 24 hours with a short note and an optional public meeting place. You see other crews only after posting at the same field. I'm in, End it, Report (lands in the Change log). Blocks tail numbers, room numbers and hotel names; hotels can't be picked as meeting places. Check-in not required yet so admins can test (MEETUP_RULES.requireCheckin).",
+    "Rate a spot (/rate, in Plan a layover and Find spots): unrated places from your check-ins, visit reminders, briefings and favorites, plus find any listing by airport.",
+    "Server-gated: every /api/preview route answers 404 to anyone but super-user accounts until app_settings layover_audience = members. New tables meetups and meetup_joins only. No points, no ranking changes.",
+  ] },
   { date: "2026-10-15", title: "Landing page preview (admins only, not in What's new)", notes: [
     "New landing page at /start with no navigation bar: Plan a layover, Find spots or Crew Lounge. Open it from the Admin preview card in the Logbook.",
     "After choosing, the bottom bar is tailored: Plan (Briefings, New brief, Favorites, Logbook, Switch), Spots (Search, Add spot, Favorites, Logbook, Switch), Lounge (Lounge, Crew, Logbook, Switch).",

@@ -10,9 +10,9 @@ import { APP_VERSION } from "@/lib/version";
 import { cn } from "@/lib/utils";
 
 const CHOICES: { id: Experience; title: string; body: string; icon: typeof Search; tag?: string }[] = [
-  { id: "plan", title: "Plan a layover", body: "Build a briefing for your trip with food, things to do and hotels at every stop, then share it with your crew.", icon: ClipboardList },
-  { id: "spots", title: "Find spots", body: "Search crew-rated places to eat, things to do and places to stay, by airport or along your route.", icon: Search },
-  { id: "lounge", title: "Crew Lounge", body: "Talk shop with other crews about airport ops, gear, layover life and the app.", icon: MessagesSquare, tag: "Admins only" },
+  { id: "plan", title: "Plan a layover", body: "Today at the field: local time, weather and sunset. Build briefings with food, things to do and hotels at every stop.", icon: ClipboardList },
+  { id: "spots", title: "Find spots", body: "Search crew-rated places to eat, things to do and places to stay, then rate the ones you've been to.", icon: Search },
+  { id: "lounge", title: "Crew Lounge", body: "Talk shop with other crews, and find the crews on your layover tonight with Crew meetup.", icon: MessagesSquare, tag: "Admins only" },
 ];
 
 export default function StartPage() {
