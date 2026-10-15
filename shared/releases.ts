@@ -2,6 +2,13 @@
 export type Release = { date: string; sha?: string; title: string; notes: string[] };
 
 export const RELEASES: Release[] = [
+  { date: "2026-10-15", title: "Crew Lounge, Phase 0 (admins only, not in What's new)", notes: [
+    "Admin console: Crew Lounge tab for super-user accounts. Members get a 404 from every /api/lounge route until app_settings lounge_audience is set to members.",
+    "Categories: Airport Ops, Gear & Gadgets, Layover Life, Wheelsdown App, Hangar Talk. Threads, replies, airport tags, search, sort, anonymous posting (admins still see the author).",
+    "Tail numbers from any country are flagged while typing and refused by the server (N-numbers, dashed foreign registrations, spelled-out and phonetic tries).",
+    "Points only from Helpful votes by other members (2 each). They join the status ladder only once the lounge opens to members, so leaderboards don't move now.",
+    "Moderation: pin, lock, hide/restore, delete, member reports queue; actions land in the Change log. 15 starter threads under the Wheelsdown crew house name.",
+  ] },
   { date: "2026-10-12", title: "Admin error log, change log and feedback #18 / #19", notes: [
     "Admin: new Overview, Errors (filter by source, level, status, date and text; resolve or reopen) and Change log (every admin change, moderation decision, release and bonus, with filters and CSV).",
     "Admin: AI picks tab to review, hide and refresh AI picks per airport; feedback filters by type and text.",

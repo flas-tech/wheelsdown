@@ -23,6 +23,7 @@ import { registerCheckins } from "./checkins";
 import { registerModFix, closeDuplicateNotices } from "./modfix";
 import { registerAiPicks, fillStop, aiPrefOf, programsOf, claimAiPick, checkFirstRate } from "./aiPicks";
 import { registerSimilar } from "./similar";
+import { registerLounge } from "./lounge";
 import { dayKey } from "./metrics";
 import { SERVICES } from "@shared/services";
 import { track, visit, pageKey, outboundKey, report, untracked } from "./metrics";
@@ -652,6 +653,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   registerCheckins(app, { requireUser, userOf });
   registerAiPicks(app, { requireAdmin, requireUser, userOf });
   registerOps(app, { requireAdmin, userOf });
+  registerLounge(app, { userOf, isSuperAdmin }); // Crew Lounge: admins only until lounge_audience = members
   registerModFix(app, { requireAdmin, requireUser, ensureAirport: (c) => ensureAirport(c), byAdmin });
   app.get("/api/admin/costs", requireAdmin, async (req, res) => {
     const days = [7, 30, 90].includes(Number(req.query.days)) ? Number(req.query.days) : 30;

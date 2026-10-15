@@ -33,6 +33,7 @@ export const POINTS = {
   upvoteReceived: 1,  // someone else upvotes your listing
   helpfulReceived: 2, // someone marks your review helpful
   referral: 25,       // someone signs up with your invite link (only once they have an account)
+  loungeHelpful: 2,   // Crew Lounge: another member marks your thread or reply helpful (posting itself earns nothing)
 } as const;
 
 /** Milestone inside Student. Does not change tier thresholds or rankings. */
@@ -51,6 +52,8 @@ export function tierFor(points: number) {
 export type PointsBreakdown = {
   listings: number; listingsVetted: number; reviews: number; detailedReviews: number;
   votes: number; upvotesReceived: number; helpfulReceived: number; referrals: number; bonus: number; total: number;
+  /** Crew Lounge helpful votes received from other members. Always 0 until Crew Lounge opens to members. */
+  loungeHelpful?: number;
   /** Participation counter: everything this crew member has done (listings + ratings + votes). */
   participation: number;
 };
@@ -62,6 +65,8 @@ type Data = {
   votes: { targetType: string; targetId: number; voter: string; value: number; reason?: string | null; createdAt: number; id: number }[];
   /** Members, for referral credit: a signed-up account whose referredBy is you. */
   users?: { id: number; referredBy?: number | null; createdAt: number; displayName: string; crewRole: string; anonymous?: boolean | number | null }[];
+  /** Crew Lounge helpful votes received, by author id. Only loaded once Crew Lounge is open to members, so points don't move during the admin-only build. */
+  loungeHelpful?: Map<number, number>;
 };
 /** Accounts that signed up with this member's invite link. Deleted accounts drop out, so the credit always matches real sign-ups. */
 const referralsOf = (data: Data, userId: number) => (data.users || []).filter((u) => u.referredBy === userId && u.id !== userId);
@@ -85,11 +90,12 @@ export function computePoints(data: Data, userId: number, bonus = 0): PointsBrea
   const helpfulReceived = data.votes.filter((v) => v.targetType === "review" && myReviewIds.has(v.targetId) && v.value > 0 && v.voter !== voter).length;
   const detailedReviews = myReviews.filter((r) => (r.comment || "").trim().length >= 40).length;
   const referrals = referralsOf(data, userId).length;
+  const loungeHelpful = data.loungeHelpful?.get(userId) || 0;
   const total =
     mySpots.length * POINTS.listing + listingsVetted * POINTS.listingVetted + myReviews.length * POINTS.review +
     detailedReviews * POINTS.reviewDetail + votes * POINTS.vote + upvotesReceived * POINTS.upvoteReceived +
-    helpfulReceived * POINTS.helpfulReceived + referrals * POINTS.referral + bonus;
-  return { listings: mySpots.length, listingsVetted, reviews: myReviews.length, detailedReviews, votes, upvotesReceived, helpfulReceived, referrals, bonus, total,
+    helpfulReceived * POINTS.helpfulReceived + referrals * POINTS.referral + bonus + loungeHelpful * POINTS.loungeHelpful;
+  return { listings: mySpots.length, listingsVetted, reviews: myReviews.length, detailedReviews, votes, upvotesReceived, helpfulReceived, referrals, bonus, total, loungeHelpful,
     participation: mySpots.length + myReviews.length + votes };
 }
 

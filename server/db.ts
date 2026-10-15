@@ -136,6 +136,14 @@ CREATE INDEX IF NOT EXISTS error_log_last_idx ON error_log (last_at);
 CREATE TABLE IF NOT EXISTS change_log (id serial PRIMARY KEY, at bigint NOT NULL, kind text NOT NULL DEFAULT 'admin', actor text NOT NULL DEFAULT '', actor_id integer, action text NOT NULL, entity text NOT NULL DEFAULT '', entity_id text NOT NULL DEFAULT '', summary text NOT NULL DEFAULT '', detail text NOT NULL DEFAULT '');
 CREATE INDEX IF NOT EXISTS change_log_at_idx ON change_log (at);
 INSERT INTO app_settings (key, value) VALUES ('wright_seats_taken', '0') ON CONFLICT (key) DO NOTHING;
+CREATE TABLE IF NOT EXISTS lounge_threads (id serial PRIMARY KEY, category text NOT NULL, title text NOT NULL, body text NOT NULL DEFAULT '', airports text NOT NULL DEFAULT '[]', user_id integer, anonymous integer NOT NULL DEFAULT 0, pinned integer NOT NULL DEFAULT 0, locked integer NOT NULL DEFAULT 0, status text NOT NULL DEFAULT 'live', reply_count integer NOT NULL DEFAULT 0, created_at bigint NOT NULL DEFAULT 0, edited_at bigint, last_activity_at bigint NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS lounge_threads_cat_idx ON lounge_threads (category, last_activity_at);
+CREATE TABLE IF NOT EXISTS lounge_posts (id serial PRIMARY KEY, thread_id integer NOT NULL, user_id integer, body text NOT NULL, anonymous integer NOT NULL DEFAULT 0, status text NOT NULL DEFAULT 'live', created_at bigint NOT NULL DEFAULT 0, edited_at bigint);
+CREATE INDEX IF NOT EXISTS lounge_posts_thread_idx ON lounge_posts (thread_id, created_at);
+CREATE TABLE IF NOT EXISTS lounge_votes (target_type text NOT NULL, target_id integer NOT NULL, voter_id integer NOT NULL, created_at bigint NOT NULL DEFAULT 0, PRIMARY KEY (target_type, target_id, voter_id));
+CREATE TABLE IF NOT EXISTS lounge_reports (id serial PRIMARY KEY, target_type text NOT NULL, target_id integer NOT NULL, reporter_id integer NOT NULL, reason text NOT NULL, note text NOT NULL DEFAULT '', status text NOT NULL DEFAULT 'open', created_at bigint NOT NULL DEFAULT 0, resolved_at bigint, resolved_by text NOT NULL DEFAULT '');
+CREATE INDEX IF NOT EXISTS lounge_reports_status_idx ON lounge_reports (status, created_at);
+INSERT INTO app_settings (key, value) VALUES ('lounge_audience', 'admins') ON CONFLICT (key) DO NOTHING;
 `;
 
 async function migrate(d: DB) {

@@ -8,6 +8,7 @@ import { refAirport, isCode } from "./airportsData";
 /** Home bases are stored as the ICAO code (OPF -> KOPF, MIA -> KMIA) so everyone uses the same code worldwide. */
 export const canonBase = (b?: string | null) => { const c = (b || "").trim().toUpperCase(); return c ? refAirport(c)?.icao || c : ""; };
 import type { User, Vote, ReviewWithVotes, Airport, InsertAirport, Spot, InsertSpot, Review, InsertReview, Ad, InsertAd, SpotWithStats } from "@shared/schema";
+import { loungeHelpfulForPoints } from "./lounge";
 import { computePoints, recentActivity, publicName, tierFor, SEED_USERS, SEED_PASSWORD, type PublicUser, type Me } from "@shared/tiers";
 import { computeVet, seedVotesFor, shouldAutoHold } from "@shared/vetting";
 import { seedAirports, seedSpots, seedReviews, seedAds } from "@shared/seed";
@@ -470,8 +471,9 @@ export class DatabaseStorage {
   // ---- points / leaderboard ----
   async loadActivity() {
     const d = db();
-    const [s, r, v, u] = await Promise.all([d.select().from(spots), d.select().from(reviews), d.select().from(votes), d.select().from(users)]);
-    return { spots: s, reviews: r, votes: v, users: u };
+    const [s, r, v, u, lh] = await Promise.all([d.select().from(spots), d.select().from(reviews), d.select().from(votes), d.select().from(users), loungeHelpfulForPoints()]);
+    // Crew Lounge helpful votes join the status ladder only once the lounge is open to members (empty map until then)
+    return { spots: s, reviews: r, votes: v, users: u, loungeHelpful: lh };
   }
   // NOTE: computed in memory with a 30-second cache. Comfortable into the tens of thousands of rows; move to SQL rollups beyond that.
   private async activity() {

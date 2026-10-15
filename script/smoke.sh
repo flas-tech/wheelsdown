@@ -28,6 +28,10 @@ check "vote needs login"  'Sign in'        "$(curl -s -XPOST $BASE/api/spots/1/v
 R=$(curl -s -XPOST $BASE/api/auth/signup -H "$J" -d "{\"handle\":\"$H\",\"password\":\"smoke-pass-123\",\"displayName\":\"Smoke Test\",\"crewRole\":\"Pilot\",\"email\":\"$H@example.com\",\"acceptTerms\":true}")
 T=$(echo "$R" | jget "d.get('token','')" 2>/dev/null)
 [[ -n "$T" ]] && ok "sign up" || bad "sign up" "$R"
+# Crew Lounge is admin-only (Phase 0): members and guests get a plain 404
+check "lounge hidden (guest)"  '404' "$(curl -s -o /dev/null -w '%{http_code}' $BASE/api/lounge)"
+check "lounge hidden (member)" '404' "$(curl -s -o /dev/null -w '%{http_code}' $BASE/api/lounge -H "authorization: Bearer $T")"
+check "lounge hidden (post)"   '404' "$(curl -s -o /dev/null -w '%{http_code}' -XPOST $BASE/api/lounge/threads -H "$J" -H "authorization: Bearer $T" -d '{"category":"hangar","title":"hello there","body":"hi"}')"
 check "test signup takes no club seat" '"wrightNo":null' "$R"
 check "club"               '"seats":50'     "$(curl -s $BASE/api/club)"
 A="authorization: Bearer $T"

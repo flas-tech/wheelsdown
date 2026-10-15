@@ -1,6 +1,9 @@
 // What's new: a short screen the first time a member signs in (or opens the app) after a release.
 // EVERY RELEASE: add an entry at the top of RELEASES with the next id. Members see the entries newer than the last one
 // they saw (stored on their account, so once per release on any device). New members skip it: the welcome tour covers it.
+// FEATURES IN DEVELOPMENT (admin-only, e.g. Crew Lounge): don't add What's new entries for them, and don't bump the id for
+// admin-only releases. If an entry is written ahead of launch, tag it with feature: "lounge"; it stays hidden until that
+// feature is listed in PUBLIC_FEATURES.
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
@@ -10,10 +13,13 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { Logo } from "@/lib/ui";
 
-type Item = { icon: typeof Star; title: string; body: string; to?: string };
+type Item = { icon: typeof Star; title: string; body: string; to?: string; feature?: DevFeature };
 export type Release = { id: number; date: string; items: Item[] };
+/** Features still being built for admins only. Add one to PUBLIC_FEATURES on launch day. */
+type DevFeature = "lounge";
+const PUBLIC_FEATURES = new Set<DevFeature>([]);
 
-export const RELEASES: Release[] = [
+const ALL_RELEASES: Release[] = [
   {
     id: 8, date: "October 15, 2026",
     items: [
@@ -59,6 +65,10 @@ export const RELEASES: Release[] = [
     ],
   },
 ];
+/** What members see: entries for features still in development are dropped, and so are releases left empty. */
+export const RELEASES: Release[] = ALL_RELEASES
+  .map((r) => ({ ...r, items: r.items.filter((it) => !it.feature || PUBLIC_FEATURES.has(it.feature)) }))
+  .filter((r) => r.items.length > 0);
 export const LATEST_RELEASE = RELEASES[0].id;
 /** Notes from before this system (id 2 and earlier) were shown by the tour's What's new. */
 const FIRST_ID = 3;

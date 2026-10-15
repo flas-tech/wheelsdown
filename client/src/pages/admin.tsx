@@ -20,6 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { FEEDBACK_LABEL, type FeedbackItem } from "@shared/feedback";
 import { OverviewPanel, ErrorLog, ChangeLog, AiPicksAdmin, type AdmApi } from "./adminOps";
+import { LoungePanel } from "./lounge";
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 
 const inputCls = "w-full h-9 rounded-lg border border-input bg-background px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring";
@@ -71,6 +72,8 @@ const TABS: { id: string; label: string }[] = [
   { id: "spots", label: "Spots" }, { id: "check", label: "Needs check" }, { id: "users", label: "Crew" },
   { id: "bulk", label: "Import / Export" }, { id: "ads", label: "Ad banners" }, { id: "adv", label: "Advertisers" }, { id: "costs", label: "Costs" },
 ];
+/** Crew Lounge (Phase 0) needs a signed-in super-user account (posts have an author), and isn't in the browser-only demo. */
+const LOUNGE_TAB = { id: "lounge", label: "Crew Lounge" };
 const TAB_KEY = "wheelsdown-admin-tab";
 const API: AdmApi = { adm, admGet };
 
@@ -79,7 +82,8 @@ function Console({ onLogout, viaAccount = false }: { onLogout: () => void; viaAc
   const { data: fbOpen } = useQuery<{ counts: Record<string, number> }>({ queryKey: ["/api/admin/feedback", "open"], queryFn: admGet("/api/admin/feedback?status=open"), refetchInterval: 30000 });
   const { data: ov } = useQuery<{ errorsOpen: number; errors24: number }>({ queryKey: ["/api/admin/overview"], queryFn: admGet("/api/admin/overview"), refetchInterval: 60_000 });
   const fbNew = fbOpen?.counts?.new || 0;
-  const [tab, setTabState] = useState(() => { try { const t = sessionStorage.getItem(TAB_KEY); return t && TABS.some((x) => x.id === t) ? t : "overview"; } catch { return "overview"; } });
+  const tabs = viaAccount && !IS_STATIC ? [...TABS.slice(0, 6), LOUNGE_TAB, ...TABS.slice(6)] : TABS;
+  const [tab, setTabState] = useState(() => { try { const t = sessionStorage.getItem(TAB_KEY); return t && tabs.some((x) => x.id === t) ? t : "overview"; } catch { return "overview"; } });
   const setTab = (t: string) => { setTabState(t); try { sessionStorage.setItem(TAB_KEY, t); } catch { /* private mode */ } window.scrollTo({ top: 0 }); };
   const badge = (id: string) => {
     const n = id === "feedback" ? fbNew : id === "errors" ? ov?.errors24 || 0 : id === "mod" ? stats?.pending || 0 : 0;
@@ -98,7 +102,7 @@ function Console({ onLogout, viaAccount = false }: { onLogout: () => void; viaAc
       <Tabs value={tab} onValueChange={setTab}>
         <div className="-mx-4 overflow-x-auto no-scrollbar px-4 print:hidden sm:mx-0 sm:overflow-visible sm:px-0">
           <TabsList className="inline-flex w-max justify-start sm:h-auto sm:w-full sm:flex-wrap sm:gap-y-1">
-            {TABS.map((t) => <TabsTrigger key={t.id} value={t.id} data-testid={`tab-${t.id}`}>{t.label}{badge(t.id)}</TabsTrigger>)}
+            {tabs.map((t) => <TabsTrigger key={t.id} value={t.id} data-testid={`tab-${t.id}`}>{t.label}{badge(t.id)}</TabsTrigger>)}
           </TabsList>
         </div>
         <TabsContent value="overview"><OverviewPanel api={API} go={setTab} stats={stats} /></TabsContent>
@@ -106,6 +110,7 @@ function Console({ onLogout, viaAccount = false }: { onLogout: () => void; viaAc
         <TabsContent value="changes"><ChangeLog api={API} /></TabsContent>
         <TabsContent value="mod"><ModerationQueue /></TabsContent>
         <TabsContent value="feedback"><FeedbackInbox /></TabsContent>
+        {tabs.includes(LOUNGE_TAB) && <TabsContent value="lounge"><LoungePanel /></TabsContent>}
         <TabsContent value="aipicks"><AiPicksAdmin api={API} /></TabsContent>
         <TabsContent value="adv"><AdvertiserReport /></TabsContent>
         <TabsContent value="costs"><CostsPanel /></TabsContent>
