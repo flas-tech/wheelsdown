@@ -10,6 +10,7 @@ import { AirportCheckInCard, CheckInList, ProfileMap } from "@/lib/checkins";
 import { InviteCard } from "@/lib/share";
 import { AiPrefCard, ProgramsCard } from "@/lib/aiPicks";
 import { VersionCard } from "@/lib/version";
+import { setExperience, useExperience } from "@/lib/experience";
 import { BIO_MAX } from "@shared/interests";
 import { aircraftList } from "@shared/aircraft";
 import { useEffect, useState } from "react";
@@ -153,6 +154,7 @@ export default function ProfilePage() {
         <span className="flex items-center gap-3"><CircleHelp className="h-5 w-5 text-primary" /><span><span className="block text-sm font-semibold">Questions and answers</span><span className="block text-xs text-muted-foreground">Points, ratings, AI picks, briefings, privacy</span></span></span>
         <ChevronRight className="h-4 w-4 text-muted-foreground" />
       </Link>
+      {me.isAdmin && <PreviewCard />}
       <VersionCard />
       <p className="text-center text-xs text-muted-foreground">New here, or forgot where something is? <TourLink className="font-semibold text-foreground underline hover:text-primary" /></p>
 
@@ -409,4 +411,21 @@ function DeleteAccount() {
 function ModChip({ kind }: { kind: "checking" | "held" | "edit_held" | "waiting" | "removed" }) {
   const label = { checking: "Being checked", held: "On hold: tap to see why", edit_held: "Edit on hold", waiting: "Awaiting moderator", removed: "Removed by moderator" }[kind];
   return <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold", kind === "checking" ? "bg-primary/15 text-primary" : "bg-orange-500/15 text-orange-700 dark:text-orange-300")} data-testid={`chip-mod-${kind}`}>{label}</span>;
+}
+
+/** Admins only: try the landing page and tailored navigation before members get it. */
+function PreviewCard() {
+  const exp = useExperience();
+  const names = { plan: "Plan a layover", spots: "Find spots", lounge: "Crew Lounge" } as const;
+  return (
+    <section className="rounded-2xl border border-dashed border-primary/60 bg-card px-4 py-3" data-testid="card-preview-start">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-primary">Admin preview</p>
+      <p className="mt-0.5 text-sm font-semibold">New landing page</p>
+      <p className="text-xs text-muted-foreground">{exp ? `You're in ${names[exp]}. ` : ""}Pick an experience and the navigation changes to match. Members don't see this yet.</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <Link href="/start" className="inline-flex h-9 items-center rounded-full taxi-sign px-3.5 text-xs font-semibold hover-elevate" data-testid="link-preview-start">Open landing page</Link>
+        {exp && <button type="button" onClick={() => setExperience(null)} className="inline-flex h-9 items-center rounded-full border border-border px-3.5 text-xs font-semibold hover-elevate" data-testid="button-preview-classic">Back to classic</button>}
+      </div>
+    </section>
+  );
 }

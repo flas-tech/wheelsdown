@@ -8,7 +8,10 @@ import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { Search, PlusCircle, Shield, Trophy, BookUser, ClipboardList, Heart } from "lucide-react";
+import { Shield } from "lucide-react";
+import StartPage from "@/pages/start";
+import LoungePage from "@/pages/lounge";
+import { useNav, useExperience } from "@/lib/experience";
 import FavoritesPage from "@/pages/favorites";
 import NotFound from "@/pages/not-found";
 import Home, { MapRoute, SearchProvider, useSearch } from "@/pages/home";
@@ -47,19 +50,16 @@ function Shell() {
   const isAdmin = loc.startsWith("/admin");
   // New page starts at the top (home keeps its own scroll for browse mode)
   useEffect(() => { if (loc !== "/") window.scrollTo(0, 0); }, [loc]);
-  const nav = [
-    { href: "/", label: "Search", icon: Search, active: loc === "/" || loc.startsWith("/spot") },
-    { href: "/add", label: "Add spot", icon: PlusCircle, active: loc.startsWith("/add") },
-    { href: "/favorites", label: "Favorites", icon: Heart, active: loc.startsWith("/favorites") },
-    { href: "/brief", label: "Brief", icon: ClipboardList, active: loc.startsWith("/brief") || loc.startsWith("/b/") },
-    { href: "/crew", label: "Crew", icon: Trophy, active: loc.startsWith("/crew") },
-    { href: "/me", label: "Logbook", icon: BookUser, active: loc.startsWith("/me") || loc.startsWith("/notifications") },
-  ];
+  // members: the classic six-item nav; admins previewing an experience get a nav tailored to it (lib/experience.tsx)
+  const exp = useExperience();
+  const nav = useNav().map((n) => ({ ...n, active: n.active(loc) }));
+  // the landing page has no navigation at all
+  if (loc === "/start") return (<><StartPage /><TourHost /><UpdateBar /><WhatsNewHost /></>);
   return (
     <div className="min-h-[100dvh] flex flex-col">
       <header className="print:hidden sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur pt-safe-top px-safe">
         <div className={cn("mx-auto flex h-14 items-center justify-between px-4", isAdmin ? "max-w-6xl" : "max-w-xl")}>
-          <Link href="/" onClick={() => setSearch({ category: null })} data-testid="link-home" className="flex items-center gap-2">
+          <Link href={exp ? "/start" : "/"} onClick={() => setSearch({ category: null })} data-testid="link-home" className="flex items-center gap-2">
             <Logo className="h-7 w-7" />
             <span className="text-base font-semibold tracking-tight">Wheels<span className="text-primary">down</span></span>
             {IS_STATIC && <span className="rounded border border-primary/50 px-1 font-code text-[10px] font-bold text-primary" data-testid="badge-demo">DEMO</span>}
@@ -109,6 +109,7 @@ function Shell() {
           <Route path="/b/:token" component={SharedBriefPage} />
           <Route path="/reset/:token" component={ResetPage} />
           <Route path="/faq" component={FaqPage} />
+          <Route path="/lounge" component={LoungePage} />
           <Route path="/terms" component={LegalPage} />
           <Route path="/privacy" component={LegalPage} />
           <Route path="/guidelines" component={LegalPage} />
@@ -142,7 +143,7 @@ function Shell() {
       {/* iOS-style tab bar */}
       {!isAdmin && (
         <nav className="tabbar print:hidden sm:hidden fixed bottom-0 inset-x-0 z-30 border-t border-border bg-background/90 backdrop-blur pb-safe" data-testid="nav-tabbar">
-          <div className="mx-auto max-w-xl grid grid-cols-6 px-safe">
+          <div className="mx-auto max-w-xl grid px-safe" style={{ gridTemplateColumns: `repeat(${nav.length}, minmax(0, 1fr))` }}>
             {nav.map((n) => (
               <Link key={n.href} href={n.href} data-testid={`tab-${n.label}`} className={cn("flex min-w-0 flex-col items-center gap-0.5 pt-2 pb-1 text-[10px] font-medium tracking-tight", n.active ? "text-primary" : "text-muted-foreground")}>
                 <span className="relative"><n.icon className="h-5 w-5" />{n.href === "/me" && <NoticeDot />}</span><span className="truncate max-w-full">{n.label}</span>

@@ -2,6 +2,12 @@
 export type Release = { date: string; sha?: string; title: string; notes: string[] };
 
 export const RELEASES: Release[] = [
+  { date: "2026-10-15", title: "Landing page preview (admins only, not in What's new)", notes: [
+    "New landing page at /start with no navigation bar: Plan a layover, Find spots or Crew Lounge. Open it from the Admin preview card in the Logbook.",
+    "After choosing, the bottom bar is tailored: Plan (Briefings, New brief, Favorites, Logbook, Switch), Spots (Search, Add spot, Favorites, Logbook, Switch), Lounge (Lounge, Crew, Logbook, Switch).",
+    "Crew Lounge also has its own page at /lounge for admins. Members get Not found there and are sent to Search from /start.",
+    "Members keep the classic six-item nav. The choice is saved on the device only; no data, points or rankings change.",
+  ] },
   { date: "2026-10-15", title: "Crew Lounge, Phase 0 (admins only, not in What's new)", notes: [
     "Admin console: Crew Lounge tab for super-user accounts. Members get a 404 from every /api/lounge route until app_settings lounge_audience is set to members.",
     "Categories: Airport Ops, Gear & Gadgets, Layover Life, Wheelsdown App, Hangar Talk. Threads, replies, airport tags, search, sort, anonymous posting (admins still see the author).",

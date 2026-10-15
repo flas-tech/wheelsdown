@@ -1,4 +1,5 @@
 // Crew Lounge (Phase 0): admin-only discussion board, shown as a tab in the admin console for super-user accounts.
+import NotFound from "@/pages/not-found";
 // Not linked anywhere members can see, and not in What's new, the FAQ or the tour until it opens to members.
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -354,4 +355,12 @@ function ReportsView({ onBack, onOpen }: { onBack: () => void; onOpen: (threadId
       )}
     </div>
   );
+}
+
+/** /lounge: its own page for the Crew Lounge experience (admins only until launch; the server 404s for everyone else). */
+export default function LoungePage() {
+  const { me, loading } = useAuth();
+  if (loading) return null;
+  if (!me?.isAdmin) return <NotFound />;
+  return <LoungePanel />;
 }
