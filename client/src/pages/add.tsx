@@ -39,7 +39,10 @@ export default function AddPage() {
   const [loaded, setLoaded] = useState(false);
 
   // "Been here? Add it" links from AI picks carry the name and category: #/add/KBED?name=...&cat=stay
-  const linkQ = new URLSearchParams(window.location.hash.split("?")[1] || "");
+  // In-app taps put the query before the hash (/?name=...#/add/KBED); typed or shared links keep it inside the hash. Read it
+  // once on open, then tidy the address bar so a later plain "Add spot" doesn't pick up the old pick.
+  const [linkQ] = useState(() => new URLSearchParams(window.location.hash.split("?")[1] || window.location.search.slice(1)));
+  useEffect(() => { if (window.location.search) history.replaceState(history.state, "", window.location.pathname + window.location.hash); }, []);
   const linkCat = (["eat", "do", "stay", "fbo"] as const).find((c) => c === linkQ.get("cat"));
   const [category, setCategory] = useState<Category>(linkCat || search.category || "eat");
   const [code, setCode] = useState(initialIcao);

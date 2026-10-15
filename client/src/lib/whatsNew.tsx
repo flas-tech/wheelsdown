@@ -15,6 +15,12 @@ export type Release = { id: number; date: string; items: Item[] };
 
 export const RELEASES: Release[] = [
   {
+    id: 7, date: "October 15, 2026",
+    items: [
+      { icon: ClipboardCheck, title: "Been here? Add it for crews, fixed", body: "Tapping it on an AI pick now opens Add a spot with the name, address, website, price, distance, description and tags filled in, ready for you to check and tap Add spot." },
+    ],
+  },
+  {
     id: 6, date: "October 15, 2026",
     items: [
       { icon: ClipboardCheck, title: "Adding an AI pick fills in the form", body: "Tap Been here? Add it for crews on an AI pick and the name, address, website, price, distance, description and tags are already filled in. Check it, add your crew tip and rate it." },
