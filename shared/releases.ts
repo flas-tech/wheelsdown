@@ -2,6 +2,9 @@
 export type Release = { date: string; sha?: string; title: string; notes: string[] };
 
 export const RELEASES: Release[] = [
+  { date: "2026-10-15", title: "Admin landing page is now a tile grid (admins only)", notes: [
+    "/start shows 8 tiles in 2 columns: Plan layover, Find spots, Crew lounge, Crew meetup, Rate a spot, Leaderboard, Logbook, Classic app. Each opens its page and sets the matching tailored nav.",
+  ] },
   { date: "2026-10-15", title: "Version 0: Layover Today, Crew meetup, Rate a spot (admins only, not in What's new)", notes: [
     "Layover Today (/today, first tab in Plan a layover): the field you checked in at (or your latest briefing stop), local time, METAR from aviationweather.gov with flight category, sunrise and sunset, your briefing picks there, top crew picks, your favorites, and links to Meetup and Rate.",
     "Crew meetup (/meetup, in Crew Lounge): opt-in 'I'm at KXXX' for 2 to 24 hours with a short note and an optional public meeting place. You see other crews only after posting at the same field. I'm in, End it, Report (lands in the Change log). Blocks tail numbers, room numbers and hotel names; hotels can't be picked as meeting places. Check-in not required yet so admins can test (MEETUP_RULES.requireCheckin).",
