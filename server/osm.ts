@@ -9,12 +9,12 @@ export type Candidate = {
   kind: string; cuisine: string; address: string; website: string; hours: string; brand: string; wiki: boolean; score: number; osmUrl: string;
 };
 
-const ENDPOINTS = (process.env.OVERPASS_URLS || "https://overpass-api.de/api/interpreter,https://overpass.private.coffee/api/interpreter,https://overpass.kumi.systems/api/interpreter")
+const ENDPOINTS = (process.env.OVERPASS_URLS || "https://overpass-api.de/api/interpreter,https://maps.mail.ru/osm/tools/overpass/api/interpreter,https://overpass.private.coffee/api/interpreter")
   .split(",").map((s) => s.trim()).filter(Boolean);
 const UA = "Wheelsdown/1.0 (+https://getwheelsdown.com)";
 let lastGood = 0; // index of the server that answered last, tried first next time
 let downUntil = 0; // after every server fails, skip OpenStreetMap for a while so searches fall back fast
-const DOWN_MS = 10 * 60_000;
+const DOWN_MS = 60 * 60_000;
 const CACHE_MS = 7 * 86400_000;
 const cache = new Map<string, { at: number; v: Candidate[] }>();
 
@@ -36,7 +36,7 @@ async function race(q: string): Promise<any[]> {
     let left = order.length, done = false;
     order.forEach((url, i) => setTimeout(() => {
       if (done) { left--; return; }
-      one(url, q, Number(process.env.OVERPASS_TIMEOUT_MS || 20_000)).then((v) => { if (!done) { done = true; lastGood = ENDPOINTS.indexOf(url); resolve(v); } })
+      one(url, q, Number(process.env.OVERPASS_TIMEOUT_MS || 25_000)).then((v) => { if (!done) { done = true; lastGood = ENDPOINTS.indexOf(url); resolve(v); } })
         .catch((e) => { if (process.env.OVERPASS_DEBUG) console.log("[osm]", url, String(e?.message || e)); if (--left === 0 && !done) reject(new Error("no Overpass server answered")); });
     }, i * 3000));
   });
@@ -147,7 +147,9 @@ export async function osmCandidates(ap: { lat: number; lon: number }, specs: Can
   const key = `${ap.lat.toFixed(3)},${ap.lon.toFixed(3)}|${specs.map((s) => `${s.category}:${s.focus || ""}`).join(",")}`;
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.v;
-  const v = await fetchCandidates(ap, specs, want);
+  let v: Candidate[] = [];
+  try { v = await fetchCandidates(ap, specs, want); }
+  catch (e: any) { console.log(`[osm] Overpass: ${String(e?.message || e).slice(0, 100)}; using Photon`); v = await photonCandidates(ap, specs, want); }
   if (v.length) { cache.set(key, { at: Date.now(), v }); if (cache.size > 300) cache.delete(cache.keys().next().value!); }
   return v;
 }
@@ -206,3 +208,71 @@ export const draftDescription = (c: Candidate) => {
   const k = c.kind.charAt(0).toUpperCase() + c.kind.slice(1);
   return `${k}, ${c.miles} mi from the field.${c.hours ? ` Listed hours: ${c.hours}.` : ""} From OpenStreetMap; check details before you go.`.slice(0, 300);
 };
+
+// ---------------------------------------------------------------- Photon fallback (komoot, OpenStreetMap data)
+// Overpass's public servers block parts of AWS/Azure and are often overloaded. Photon answers in about a second with the
+// nearest named places of a given OpenStreetMap type (no cuisine, website or hours), and works from Render.
+const PHOTON = process.env.PHOTON_URL || "https://photon.komoot.io";
+const P_EAT = ["amenity:restaurant", "amenity:cafe", "amenity:fast_food", "amenity:pub", "amenity:bar", "amenity:ice_cream"];
+const P_DO = ["tourism:museum", "tourism:attraction", "tourism:zoo", "tourism:aquarium", "tourism:theme_park", "tourism:gallery", "tourism:viewpoint", "leisure:park", "leisure:nature_reserve",
+  "leisure:golf_course", "leisure:marina", "leisure:water_park", "leisure:bowling_alley", "natural:beach", "historic:monument", "historic:fort", "historic:ship", "amenity:theatre", "amenity:cinema", "craft:brewery", "shop:mall"];
+const P_ACT: Record<string, { tags: string[]; q?: string[] }> = {
+  golf: { tags: ["leisure:golf_course", "leisure:miniature_golf"], q: ["golf"] }, fishing: { tags: ["leisure:marina", "shop:fishing", "leisure:fishing"], q: ["fishing charter", "marina"] },
+  spa: { tags: ["leisure:spa", "amenity:spa", "shop:massage", "leisure:sauna"], q: ["spa", "massage"] }, beach: { tags: ["natural:beach", "leisure:beach_resort"], q: ["beach"] },
+  outdoors: { tags: ["leisure:park", "leisure:nature_reserve", "leisure:garden", "boundary:national_park", "tourism:viewpoint"], q: ["state park", "trail"] },
+  museums: { tags: ["tourism:museum", "tourism:gallery", "historic:monument", "historic:fort", "historic:ship", "historic:aircraft"], q: ["museum"] },
+  zoo: { tags: ["tourism:zoo", "tourism:aquarium"], q: ["zoo", "aquarium"] }, shopping: { tags: ["shop:mall", "shop:department_store", "amenity:marketplace", "shop:books"], q: ["mall", "outlet"] },
+  fitness: { tags: ["leisure:fitness_centre", "leisure:sports_centre"], q: ["gym", "yoga"] },
+  fun: { tags: ["leisure:bowling_alley", "leisure:amusement_arcade", "leisure:escape_game", "leisure:miniature_golf", "amenity:cinema", "amenity:theatre", "amenity:casino", "tourism:theme_park"], q: ["bowling", "escape room"] },
+  nightlife: { tags: ["amenity:nightclub", "amenity:bar", "amenity:pub", "craft:brewery", "craft:winery"], q: ["brewery", "live music"] },
+  sights: { tags: ["tourism:attraction", "tourism:viewpoint", "man_made:lighthouse", "historic:monument"], q: ["historic", "tour"] },
+};
+const P_FOOD: Record<string, string[]> = {
+  pizza: ["pizza"], bbq: ["bbq", "barbecue"], burgers: ["burger"], mexican: ["mexican", "taco"], sushi: ["sushi", "ramen"], chinese: ["chinese"], thai: ["thai", "pho"], indian: ["indian"],
+  italian: ["italian", "trattoria"], mediterranean: ["greek", "mediterranean"], latin: ["cuban", "latin"], seafood: ["seafood", "oyster"], steak: ["steakhouse", "steak"], caribbean: ["caribbean", "jamaican"],
+  southern: ["southern", "soul food"], wings: ["wings"], deli: ["deli", "sandwich"], breakfast: ["breakfast", "diner"], coffee: ["coffee"], bakery: ["bakery", "donut"], healthy: ["salad", "juice"], bar: ["brewery", "pub"],
+};
+type PF = { properties: Record<string, any>; geometry: { coordinates: [number, number] } };
+async function photon(path: string): Promise<PF[]> {
+  const r = await fetch(`${PHOTON}${path}`, { headers: { "user-agent": UA }, signal: AbortSignal.timeout(8000) });
+  if (!r.ok) throw new Error(`photon ${r.status}`);
+  return ((await r.json()) as any).features || [];
+}
+export async function photonCandidates(ap: { lat: number; lon: number }, specs: CandidateSpec[], want: Partial<Record<OsmCat, number>>): Promise<Candidate[]> {
+  const out: Candidate[] = [];
+  for (const s of specs) {
+    const f = s.focus || "";
+    const km = radiiFor(s)[1];
+    const tags = s.category === "stay" ? ["tourism:hotel", "tourism:motel"] : s.category === "eat" ? P_EAT : f.startsWith("act:") ? (P_ACT[f.slice(4)]?.tags || P_DO) : P_DO;
+    const words = s.category === "eat" ? P_FOOD[f] : f.startsWith("act:") ? P_ACT[f.slice(4)]?.q : undefined;
+    const tq = tags.map((t) => `osm_tag=${encodeURIComponent(t)}`).join("&");
+    // reverse = nearest of those types; spread over the field and four points ~5 km out so the terminal doesn't crowd the list
+    const d = 0.045, pts = words ? [[0, 0]] : [[0, 0], [d, 0], [-d, 0], [0, d * 1.2], [0, -d * 1.2]];
+    const foodOnly = s.category === "eat" && !!words; // a food type: name search only, nearest-of-type would drown it
+    const calls: Promise<PF[]>[] = (foodOnly ? [] : pts).map(([a, b]) => photon(`/reverse?lat=${(ap.lat + a).toFixed(5)}&lon=${(ap.lon + b).toFixed(5)}&radius=${Math.min(km, 20)}&limit=50&${tq}`).catch(() => []));
+    if (f.startsWith("act:")) for (const t of tags) calls.push(photon(`/reverse?lat=${ap.lat.toFixed(5)}&lon=${ap.lon.toFixed(5)}&radius=${Math.min(km, 20)}&limit=25&osm_tag=${encodeURIComponent(t)}`).catch(() => [])); // each kind, so one doesn't crowd out the rest
+    for (const w of words || []) calls.push(photon(`/api/?q=${encodeURIComponent(w)}&lat=${ap.lat.toFixed(5)}&lon=${ap.lon.toFixed(5)}&limit=40${s.category === "eat" ? "&osm_tag=amenity" : ""}`).catch(() => []));
+    const feats = (await Promise.all(calls)).flat();
+    const seen = new Set<string>();
+    for (const x of feats) {
+      const p = x.properties || {}; const [lng, lat] = x.geometry?.coordinates || [];
+      if (!p.name || lat == null || SKIP.test(p.name) || /^(highway|place|boundary|landuse|building|railway|aeroway|office)$/.test(p.osm_key || "") || /^(vacant|pet_grooming|pet|car_repair|hairdresser)$/.test(p.osm_value || "") || /\bpet\b/i.test(p.name)) continue;
+      const id = `${p.osm_type || "N"}${p.osm_id}`; if (seen.has(id)) continue; seen.add(id);
+      const miles = Math.round(milesBetween({ lat: ap.lat, lon: ap.lon }, { lat, lon: lng }) * 10) / 10;
+      if (miles > km / 1.609 || (s.category !== "stay" && miles < AIRSIDE_MI)) continue;
+      if (words && s.category === "eat" && !/^(restaurant|cafe|fast_food|pub|bar|food_court|ice_cream|biergarten)$/.test(p.osm_value || "")) continue;
+      const t: Record<string, string> = { [p.osm_key || "amenity"]: p.osm_value || "" };
+      const address = p.housenumber && p.street ? [`${p.housenumber} ${p.street}`, p.city || "", [p.state, p.postcode].filter(Boolean).join(" ")].filter(Boolean).join(", ") : "";
+      const type = p.osm_type === "W" ? "way" : p.osm_type === "R" ? "relation" : "node";
+      out.push({ ref: `${type[0]}${p.osm_id}`, category: s.category, name: String(p.name).slice(0, 120), lat, lng, miles, kind: kindOf(t), cuisine: "", address, website: "", hours: "", brand: "", wiki: false,
+        score: 10 - miles * (s.category === "eat" ? 0.9 : 0.35) + (address ? 0.5 : 0) + (p.osm_value === "park" ? -1.5 : 0), osmUrl: `https://www.openstreetmap.org/${type}/${p.osm_id}` });
+    }
+  }
+  const res: Candidate[] = [];
+  for (const s of specs) {
+    const names = new Set<string>();
+    res.push(...out.filter((c) => c.category === s.category).sort((a, b) => b.score - a.score)
+      .filter((c) => { const k = c.name.toLowerCase().replace(/[^a-z0-9]/g, ""); if (names.has(k)) return false; names.add(k); return true; }).slice(0, want[s.category] || 30));
+  }
+  return res;
+}
