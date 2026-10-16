@@ -130,6 +130,7 @@ CREATE INDEX IF NOT EXISTS ai_picks_icao_idx ON ai_picks (icao, status);
 ALTER TABLE ai_picks ADD COLUMN IF NOT EXISTS focus text NOT NULL DEFAULT '';
 ALTER TABLE ai_picks ADD COLUMN IF NOT EXISTS spot_id integer;
 ALTER TABLE ai_picks ADD COLUMN IF NOT EXISTS bonus_user_id integer;
+ALTER TABLE ai_picks ADD COLUMN IF NOT EXISTS draft boolean NOT NULL DEFAULT false;
 CREATE TABLE IF NOT EXISTS error_log (id serial PRIMARY KEY, fingerprint text NOT NULL, level text NOT NULL DEFAULT 'error', source text NOT NULL, message text NOT NULL, path text NOT NULL DEFAULT '', method text NOT NULL DEFAULT '', status_code integer, user_id integer, detail text NOT NULL DEFAULT '', count integer NOT NULL DEFAULT 1, first_at bigint NOT NULL DEFAULT 0, last_at bigint NOT NULL DEFAULT 0, resolved boolean NOT NULL DEFAULT false, resolved_by text NOT NULL DEFAULT '', resolved_at bigint);
 CREATE INDEX IF NOT EXISTS error_log_fp_idx ON error_log (fingerprint, resolved);
 CREATE INDEX IF NOT EXISTS error_log_last_idx ON error_log (last_at);

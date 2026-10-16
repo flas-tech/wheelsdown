@@ -37,7 +37,9 @@ export function ProgramChip({ spot }: { spot: Pick<SpotWithStats, "category" | "
 
 function AiCard({ spot }: { spot: AiPick }) {
   const M = CAT_META[spot.category as keyof typeof CAT_META];
-  const out = spot.website || `https://maps.apple.com/?q=${encodeURIComponent(spot.name + " " + (spot.address || ""))}`;
+  // OpenStreetMap places come with exact coordinates, so Maps opens on the right spot even without an address
+  const maps = `https://maps.apple.com/?q=${encodeURIComponent(spot.name + (spot.address ? " " + spot.address : ""))}${spot.lat != null && spot.lng != null ? `&ll=${spot.lat},${spot.lng}` : ""}`;
+  const out = spot.website || maps;
   const went = () => noteVisit({ id: spot.id, name: spot.name, icao: spot.icao, href: aiAddHref(spot) });
   return (
     <article className="rounded-2xl border border-dashed border-violet-400/60 bg-card p-4" data-testid={`card-ai-${-spot.id}`}>
@@ -45,6 +47,7 @@ function AiCard({ spot }: { spot: AiPick }) {
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-1.5">
             <PickTag ai />
+            {spot.ai.draft && <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground" title="Found on OpenStreetMap. AI is still checking it." data-testid={`badge-ai-draft-${-spot.id}`}><Loader2 className="h-2.5 w-2.5 animate-spin" />Checking</span>}
             {spot.ai.meal && <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold">{MEAL_LABEL[spot.ai.meal]}</span>}
             <ProgramChip spot={spot} />
           </div>
@@ -57,7 +60,7 @@ function AiCard({ spot }: { spot: AiPick }) {
         {spot.cost != null && <span className="shrink-0 text-right"><span className="block font-code text-sm font-bold text-primary">{costText(spot)}</span>{spot.cost > 0 && <span className="block text-[10px] text-muted-foreground whitespace-nowrap">{costRange(spot.category, spot.cost)}</span>}</span>}
       </div>
       {spot.description && <p className="mt-2 text-sm text-muted-foreground line-clamp-3">{spot.description}</p>}
-      {spot.address && <a href={`https://maps.apple.com/?q=${encodeURIComponent(spot.name + " " + spot.address)}`} onClick={went} target="_blank" rel="noopener noreferrer" className="mt-1.5 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"><MapPin className="h-3 w-3" />{spot.address}</a>}
+      {spot.address && <a href={maps} onClick={went} target="_blank" rel="noopener noreferrer" className="mt-1.5 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"><MapPin className="h-3 w-3" />{spot.address}</a>}
       <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
         <a href={out} onClick={went} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"><ExternalLink className="h-3 w-3" />{spot.website ? "Website" : "Maps"}</a>
         <Link href={aiAddHref(spot)} className="inline-flex items-center gap-1 font-semibold text-primary" data-testid={`link-ai-add-${-spot.id}`}><Plus className="h-3.5 w-3.5" />Been here? Add it for crews</Link>
@@ -255,7 +258,7 @@ function AiPicksList({ icao, category, program, food, on, alongside }: { icao: s
   return (
     <section className="space-y-3" data-testid={`section-ai-picks-${icao}`}>
       <p className="flex items-start gap-2 text-xs text-muted-foreground"><Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-violet-600" />
-        <span>{alongside ? "AI picks near crew listings above." : "No crew picks here yet, so these are AI picks."} They aren't crew-rated: check hours before you go, and add the ones you try so they become crew picks.</span></p>
+        <span>{alongside ? "AI picks near crew listings above." : "No crew picks here yet, so these are AI picks."} They aren't crew-rated: check hours before you go, and add the ones you try so they become crew picks.{picks.some((p) => p.ai.sources.some((u) => u.includes("openstreetmap.org"))) && <> Places from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer" className="underline">© OpenStreetMap contributors</a>.</>}</span></p>
       {picks.map((p) => <AiCard key={p.id} spot={p} />)}
       {category !== "stay" && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-dashed border-violet-400/60 px-3 py-2.5" data-testid={`box-find-more-${icao}`}>

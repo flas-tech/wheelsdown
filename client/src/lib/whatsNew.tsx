@@ -7,7 +7,7 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { BadgeCheck, PanelBottom, ArrowUpDown, BellRing, CircleHelp, ClipboardCheck, Compass, Flame, ListPlus, RefreshCw, Sparkles, Star, Undo2 } from "lucide-react";
+import { BadgeCheck, MapPinned, PanelBottom, ArrowUpDown, BellRing, CircleHelp, ClipboardCheck, Compass, Flame, ListPlus, RefreshCw, Sparkles, Star, Undo2 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -20,6 +20,13 @@ type DevFeature = "lounge";
 const PUBLIC_FEATURES = new Set<DevFeature>([]);
 
 const ALL_RELEASES: Release[] = [
+  {
+    id: 9, date: "October 15, 2026",
+    items: [
+      { icon: Sparkles, title: "Find with AI is much faster", body: "AI now starts from real places on the map near the field and picks the best, instead of searching from scratch. Results usually arrive in under 30 seconds, and nearby places show up right away marked Checking while AI reviews them." },
+      { icon: MapPinned, title: "Better results for a specific search", body: "Searching for one kind of food or thing to do, like spas, golf or sushi, now returns places of that kind only, with exact map pins. Place data comes from OpenStreetMap contributors." },
+    ],
+  },
   {
     id: 8, date: "October 15, 2026",
     items: [

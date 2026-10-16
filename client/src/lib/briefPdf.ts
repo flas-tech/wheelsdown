@@ -17,7 +17,7 @@ export type BriefStopFull = {
   /** automatic AI picks the owner removed, and the owner's order of everything at the stop (AI picks negative) */
   aiHide?: number[]; order?: number[];
 };
-export type AiPick = SpotWithStats & { ai: { meal: "breakfast" | "lunch" | "dinner" | null; sources: string[]; createdAt: number; extra?: boolean; focus?: string; foods?: string[]; acts?: string[]; slot?: { cat: string; meal?: string } } };
+export type AiPick = SpotWithStats & { ai: { meal: "breakfast" | "lunch" | "dinner" | null; sources: string[]; createdAt: number; draft?: boolean; extra?: boolean; focus?: string; foods?: string[]; acts?: string[]; slot?: { cat: string; meal?: string } } };
 export const isAi = (s: SpotWithStats): s is AiPick => s.id < 0 || !!(s as any).ai;
 const SLOT_FILL: Record<string, string> = { breakfast: "breakfast", lunch: "lunch", dinner: "dinner" };
 /** Why an AI pick is in a briefing: the gap it fills, or what the owner asked for when it was found. */

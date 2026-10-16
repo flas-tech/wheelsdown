@@ -13,7 +13,7 @@ export const AI_ENABLED = !!KEY && process.env.AI_DISABLED !== "1";
 const UA = "Wheelsdown/1.0 (+https://getwheelsdown.com)";
 
 // ---------------------------------------------------------------- model calls
-type CallOpts = { purpose: AiPurpose; search?: boolean; schema: { name: string; schema: any }; timeoutMs?: number; effort?: "minimal" | "low" | "medium" };
+type CallOpts = { purpose: AiPurpose; search?: boolean; optionalSearch?: boolean; schema: { name: string; schema: any }; timeoutMs?: number; effort?: "minimal" | "low" | "medium" };
 async function callModel<T>(system: string, user: string, o: CallOpts): Promise<T> {
   if (!AI_ENABLED) throw new Error("AI disabled");
   const ctl = new AbortController();
@@ -28,7 +28,7 @@ async function callModel<T>(system: string, user: string, o: CallOpts): Promise<
     };
     if (o.search) body.tools = [{ type: "web_search" }];
     // picks must come from a real search: without one the model returns nothing rather than guess
-    if (o.search && o.purpose === "picks") body.tool_choice = "required";
+    if (o.search && o.purpose === "picks" && !o.optionalSearch) body.tool_choice = "required";
     const r = await fetch(`${BASE}/responses`, { method: "POST", headers: { authorization: `Bearer ${KEY}`, "content-type": "application/json" }, body: JSON.stringify(body), signal: ctl.signal });
     if (!r.ok) { recordAi(o.purpose, { input: 0, cached: 0, output: 0, searches: 0, failed: true }); throw new Error(`AI ${r.status}: ${(await r.text()).slice(0, 200)}`); }
     const j: any = await r.json();
@@ -402,4 +402,54 @@ For hotels, prefer these rewards programs, which this crew collects: ${programs.
       sources: (p.sources || []).filter((u) => /^https?:\/\//.test(u)).slice(0, 4),
     };
   }).filter((p) => p.name && /\d/.test(p.address) && !/[()]|\barea\b|\bsee\b|\bnear\b/i.test(p.address + " " + p.name));
+}
+
+// ---------------------------------------------------------------- AI picks from real candidates (OpenStreetMap first)
+export type CandidateIn = { ref: string; category: "eat" | "do" | "stay"; name: string; kind: string; cuisine: string; miles: number; address: string; website: string; hours: string; brand: string; wiki: boolean };
+export type RankedDraft = AiPickDraft & { ref: string };
+const RANK_SCHEMA = { name: "ai_ranked_picks", schema: JSON.parse(JSON.stringify(PICKS_SCHEMA.schema)) };
+RANK_SCHEMA.schema.properties.picks.items.required.push("ref");
+RANK_SCHEMA.schema.properties.picks.items.properties.ref = { type: "string" };
+
+/**
+ * Choose and describe the best places from a list of real nearby places (OpenStreetMap). Much faster than searching from
+ * scratch: web search is optional, only to confirm top picks are open or to fill a missing address.
+ * want: how many of each category to return.
+ */
+export async function rankCandidates(ap: { icao: string; name: string; city: string; region?: string | null; country?: string | null; lat: number | null; lon: number | null },
+  cands: CandidateIn[], want: { eat?: number; do?: number; stay?: number }, ask: string, avoidNames: string[], programs: string[] = [], search = true): Promise<RankedDraft[]> {
+  const total = (want.eat || 0) + (want.do || 0) + (want.stay || 0);
+  const system = `You choose places for Wheelsdown, a guide for airline, corporate and charter flight crews on layovers. Crews have not listed these yet, so your picks fill the gap.
+You get a list of real places near the airport from OpenStreetMap (ref, name, kind, cuisine, miles from the field, address, website, listed hours, brand, wiki = has a Wikipedia/Wikidata entry).
+Always return picks: choose the best ${total} for crews: ${[want.eat ? `${want.eat} eat` : "", want.do ? `${want.do} do` : "", want.stay ? `${want.stay} stay` : ""].filter(Boolean).join(", ")}. ${ask}
+- Choose from the list and copy its ref exactly. Favor places that are well known, well reviewed or a local institution, close to the field, and open now. Skip anything that looks closed, private, members-only, inside the secure area of the terminal, or not a real destination.
+- Food: favor local favorites over national chains, but a reliable chain is fine when that is what is near the field. Give eat picks a meal (breakfast, lunch or dinner) that suits them and mix grab-and-go and sit-down.
+- Hotels: brands from major rewards programs first, with the full brand name.${programs.length ? ` This crew collects: ${programs.join(", ")}.` : ""}
+${search ? "- You may use web search a few times, only to confirm a top pick is still open or to find a missing street address. Do not search for every place.\n" : ""}- If the list truly lacks enough good options you may add up to 2 places you are certain are real, open and nearby, with ref "" and a full street address.
+Fields:
+- name: the official name only. address: the street address from the list, or the real one if the list has none (may be "" only when it can't be confirmed). website: official URL or "".
+- description: 1-2 plain sentences (max 220 chars): what it is and why a crew would go. No hype, no emojis, no exclamation points. Don't invent specifics you can't support (seat counts, years, awards).
+- costLevel: eat ${priceGuide("eat")}; do ${priceGuide("do")}; stay ${priceGuide("stay")}. null if unknown.
+- pace (eat only, else null): grab, sit or both. minutesNeeded (do only, else null): typical visit length.
+- tags: up to 4, ${TAG_HINT}.
+- sources: URLs you relied on (the website counts). meal "none" for do and stay.
+Already listed, never repeat: ${avoidNames.slice(0, 80).join("; ") || "(none)"}.`;
+  const user = JSON.stringify({ airport: { code: ap.icao, name: ap.name, city: ap.city, region: ap.region || "", country: ap.country || "" }, places: cands.map((c) => ({ ...c, wiki: c.wiki || undefined, brand: c.brand || undefined, hours: c.hours || undefined, website: c.website || undefined, address: c.address || undefined, cuisine: c.cuisine || undefined })) });
+  const v = await callModel<{ picks: RankedDraft[] }>(system, user, { purpose: "picks", search, optionalSearch: true, schema: RANK_SCHEMA, timeoutMs: search ? 120_000 : 60_000, effort: "low" });
+  const raw = v.picks || [];
+  console.log(`[ai-picks] ${ap.icao}: ranked ${raw.length} of ${cands.length} candidates`);
+  return raw.map((p) => {
+    const website = p.website && /^https?:\/\//.test(p.website) ? p.website : p.website ? "https://" + p.website : "";
+    let site = ""; try { site = website ? new URL(website).toString() : ""; } catch { site = ""; }
+    return {
+      ...p, ref: String(p.ref || "").trim(),
+      name: (p.name || "").trim().slice(0, 120), address: (p.address || "").trim().slice(0, 200), website: site,
+      description: (p.description || "").replace(/!/g, ".").trim().slice(0, 300),
+      costLevel: p.costLevel != null && costOptions(p.category).includes(p.costLevel) ? p.costLevel : null,
+      pace: p.category === "eat" ? p.pace : null, minutesNeeded: p.category === "do" ? p.minutesNeeded : null,
+      meal: p.category === "eat" ? p.meal : "none",
+      tags: (p.tags || []).map((t) => t.toLowerCase().trim().slice(0, 30)).filter(Boolean).slice(0, 4),
+      sources: (p.sources || []).filter((u) => /^https?:\/\//.test(u)).slice(0, 4),
+    };
+  }).filter((p) => p.name && !/[()]/.test(p.name));
 }
