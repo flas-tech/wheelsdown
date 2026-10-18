@@ -201,6 +201,22 @@
   body {
     @apply font-sans antialiased bg-background text-foreground;
   }
+
+  /* No zooming on phones: no double-tap zoom, no text inflation on rotate */
+  html {
+    touch-action: manipulation;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  /* iPhone Safari zooms into any text field under 16px when it's tapped. Keep fields at 16px on touch screens. */
+  @media (pointer: coarse) {
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+    textarea,
+    select {
+      font-size: 16px !important;
+    }
+  }
 }
 
 /**
