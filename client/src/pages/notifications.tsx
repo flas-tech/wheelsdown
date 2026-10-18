@@ -7,6 +7,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth, TierChip } from "@/lib/auth";
 import { CrewAvatar } from "@/lib/aircraft";
 import { NoticeCards, useFollowNotes, useUnreadCount, type FollowNote } from "@/lib/notices";
+import { CrewRequestList, MessageList, useMessages, useMyCrew } from "@/lib/mycrew";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -93,6 +94,14 @@ export default function NotificationsPage() {
   // remember what was new when the page opened, so the highlight stays while you read
   const [fresh, setFresh] = useState<Set<number> | null>(null);
   const marked = useRef(false);
+  const crew = useMyCrew();
+  const msgs = useMessages();
+  const [freshMsgs, setFreshMsgs] = useState<Set<number> | null>(null);
+  useEffect(() => {
+    if (!msgs.data || freshMsgs) return;
+    setFreshMsgs(new Set(msgs.data.items.filter((i) => i.unread).map((i) => i.id)));
+    if (msgs.data.unread > 0) apiRequest("POST", "/api/me/messages/seen").then(() => queryClient.invalidateQueries({ queryKey: ["/api/me/messages"] })).catch(() => {});
+  }, [msgs.data, freshMsgs]);
   useEffect(() => {
     if (!notes.data || fresh) return;
     setFresh(new Set(notes.data.items.filter((i) => i.unread).map((i) => i.user.id)));
@@ -108,7 +117,7 @@ export default function NotificationsPage() {
       <div className="rounded-2xl border border-card-border bg-card p-6 text-center space-y-3">
         <Bell className="mx-auto h-6 w-6 text-primary" />
         <p className="font-semibold">Your notifications</p>
-        <p className="text-sm text-muted-foreground">Sign in to see who followed you and follow them back.</p>
+        <p className="text-sm text-muted-foreground">Sign in to see who followed you, crew requests and messages from the Wheelsdown team.</p>
         <button onClick={() => openAuth()} className="h-11 px-6 rounded-full taxi-sign font-semibold hover-elevate" data-testid="button-notifications-signin">Sign in</button>
       </div>
     </div>
@@ -119,6 +128,8 @@ export default function NotificationsPage() {
   return (
     <div className="space-y-5">
       <LogbookTabs />
+      <CrewRequestList items={crew.data?.incoming || []} />
+      <MessageList items={msgs.data?.items || []} fresh={freshMsgs} />
       <NoticeCards />
       <section className="rounded-2xl border border-card-border bg-card" data-testid="section-follow-notifications">
         <div className="flex items-baseline justify-between gap-3 px-4 pt-4 pb-2">

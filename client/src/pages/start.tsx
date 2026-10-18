@@ -1,10 +1,10 @@
-// Landing page (admin preview): pick an experience, then the nav is tailored to it. No navigation bar here.
-// Members never see it; they're sent to Search, exactly as today.
+// Landing page: pick an experience, then the nav is tailored to it. No navigation bar here.
+// Signed-in members see it once the launch switch is on (admins always); guests are sent to Search.
 import { useEffect } from "react";
 import { useLocation } from "wouter";
-import { BookUser, ClipboardList, LayoutGrid, MessagesSquare, Search, Star, Trophy, Users } from "lucide-react";
+import { BookUser, ClipboardList, Contact, MessagesSquare, Search, Star, Trophy, Users } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { setExperience, useExperience, usePreview, type Experience } from "@/lib/experience";
+import { setExperience, useAdminOnly, useExperience, usePreviewState, type Experience } from "@/lib/experience";
 import { Logo, ThemeToggle } from "@/lib/ui";
 import { APP_VERSION } from "@/lib/version";
 import { cn } from "@/lib/utils";
@@ -14,20 +14,21 @@ type Tile = { key: string; title: string; body: string; icon: typeof Search; hre
 const TILES: Tile[] = [
   { key: "plan", title: "Plan layover", body: "Today at the field and your briefings", icon: ClipboardList, href: "/today", exp: "plan" },
   { key: "spots", title: "Find spots", body: "Crew-rated food, things to do, hotels", icon: Search, href: "/", exp: "spots" },
-  { key: "lounge", title: "Crew lounge", body: "Talk shop with other crews", icon: MessagesSquare, href: "/lounge", exp: "lounge", tag: "Preview" },
-  { key: "meetup", title: "Crew meetup", body: "Who else is here tonight", icon: Users, href: "/meetup", exp: "lounge", tag: "Preview" },
-  { key: "rate", title: "Rate a spot", body: "Places waiting for your rating", icon: Star, href: "/rate", exp: "spots", tag: "Preview" },
-  { key: "leaderboard", title: "Leaderboard", body: "Points, status and your crew", icon: Trophy, href: "/crew", exp: "lounge" },
+  { key: "lounge", title: "Crew lounge", body: "Talk shop with other crews", icon: MessagesSquare, href: "/lounge", exp: "lounge", tag: "New" },
+  { key: "meetup", title: "Crew Up", body: "Make layover plans with your crew", icon: Users, href: "/meetup", exp: "lounge", tag: "New" },
+  { key: "mycrew", title: "My Crew", body: "Your crew friends and what you share", icon: Contact, href: "/mycrew", exp: "lounge", tag: "New" },
+  { key: "rate", title: "Rate a spot", body: "Places waiting for your rating", icon: Star, href: "/rate", exp: "spots", tag: "New" },
+  { key: "leaderboard", title: "Leaderboard", body: "Points and status ranks", icon: Trophy, href: "/crew", exp: "lounge" },
   { key: "logbook", title: "Logbook", body: "Your profile, points and settings", icon: BookUser, href: "/me", exp: "keep" },
-  { key: "classic", title: "Classic app", body: "The app members see today", icon: LayoutGrid, href: "/", exp: null },
 ];
 
 export default function StartPage() {
   const { me, loading } = useAuth();
-  const preview = usePreview();
+  const { on: preview, ready } = usePreviewState();
+  const adminOnly = useAdminOnly();
   const current = useExperience();
   const [, navigate] = useLocation();
-  useEffect(() => { if (!loading && !preview) navigate("/", { replace: true }); }, [loading, preview]); // eslint-disable-line
+  useEffect(() => { if (ready && !preview) navigate("/", { replace: true }); }, [ready, preview]); // eslint-disable-line
   if (!preview) return null;
   const first = (me?.displayName || "").split(" ")[0];
   const open = (t: Tile) => { setExperience(t.exp === "keep" ? current || "plan" : t.exp); navigate(t.href); };
@@ -73,7 +74,8 @@ export default function StartPage() {
       </ul>
 
       <div className="mt-auto pt-6 text-center text-xs text-muted-foreground">
-        <p className="rounded-full border border-dashed border-border px-3 py-1.5" data-testid="text-start-preview">Preview for admins. Members still see the classic app.</p>
+        <button type="button" onClick={() => { setExperience(null); navigate("/"); }} className="font-semibold text-foreground underline-offset-2 hover:underline" data-testid="tile-start-classic">Use the classic app instead</button>
+        {adminOnly && <p className="mt-3 rounded-full border border-dashed border-border px-3 py-1.5" data-testid="text-start-preview">Preview for admins. Members still see the classic app.</p>}
         <p className="mt-3">
           Version {APP_VERSION}
         </p>

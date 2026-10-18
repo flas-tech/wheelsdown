@@ -1,6 +1,7 @@
-// Crew Lounge (Phase 0): admin-only discussion board, shown as a tab in the admin console for super-user accounts.
+// Crew Lounge: discussion board for crews. Admins only until the launch switch opens it (lounge_audience = members);
+// also shown as a tab in the admin console for super-user accounts.
+import { usePreviewState } from "@/lib/experience";
 import NotFound from "@/pages/not-found";
-// Not linked anywhere members can see, and not in What's new, the FAQ or the tour until it opens to members.
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, EyeOff, Eye, Flag, Lock, LockOpen, MessageSquare, Pencil, Pin, PinOff, Plus, Search, ThumbsUp, Trash2, TriangleAlert, Loader2, Shield, CheckCircle2 } from "lucide-react";
@@ -48,16 +49,17 @@ export function LoungePanel() {
   const params = new URLSearchParams({ ...(cat ? { category: cat } : {}), ...(q.trim() ? { q: q.trim() } : {}), ...(airport.trim() ? { airport: airport.trim() } : {}), sort }).toString();
   const { data, isLoading, error } = useQuery<ListResp>({ queryKey: ["/api/lounge", `?${params}`], queryFn: async () => (await apiRequest("GET", `/api/lounge?${params}`)).json(), staleTime: 15_000 });
 
-  if (error) return <p className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground" data-testid="text-lounge-error">Crew Lounge needs a signed-in admin account. {errMsg(error)}</p>;
+  if (error) return <p className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground" data-testid="text-lounge-error">Sign in to use the Crew Lounge. {errMsg(error)}</p>;
+  const open = data?.audience === "members";
 
   return (
     <div className="mx-auto max-w-3xl space-y-4" data-testid="panel-lounge">
       <div className="rounded-2xl bg-[#0B1222] px-5 py-4 text-white">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">Phase 0 · admins only</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">{open ? "Talk shop" : "Preview · admins only"}</p>
             <h2 className="text-lg font-semibold">Crew Lounge</h2>
-            <p className="mt-0.5 text-xs text-white/70">Members can't see this yet, and it stays out of What's new until launch.</p>
+            <p className="mt-0.5 text-xs text-white/70">{open ? "Ask other crews, share what you know. Helpful answers earn Lounge points." : "Members can't see this yet."}</p>
           </div>
           {data && (
             <div className="text-left text-xs text-white/80 sm:text-right" data-testid="text-lounge-points">
@@ -357,10 +359,10 @@ function ReportsView({ onBack, onOpen }: { onBack: () => void; onOpen: (threadId
   );
 }
 
-/** /lounge: its own page for the Crew Lounge experience (admins only until launch; the server 404s for everyone else). */
+/** /lounge: its own page for the Crew Lounge experience (admins only until the launch switch is on; the server 404s for everyone else). */
 export default function LoungePage() {
-  const { me, loading } = useAuth();
-  if (loading) return null;
-  if (!me?.isAdmin) return <NotFound />;
+  const { on, ready } = usePreviewState();
+  if (!ready) return null;
+  if (!on) return <NotFound />;
   return <LoungePanel />;
 }

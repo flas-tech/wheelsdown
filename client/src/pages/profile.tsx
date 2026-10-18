@@ -10,7 +10,8 @@ import { AirportCheckInCard, CheckInList, ProfileMap } from "@/lib/checkins";
 import { InviteCard } from "@/lib/share";
 import { AiPrefCard, ProgramsCard } from "@/lib/aiPicks";
 import { VersionCard } from "@/lib/version";
-import { setExperience, useExperience } from "@/lib/experience";
+import { setExperience, useAdminOnly, useExperience, usePreview } from "@/lib/experience";
+import { Switch } from "@/components/ui/switch";
 import { BIO_MAX } from "@shared/interests";
 import { aircraftList } from "@shared/aircraft";
 import { useEffect, useState } from "react";
@@ -154,7 +155,7 @@ export default function ProfilePage() {
         <span className="flex items-center gap-3"><CircleHelp className="h-5 w-5 text-primary" /><span><span className="block text-sm font-semibold">Questions and answers</span><span className="block text-xs text-muted-foreground">Points, ratings, AI picks, briefings, privacy</span></span></span>
         <ChevronRight className="h-4 w-4 text-muted-foreground" />
       </Link>
-      {me.isAdmin && <PreviewCard />}
+      <PreviewCard />
       <VersionCard />
       <p className="text-center text-xs text-muted-foreground">New here, or forgot where something is? <TourLink className="font-semibold text-foreground underline hover:text-primary" /></p>
 
@@ -416,16 +417,43 @@ function ModChip({ kind }: { kind: "checking" | "held" | "edit_held" | "waiting"
 /** Admins only: try the landing page and tailored navigation before members get it. */
 function PreviewCard() {
   const exp = useExperience();
+  const { me } = useAuth();
+  const on = usePreview();
+  const adminOnly = useAdminOnly();
   const names = { plan: "Plan a layover", spots: "Find spots", lounge: "Crew Lounge" } as const;
+  if (!on) return null;
   return (
-    <section className="rounded-2xl border border-dashed border-primary/60 bg-card px-4 py-3" data-testid="card-preview-start">
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-primary">Admin preview</p>
-      <p className="mt-0.5 text-sm font-semibold">New landing page</p>
-      <p className="text-xs text-muted-foreground">{exp ? `You're in ${names[exp]}. ` : ""}Pick an experience and the navigation changes to match. Members don't see this yet.</p>
+    <section className={cn("rounded-2xl bg-card px-4 py-3", adminOnly ? "border border-dashed border-primary/60" : "border border-card-border")} data-testid="card-preview-start">
+      {adminOnly && <p className="text-[11px] font-semibold uppercase tracking-wider text-primary">Admin preview</p>}
+      <p className="mt-0.5 text-sm font-semibold">Home screen</p>
+      <p className="text-xs text-muted-foreground">{exp ? `You're in ${names[exp]}. ` : ""}Pick what you're here for and the navigation changes to match.{adminOnly ? " Members don't see this yet." : ""}</p>
       <div className="mt-2 flex flex-wrap gap-2">
-        <Link href="/start" className="inline-flex h-9 items-center rounded-full taxi-sign px-3.5 text-xs font-semibold hover-elevate" data-testid="link-preview-start">Open landing page</Link>
+        <Link href="/start" className="inline-flex h-9 items-center rounded-full taxi-sign px-3.5 text-xs font-semibold hover-elevate" data-testid="link-preview-start">Open home screen</Link>
         {exp && <button type="button" onClick={() => setExperience(null)} className="inline-flex h-9 items-center rounded-full border border-border px-3.5 text-xs font-semibold hover-elevate" data-testid="button-preview-classic">Back to classic</button>}
       </div>
+      {me?.isAdmin && <LaunchSwitch />}
     </section>
+  );
+}
+
+/** Admins: the one switch that opens (or closes) the new landing page and its features for members. Instant, no deploy. */
+function LaunchSwitch() {
+  const { toast } = useToast();
+  const q = useQuery<{ audience: "admins" | "members" }>({ queryKey: ["/api/admin/launch"], queryFn: async () => (await apiRequest("GET", "/api/admin/launch")).json(), retry: false });
+  const m = useMutation({
+    mutationFn: async (audience: "admins" | "members") => (await apiRequest("PUT", "/api/admin/launch", { audience })).json(),
+    onSuccess: (r: { audience: string }) => {
+      for (const k of ["/api/admin/launch", "/api/features", "/api/lounge", "/api/preview/today"]) queryClient.invalidateQueries({ queryKey: [k] });
+      toast({ title: r.audience === "members" ? "Open to members" : "Back to admins only", description: r.audience === "members" ? "Members get the new home screen, My Crew, Crew Up and the Crew Lounge." : "Members see the classic app again. Nothing they posted is lost." });
+    },
+    onError: (e: Error) => toast({ title: "Couldn't change it", description: e.message, variant: "destructive" }),
+  });
+  if (!q.data) return null;
+  const live = q.data.audience === "members";
+  return (
+    <div className="mt-3 flex items-start justify-between gap-3 border-t border-dashed border-border pt-3" data-testid="row-launch-switch">
+      <span><span className="block text-xs font-semibold">Open to members</span><span className="block text-[11px] text-muted-foreground">{live ? "On: members see the new home screen and its features. Turn off to put everyone back on the classic app." : "Off: only admins see it."}</span></span>
+      <Switch checked={live} disabled={m.isPending} onCheckedChange={(v) => { if (window.confirm(v ? "Open the new home screen, My Crew, Crew Up and the Crew Lounge to all members?" : "Put members back on the classic app? Their crew, plans and posts are kept.")) m.mutate(v ? "members" : "admins"); }} data-testid="switch-launch" aria-label="Open to members" />
+    </div>
   );
 }

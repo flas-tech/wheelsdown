@@ -138,9 +138,9 @@ function Board({ d, refreshing, onRefresh }: { d: TodayResp; refreshing: boolean
         <Link href={`/meetup?icao=${ap.icao}`} className="flex items-center gap-3 rounded-2xl border border-card-border bg-card p-4 hover-elevate" data-testid="link-today-meetup">
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary/15"><Users className="h-5 w-5" /></span>
           <span className="min-w-0 flex-1">
-            <span className="block text-sm font-semibold">Crew meetup</span>
+            <span className="block text-sm font-semibold">Crew Up</span>
             <span className="block text-xs text-muted-foreground" data-testid="text-today-meetup">
-              {d.meetup.mine ? (d.meetup.others ? `${d.meetup.others} other crew${d.meetup.others > 1 ? "s" : ""} here tonight` : "You're posted. No one else yet.") : "Going out tonight? Let crews here know."}
+              {d.meetup.others ? `${d.meetup.others} from your crew ${d.meetup.others > 1 ? "have" : "has"} plans here` : d.meetup.mine ? "You've posted plans. Nobody in your crew here yet." : "Going out tonight? Make plans with your crew."}
             </span>
           </span>
           <ChevronRight className="h-4 w-4 text-muted-foreground" />

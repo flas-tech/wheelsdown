@@ -23,7 +23,7 @@ const SECTIONS: { title: string; items: QA[] }[] = [
   {
     title: "Ratings and listings",
     items: [
-      qa("How do ratings work?", "Rate from 1 to 5 stars. A Go around (0 stars) warns crews to avoid a place. You can add what you paid and a comment, and edit your rating later."),
+      qa("How do ratings work?", "Rate from 1 to 5 stars. A Go around (0 stars) warns crews to avoid a place. You can add what you paid and a comment. Each place takes one rating per crew member: edit it later, or delete it from the listing."),
       qa("What does Crew-vetted mean?", "A listing with 3 or more upvotes in the last year, at least 75% positive. Crew-vetted only in the filters shows just those."),
       qa("Can I edit someone else's listing?", "No. Only the member who added a listing can edit it. If something is wrong or a place has closed, vote it down with a reason or send feedback, and we'll fix it."),
       qa("Why are prices shown as ranges?", "Prices change, so we show what crews reported as a dollar range per person (or per night for hotels), like Under $15 or $15–30."),
@@ -46,6 +46,16 @@ const SECTIONS: { title: string; items: QA[] }[] = [
       qa("How do I change what's in a briefing?", "Use Up, Down and Remove on any pick. Add places at each stop brings in more crew listings or AI picks by type. Re-pick starts that stop over."),
       qa("How do I send it to the crew?", "Tap Finalize briefing at the bottom to preview it, then Share PDF or Share link. Anyone with the link can view it. Done takes you back to all your briefings."),
       qa("Can I delete a briefing?", "Yes, at the bottom of the briefing. Deleting can't be undone."),
+    ],
+  },
+  {
+    title: "My Crew, Crew Up and the Lounge",
+    items: [
+      qa("What is My Crew?", "The people you fly with. Send a crew request from someone's profile, from Find in My Crew, or with your invite link. Nothing is shared until they accept. Declining and removing are quiet: nobody is told."),
+      qa("What does my crew see?", "Your display name (even if you post anonymously), your profile and your Crew Up plans. In My Crew > Privacy you choose whether they also see your check-ins from the last 60 days and your favorites. Check-ins are off until you turn them on."),
+      qa("What is Crew Up?", "Layover plans for your crew. Post that you're at an airport for a few hours, with an optional note and a public meeting place. Only people in your crew see it, never anything more exact than the airport, and it ends by itself. Hotel names, room numbers and tail numbers aren't allowed."),
+      qa("How do I get back to the old layout?", "On the home screen, tap Use the classic app. Tap the Wheelsdown logo any time to come back to the home screen."),
+      qa("Does My Crew earn points?", "No. Adding crew earns nothing, so there's no reason to collect strangers. In the Crew Lounge, points come only from Helpful votes by other members."),
     ],
   },
   {

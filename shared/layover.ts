@@ -1,13 +1,13 @@
-// Version 0 previews (admins only until app_settings layover_audience = "members"):
+// Layover Today, Crew Up and Rate a spot (admins only until app_settings layover_audience = "members"; the launch switch sets it):
 //  - Layover Today: one screen for the airport you're at (local time, METAR, sunrise/sunset, your briefing, crew picks).
-//  - Crew meetup: opt-in "I'm here tonight" at the airport level, so crews on the same layover can find each other.
+//  - Crew Up (was "Crew meetup"): layover plans at the airport level, seen only by people in each other's My Crew.
 //  - Rate a spot: places you've been (check-ins, briefings, favorites) that you haven't rated yet.
 
 export const MEETUP_RULES = {
   noteMax: 200,
   hours: [2, 4, 8, 12, 24] as const,
   defaultHours: 12,
-  /** v0: posting doesn't require an airport check-in, so admins can test from anywhere. Turn on before members get it. */
+  /** Off: Crew Up is crew-only (both people agreed), so a check-in isn't needed to post. "Checked in" still shows when there is one. */
   requireCheckin: false,
   checkinWindowHours: 20,
 };
@@ -50,6 +50,6 @@ export type Meetup = {
   id: number; icao: string; note: string; spot: { id: number; name: string; category: string } | null;
   createdAt: number; expiresAt: number; host: MeetupPerson; mine: boolean; joined: boolean; joins: number; attendees: MeetupPerson[];
 };
-export type MeetupResp = { icao: string | null; mine: Meetup | null; others: Meetup[] | null; myAirports: string[]; requireCheckin: boolean; verifiedHere: boolean };
+export type MeetupResp = { icao: string | null; mine: Meetup | null; others: Meetup[] | null; crewElsewhere: Meetup[]; crewCount: number; myAirports: string[]; requireCheckin: boolean; verifiedHere: boolean };
 
 export type RateItem = { id: number; name: string; icao: string; category: string; avgRating: number | null; reviewCount: number; reason: "checkin" | "visit" | "briefing" | "favorite"; detail: string; at: number };

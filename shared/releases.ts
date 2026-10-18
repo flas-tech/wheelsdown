@@ -2,6 +2,14 @@
 export type Release = { date: string; sha?: string; title: string; notes: string[] };
 
 export const RELEASES: Release[] = [
+  { date: "2026-10-17", title: "Launch: new home screen, My Crew, Crew Up, Crew Lounge open to members; delete your own rating (What's new 10)", notes: [
+    "One launch switch (app_settings experience_audience, plus layover_audience and lounge_audience) flipped from Logbook > Home screen > Open to members, or PUT /api/admin/launch. Turning it off puts every member back on the classic app instantly, without a deploy; nothing they posted is lost.",
+    "Home screen (/start): signed-in members land there once per visit; guests keep Search. Tiles: Plan layover, Find spots, Crew lounge, Crew Up, My Crew, Rate a spot, Leaderboard, Logbook, plus Use the classic app.",
+    "My Crew (/mycrew): mutual crew requests (Accept / quiet Decline), Find by name, @handle or home base (anonymous members only by exact handle), invite link ?ref=ID&crew=1 that leaves a pending request for the new member, Privacy: share check-ins (off by default), share favorites, accept requests. Crew requests and messages appear in Notifications. No points. New tables crew_links, crew_privacy, member_messages.",
+    "Crew meetup renamed Crew Up and made crew-only: you see plans only from people in your crew (any airport), and can join only theirs. Invite other crew card on the Crew Up tab.",
+    "Ratings: authors can delete their own rating; the server now refuses a second rating of the same place by the same member (409, edit instead). Fixes feedback #38 (Gabrielle's duplicate Eldr+Rime rating #271 removed). Admin feedback: Reply in app sends a message to the member's Notifications and marks it Done.",
+    "Rollback point: git tag rollback-pre-mycrew-2f2e5ac (Render deploy dep-db8o86rl550s73ek0cag). The new tables are additive, so the old version runs fine against the new database.",
+  ] },
   { date: "2026-10-15", title: "Admin landing page is now a tile grid (admins only)", notes: [
     "/start shows 8 tiles in 2 columns: Plan layover, Find spots, Crew lounge, Crew meetup, Rate a spot, Leaderboard, Logbook, Classic app. Each opens its page and sets the matching tailored nav.",
   ] },

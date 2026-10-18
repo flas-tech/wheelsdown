@@ -263,6 +263,7 @@ export const signupSchema = z.object({
   anonymous: z.boolean().optional().default(false),
   email: z.union([z.literal(""), z.string().trim().toLowerCase().email("That email doesn't look right")]).optional().default(""),
   ref: z.coerce.number().int().positive().optional().catch(undefined), // inviter's member id from their invite link
+  crewInvite: z.boolean().optional().catch(undefined), // the link was a crew invite (&crew=1): the inviter's crew request waits for them
   acceptTerms: z.literal(true, { message: "Please accept the Terms and Community Guidelines" }).optional(),
 });
 export const updateMeSchema = z.object({

@@ -4,6 +4,7 @@ import { Link } from "wouter";
 import { Copy, Loader2 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
+import { useMessages, useMyCrew } from "@/lib/mycrew";
 import { useToast } from "@/hooks/use-toast";
 
 export type Notice = {
@@ -25,10 +26,11 @@ export function useFollowNotes() {
   const { me } = useAuth();
   return useQuery<{ seenAt: number; unread: number; items: FollowNote[] }>({ queryKey: ["/api/me/notifications"], enabled: !!me, refetchInterval: 120_000, staleTime: 30_000 });
 }
-/** How many things on the Notifications tab are new: duplicate questions plus unread follows. */
+/** How many things on the Notifications tab are new: duplicate questions, unread follows, crew requests and messages. */
 export function useUnreadCount() {
   const { data } = useNotices(); const f = useFollowNotes();
-  return (data?.length || 0) + (f.data?.unread || 0);
+  const crew = useMyCrew(); const msgs = useMessages();
+  return (data?.length || 0) + (f.data?.unread || 0) + (crew.data?.incoming.length || 0) + (msgs.data?.unread || 0);
 }
 /** Red dot on the Logbook tab: a notification, or profile items still to fill in. */
 export function NoticeDot() {

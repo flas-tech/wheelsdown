@@ -1,17 +1,19 @@
-// Shared bits for the admin-only Version 0 previews (Layover Today, Crew meetup, Rate a spot).
+// Shared bits for the landing-page features (Layover Today, Crew Up, Rate a spot, My Crew, Crew Lounge).
 import type { ReactNode } from "react";
-import { useAuth } from "@/lib/auth";
+import { useAdminOnly, usePreviewState } from "@/lib/experience";
 import NotFound from "@/pages/not-found";
 
-/** Members get the same Not found page as an unknown address; the server answers 404 too. */
+/** Before launch, members get the same Not found page as an unknown address (the server answers 404 too). */
 export function PreviewGate({ children }: { children: ReactNode }) {
-  const { me, loading } = useAuth();
-  if (loading) return null;
-  if (!me?.isAdmin) return <NotFound />;
+  const { on, ready } = usePreviewState();
+  if (!ready) return null;
+  if (!on) return <NotFound />;
   return <>{children}</>;
 }
 
-export function PreviewBadge({ label = "Version 0 · admins only" }: { label?: string }) {
+/** "Admins only" marker, shown only while the features are still hidden from members. */
+export function PreviewBadge({ label = "Preview · admins only" }: { label?: string }) {
+  if (!useAdminOnly()) return null;
   return <span className="inline-flex items-center rounded-full border border-dashed border-primary/60 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary" data-testid="badge-preview">{label}</span>;
 }
 

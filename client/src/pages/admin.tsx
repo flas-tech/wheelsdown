@@ -1171,6 +1171,14 @@ function FeedbackInbox() {
 
 function FeedbackRow({ f, onStatus, onNote, onDelete }: { f: FeedbackItem; onStatus: (s: string) => void; onNote: (n: string) => void; onDelete: () => void }) {
   const [note, setNote] = useState(f.adminNote);
+  const [replying, setReplying] = useState(false);
+  const [reply, setReply] = useState("");
+  const { toast } = useToast();
+  const send = useMutation({
+    mutationFn: async () => (await adm("POST", `/api/admin/feedback/${f.id}/notify`, { message: reply.trim(), link: f.page || "" })).json(),
+    onSuccess: () => { setReplying(false); setReply(""); queryClient.invalidateQueries({ queryKey: ["/api/admin/feedback"] }); toast({ title: "Sent", description: "It's in their Notifications." }); },
+    onError: (e: Error) => toast({ title: "Couldn't send", description: e.message, variant: "destructive" }),
+  });
   const email = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.contact) ? f.contact : "";
   return (
     <li className={cn("rounded-xl border bg-card p-4", f.status === "new" ? "border-primary/50" : "border-card-border")} data-testid={`row-feedback-${f.id}`}>
@@ -1197,10 +1205,18 @@ function FeedbackRow({ f, onStatus, onNote, onDelete }: { f: FeedbackItem; onSta
       <div className="mt-2 flex flex-wrap gap-2">
         {f.status !== "reviewing" && f.status !== "done" && <button className={btn} onClick={() => onStatus("reviewing")} data-testid={`button-feedback-reviewing-${f.id}`}>Mark reviewing</button>}
         {f.status !== "done" && <button className={btnPrimary} onClick={() => onStatus("done")} data-testid={`button-feedback-done-${f.id}`}>Done</button>}
+        {f.userId && <button className={btn} onClick={() => setReplying(!replying)} data-testid={`button-feedback-reply-${f.id}`}>Reply in app</button>}
         {f.status !== "archived" && <button className={btn} onClick={() => onStatus("archived")} data-testid={`button-feedback-archive-${f.id}`}>Archive</button>}
         {(f.status === "done" || f.status === "archived") && <button className={btn} onClick={() => onStatus("new")} data-testid={`button-feedback-reopen-${f.id}`}>Reopen</button>}
         <button className={cn(btn, "ml-auto text-destructive")} onClick={onDelete} aria-label="Delete feedback" data-testid={`button-feedback-delete-${f.id}`}><Trash2 className="h-4 w-4" /></button>
       </div>
+      {replying && (
+        <div className="mt-3 space-y-2 rounded-lg border border-dashed border-border p-3" data-testid={`panel-feedback-reply-${f.id}`}>
+          <p className="text-xs text-muted-foreground">Goes to {f.userName}'s Notifications as a message from the Wheelsdown team, and marks this Done.</p>
+          <textarea value={reply} onChange={(e) => setReply(e.target.value)} rows={3} maxLength={2000} placeholder="Thanks for flagging this. We fixed it: ..." className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" data-testid={`input-feedback-reply-${f.id}`} />
+          <button className={btnPrimary} disabled={send.isPending || reply.trim().length < 5} onClick={() => send.mutate()} data-testid={`button-feedback-send-${f.id}`}>{send.isPending ? "Sending…" : "Send to their Notifications"}</button>
+        </div>
+      )}
     </li>
   );
 }

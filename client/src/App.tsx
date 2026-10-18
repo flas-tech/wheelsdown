@@ -14,7 +14,8 @@ import LoungePage from "@/pages/lounge";
 import TodayPage from "@/pages/today";
 import MeetupPage from "@/pages/meetup";
 import RatePage from "@/pages/rate";
-import { useNav, useExperience } from "@/lib/experience";
+import MyCrewPage from "@/pages/mycrew";
+import { useNav, usePreviewState } from "@/lib/experience";
 import FavoritesPage from "@/pages/favorites";
 import NotFound from "@/pages/not-found";
 import Home, { MapRoute, SearchProvider, useSearch } from "@/pages/home";
@@ -54,15 +55,24 @@ function Shell() {
   // New page starts at the top (home keeps its own scroll for browse mode)
   useEffect(() => { if (loc !== "/") window.scrollTo(0, 0); }, [loc]);
   // members: the classic six-item nav; admins previewing an experience get a nav tailored to it (lib/experience.tsx)
-  const exp = useExperience();
+  const { on: landing, ready: landingReady } = usePreviewState();
   const nav = useNav().map((n) => ({ ...n, active: n.active(loc) }));
+  // the new landing page: once per visit, a signed-in member opening the app at home starts on /start
+  const [, go] = useLocation();
+  useEffect(() => {
+    if (!landingReady || !landing) return;
+    let seen = false;
+    try { seen = sessionStorage.getItem("wheelsdown-landed") === "1"; sessionStorage.setItem("wheelsdown-landed", "1"); } catch { /* private mode */ }
+    const deep = window.location.search.length > 1 || (window.location.hash.split("?")[1] || "").length > 0;
+    if (!seen && loc === "/" && !deep) go("/start", { replace: true });
+  }, [landingReady, landing]); // eslint-disable-line
   // the landing page has no navigation at all
   if (loc === "/start") return (<><StartPage /><TourHost /><UpdateBar /><WhatsNewHost /></>);
   return (
     <div className="min-h-[100dvh] flex flex-col">
       <header className="print:hidden sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur pt-safe-top px-safe">
         <div className={cn("mx-auto flex h-14 items-center justify-between px-4", isAdmin ? "max-w-6xl" : "max-w-xl")}>
-          <Link href={exp ? "/start" : "/"} onClick={() => setSearch({ category: null })} data-testid="link-home" className="flex items-center gap-2">
+          <Link href={landing ? "/start" : "/"} onClick={() => setSearch({ category: null })} data-testid="link-home" className="flex items-center gap-2">
             <Logo className="h-7 w-7" />
             <span className="text-base font-semibold tracking-tight">Wheels<span className="text-primary">down</span></span>
             {IS_STATIC && <span className="rounded border border-primary/50 px-1 font-code text-[10px] font-bold text-primary" data-testid="badge-demo">DEMO</span>}
@@ -116,6 +126,7 @@ function Shell() {
           <Route path="/today" component={TodayPage} />
           <Route path="/meetup" component={MeetupPage} />
           <Route path="/rate" component={RatePage} />
+          <Route path="/mycrew" component={MyCrewPage} />
           <Route path="/terms" component={LegalPage} />
           <Route path="/privacy" component={LegalPage} />
           <Route path="/guidelines" component={LegalPage} />

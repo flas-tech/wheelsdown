@@ -15,6 +15,7 @@ import { logChange } from "./ops";
 import { flagShortText } from "./ai";
 import { findTailNumbers } from "@shared/tailNumber";
 import { pickable, pickScore } from "@shared/briefing";
+import { crewIds, areCrew } from "./mycrew";
 import { MEETUP_RULES, meetupNoteProblem, type Metar, type Meetup, type MeetupPerson, type MeetupResp, type RateItem, type TodayPick, type TodayResp, type FlightCat } from "@shared/layover";
 import type { SpotWithStats, User, BriefingStop } from "@shared/schema";
 
@@ -204,7 +205,9 @@ export function registerLayover(app: Express, o: { userOf: (req: Request) => Pro
 
     const now = Date.now();
     const mineM = (await rows(sql`SELECT 1 FROM meetups WHERE user_id = ${u.id} AND icao = ${icao} AND status = 'live' AND expires_at > ${now} LIMIT 1`))[0];
-    const others = mineM ? num((await rows(sql`SELECT COUNT(*) AS n FROM meetups WHERE icao = ${icao} AND status = 'live' AND expires_at > ${now} AND user_id <> ${u.id}`))[0]?.n) : null;
+    // Crew Up is crew-only: count plans here from people in your crew
+    const myCrew = Array.from(await crewIds(u.id));
+    const others = myCrew.length ? num((await rows(sql`SELECT COUNT(*) AS n FROM meetups WHERE icao = ${icao} AND status = 'live' AND expires_at > ${now} AND user_id IN (${sql.join(myCrew.map((i) => sql`${i}`), sql`, `)})`))[0]?.n) : 0;
 
     const out: TodayResp = {
       icao, source, checkedInAt, airport: ap, tz, sun: sunFor(ap.lat, ap.lon, tz), metar: metarR.v, metarError: metarR.err,
@@ -223,7 +226,7 @@ export function registerLayover(app: Express, o: { userOf: (req: Request) => Pro
     res.json(await rateQueue(me(req).id, visits));
   });
 
-  // ---- Crew meetup
+  // ---- Crew Up (was Crew meetup): plans are seen only by people in each other's crew
   async function people(ids: number[], icao: string): Promise<Map<number, MeetupPerson>> {
     const pub = await storage.publicUsers(true);
     const want = new Set(ids);
@@ -266,11 +269,15 @@ export function registerLayover(app: Express, o: { userOf: (req: Request) => Pro
     if (q && !ap) return res.status(404).json({ message: `We don't know the airport ${q}. Check the code.` });
     const icao = ap?.icao || null;
     const mineRow = icao ? mineAll.find((r) => r.icao === icao) : undefined;
-    // mutual opt-in: you see who else is here only once you've said you're here too
-    const othersRows = icao && mineRow ? await rows(sql`SELECT * FROM meetups WHERE icao = ${icao} AND status = 'live' AND expires_at > ${now} AND user_id <> ${u.id} ORDER BY created_at DESC LIMIT 50`) : null;
+    // crew-only: you see plans from people in your crew (both of you agreed), never from strangers
+    const myCrew = Array.from(await crewIds(u.id));
+    const crewRows = myCrew.length ? await rows(sql`SELECT * FROM meetups WHERE status = 'live' AND expires_at > ${now} AND user_id IN (${sql.join(myCrew.map((i) => sql`${i}`), sql`, `)}) ORDER BY created_at DESC LIMIT 100`) : [];
+    const othersRows = icao ? crewRows.filter((r) => r.icao === icao) : [];
+    const elsewhere: any[] = [];
+    for (const code of Array.from(new Set(crewRows.filter((r) => r.icao !== icao).map((r) => String(r.icao))))) elsewhere.push(...(await shape(crewRows.filter((r) => r.icao === code), u.id, code)));
     const [mine] = mineRow && icao ? await shape([mineRow], u.id, icao) : [null];
     const out: MeetupResp = {
-      icao, mine: mine || null, others: othersRows && icao ? await shape(othersRows, u.id, icao) : null, myAirports,
+      icao, mine: mine || null, others: icao ? await shape(othersRows, u.id, icao) : [], crewElsewhere: elsewhere, crewCount: myCrew.length, myAirports,
       requireCheckin: MEETUP_RULES.requireCheckin, verifiedHere: icao ? await hasCheckin(u.id, icao) : false,
     };
     res.json(out);
@@ -317,10 +324,9 @@ export function registerLayover(app: Express, o: { userOf: (req: Request) => Pro
   app.post("/api/preview/meetups/:id/join", gate, writeLimit, async (req, res) => {
     const u = me(req), id = Number(req.params.id), now = Date.now();
     const m = (await rows(sql`SELECT * FROM meetups WHERE id = ${id} AND status = 'live' AND expires_at > ${now}`))[0];
-    if (!m) return res.status(404).json({ message: "That meetup has ended." });
+    if (!m) return res.status(404).json({ message: "Those plans have ended." });
     if (num(m.user_id) === u.id) return res.status(400).json({ message: "That's yours." });
-    const here = (await rows(sql`SELECT 1 FROM meetups WHERE user_id = ${u.id} AND icao = ${m.icao} AND status = 'live' AND expires_at > ${now} LIMIT 1`))[0];
-    if (!here) return res.status(400).json({ message: `Say you're at ${m.icao} too, then you can join.` });
+    if (!(await areCrew(u.id, num(m.user_id)))) return res.status(404).json({ message: "Those plans have ended." });
     await db().execute(sql`INSERT INTO meetup_joins (meetup_id, user_id, created_at) VALUES (${id}, ${u.id}, ${now}) ON CONFLICT DO NOTHING`);
     res.json({ ok: true });
   });
@@ -333,7 +339,7 @@ export function registerLayover(app: Express, o: { userOf: (req: Request) => Pro
     const m = (await rows(sql`SELECT id, user_id, icao, note FROM meetups WHERE id = ${id}`))[0];
     if (!m) return res.status(404).json({ message: "Not found" });
     logChange({ actor: `@${u.handle}`, actorId: u.id, kind: "system", action: "meetup_report", entity: "meetup", entityId: id,
-      summary: `Crew meetup #${id} at ${m.icao} reported by @${u.handle}`, detail: { note: m.note, hostId: num(m.user_id), reason: String(req.body?.reason || "").slice(0, 200) } });
+      summary: `Crew Up #${id} at ${m.icao} reported by @${u.handle}`, detail: { note: m.note, hostId: num(m.user_id), reason: String(req.body?.reason || "").slice(0, 200) } });
     res.json({ ok: true });
   });
 }

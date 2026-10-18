@@ -7,7 +7,7 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { BadgeCheck, MapPinned, PanelBottom, ArrowUpDown, BellRing, CircleHelp, ClipboardCheck, Compass, Flame, ListPlus, RefreshCw, Sparkles, Star, Undo2 } from "lucide-react";
+import { BadgeCheck, Contact, LayoutGrid, MessagesSquare, Trash2, Users, MapPinned, PanelBottom, ArrowUpDown, BellRing, CircleHelp, ClipboardCheck, Compass, Flame, ListPlus, RefreshCw, Sparkles, Star, Undo2 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -20,6 +20,17 @@ type DevFeature = "lounge";
 const PUBLIC_FEATURES = new Set<DevFeature>([]);
 
 const ALL_RELEASES: Release[] = [
+  {
+    id: 10, date: "October 17, 2026",
+    items: [
+      { icon: LayoutGrid, title: "A new home screen", body: "Open the app and pick what you're here for: plan a layover, find spots, or hang out in the Crew Lounge. The bottom bar changes to match. Prefer the old layout? Tap Use the classic app.", to: "/start" },
+      { icon: Contact, title: "My Crew", body: "Add the people you fly with. You both have to agree, and you choose what they see: your check-ins, your favorites, or neither. Find crew by name or @handle, or send your invite link.", to: "/mycrew" },
+      { icon: Users, title: "Crew Up", body: "Make layover plans with your crew at the airport you're at. Only people in your crew see them, nothing more precise than the airport is shared, and plans end by themselves.", to: "/meetup" },
+      { icon: MessagesSquare, title: "Crew Lounge", body: "Ask other crews, share what you know about airports, gear and layover life. Helpful answers earn Lounge points. Tail numbers are never allowed.", to: "/lounge" },
+      { icon: Star, title: "Layover Today and Rate a spot", body: "Layover Today shows the field you're at: local time, weather, sunrise and your picks. Rate a spot lists the places you've been that still need your rating.", to: "/today" },
+      { icon: Trash2, title: "Delete your own rating", body: "Posted a rating twice, or changed your mind? Delete your own rating from the listing. Each place now takes one rating per crew member, so you edit it instead of adding another." },
+    ],
+  },
   {
     id: 9, date: "October 15, 2026",
     items: [

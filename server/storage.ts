@@ -265,6 +265,10 @@ export class DatabaseStorage {
     if (userId == null) return false;
     return !!(await db().select({ id: reviews.id }).from(reviews).where(and(eq(reviews.spotId, spotId), eq(reviews.userId, userId), eq(reviews.rating, 0))))[0];
   }
+  /** One rating per member per place: their existing one (pending or live), if any. */
+  async myReviewFor(userId: number, spotId: number) {
+    return (await db().select().from(reviews).where(and(eq(reviews.userId, userId), eq(reviews.spotId, spotId), sql`${reviews.status} <> 'rejected'`)).orderBy(reviews.id))[0];
+  }
   async getReview(id: number) { return Number.isFinite(id) ? (await db().select().from(reviews).where(eq(reviews.id, id)))[0] : undefined; }
   async updateReview(id: number, patch: { rating?: number; comment?: string; costLevel?: number | null }) {
     invalidateActivity();

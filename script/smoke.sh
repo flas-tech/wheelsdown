@@ -28,15 +28,25 @@ check "vote needs login"  'Sign in'        "$(curl -s -XPOST $BASE/api/spots/1/v
 R=$(curl -s -XPOST $BASE/api/auth/signup -H "$J" -d "{\"handle\":\"$H\",\"password\":\"smoke-pass-123\",\"displayName\":\"Smoke Test\",\"crewRole\":\"Pilot\",\"email\":\"$H@example.com\",\"acceptTerms\":true}")
 T=$(echo "$R" | jget "d.get('token','')" 2>/dev/null)
 [[ -n "$T" ]] && ok "sign up" || bad "sign up" "$R"
-# Crew Lounge is admin-only (Phase 0): members and guests get a plain 404
+# Launch switch: guests always get 404 from the members' features; signed-in members get 404 until it's open
+LAUNCHED=$(curl -s $BASE/api/features | grep -c '"members"')
 check "lounge hidden (guest)"  '404' "$(curl -s -o /dev/null -w '%{http_code}' $BASE/api/lounge)"
-check "lounge hidden (member)" '404' "$(curl -s -o /dev/null -w '%{http_code}' $BASE/api/lounge -H "authorization: Bearer $T")"
-check "lounge hidden (post)"   '404' "$(curl -s -o /dev/null -w '%{http_code}' -XPOST $BASE/api/lounge/threads -H "$J" -H "authorization: Bearer $T" -d '{"category":"hangar","title":"hello there","body":"hi"}')"
 check "today hidden (guest)"   '404' "$(curl -s -o /dev/null -w '%{http_code}' $BASE/api/preview/today)"
-check "today hidden (member)"  '404' "$(curl -s -o /dev/null -w '%{http_code}' $BASE/api/preview/today -H "authorization: Bearer $T")"
-check "meetup hidden (member)" '404' "$(curl -s -o /dev/null -w '%{http_code}' $BASE/api/preview/meetups -H "authorization: Bearer $T")"
-check "meetup post hidden"     '404' "$(curl -s -o /dev/null -w '%{http_code}' -XPOST $BASE/api/preview/meetups -H "$J" -H "authorization: Bearer $T" -d '{"icao":"KTEB","note":"hi"}')"
-check "rate queue hidden"      '404' "$(curl -s -o /dev/null -w '%{http_code}' $BASE/api/preview/rate-queue -H "authorization: Bearer $T")"
+check "my crew hidden (guest)" '404' "$(curl -s -o /dev/null -w '%{http_code}' $BASE/api/mycrew)"
+if [[ "$LAUNCHED" == "1" ]]; then
+  check "lounge open (member)"  '200' "$(curl -s -o /dev/null -w '%{http_code}' $BASE/api/lounge -H "authorization: Bearer $T")"
+  check "crew up open (member)" '"crewCount":0' "$(curl -s $BASE/api/preview/meetups -H "authorization: Bearer $T")"
+  check "my crew open (member)" '"crew":[]' "$(curl -s $BASE/api/mycrew -H "authorization: Bearer $T")"
+  check "rate queue open"       '200' "$(curl -s -o /dev/null -w '%{http_code}' $BASE/api/preview/rate-queue -H "authorization: Bearer $T")"
+else
+  check "lounge hidden (member)" '404' "$(curl -s -o /dev/null -w '%{http_code}' $BASE/api/lounge -H "authorization: Bearer $T")"
+  check "lounge hidden (post)"   '404' "$(curl -s -o /dev/null -w '%{http_code}' -XPOST $BASE/api/lounge/threads -H "$J" -H "authorization: Bearer $T" -d '{"category":"hangar","title":"hello there","body":"hi"}')"
+  check "today hidden (member)"  '404' "$(curl -s -o /dev/null -w '%{http_code}' $BASE/api/preview/today -H "authorization: Bearer $T")"
+  check "meetup hidden (member)" '404' "$(curl -s -o /dev/null -w '%{http_code}' $BASE/api/preview/meetups -H "authorization: Bearer $T")"
+  check "my crew hidden (member)" '404' "$(curl -s -o /dev/null -w '%{http_code}' $BASE/api/mycrew -H "authorization: Bearer $T")"
+  check "rate queue hidden"      '404' "$(curl -s -o /dev/null -w '%{http_code}' $BASE/api/preview/rate-queue -H "authorization: Bearer $T")"
+fi
+check "messages (member)" '"items"' "$(curl -s $BASE/api/me/messages -H "authorization: Bearer $T")"
 check "test signup takes no club seat" '"wrightNo":null' "$R"
 check "club"               '"seats":50'     "$(curl -s $BASE/api/club)"
 A="authorization: Bearer $T"

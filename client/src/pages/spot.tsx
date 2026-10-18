@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { noteVisit, clearVisit } from "@/lib/visits";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useRoute } from "wouter";
-import { ArrowLeft, Map as MapIcon, MapPin, Clock, Globe, Lightbulb, User, AlertTriangle, Pencil } from "lucide-react";
+import { ArrowLeft, Map as MapIcon, MapPin, Clock, Globe, Lightbulb, User, AlertTriangle, Pencil, Trash2 } from "lucide-react";
 import { DOWN_REASONS, type Category, type ReviewWithVotes, type SpotWithStats } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { CAT_META, fmtMinutes, totalMinutes, parseTags, Stars, AdBanner, Chip, VetBadge, VoteButtons, timeAgo, GoAroundBadge, GoAroundIcon } from "@/lib/ui";
@@ -42,6 +42,7 @@ export default function SpotPage() {
 
   const { spot, reviews: allReviews, mod } = data;
   const went = () => noteVisit({ id: spot.id, name: spot.name, icao: spot.icao });
+  const myReview = me ? allReviews.find((r) => r.userId === me.id && r.status !== "rejected") : undefined; // one rating per member per place
   const reviews = allReviews.filter((r) => r.status === "live"); // the author's own unpublished ratings are listed but don't count
   const M = CAT_META[spot.category as Category];
   const tags = parseTags(spot.tags);
@@ -158,15 +159,42 @@ export default function SpotPage() {
             {me && r.userId === me.id && <ModNotice kind="rating" state={r.modState} status={r.status} note={r.modNote} editPending={!!r.pendingEdit} className="mt-2.5" />}
             <div className="mt-2.5 flex items-center justify-between gap-2">
               <p className="text-[11px] text-muted-foreground flex items-center gap-2">{new Date(r.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
-                {me && r.userId === me.id && <button type="button" onClick={() => setEditing(r.id)} className="inline-flex items-center gap-1 text-primary font-medium" data-testid={`button-edit-review-${r.id}`}><Pencil className="h-3 w-3" />Edit</button>}</p>
+                {me && r.userId === me.id && <button type="button" onClick={() => setEditing(r.id)} className="inline-flex items-center gap-1 text-primary font-medium" data-testid={`button-edit-review-${r.id}`}><Pencil className="h-3 w-3" />Edit</button>}
+                {me && r.userId === me.id && <DeleteReview id={r.id} spotId={spot.id} />}</p>
               <ReviewVote review={r} spotId={spot.id} />
             </div>
           </article>
         ))}
       </section>
 
-      <div id="rate" className="scroll-mt-24"><ReviewForm spotId={spot.id} category={spot.category} /></div>
+      <div id="rate" className="scroll-mt-24">{myReview
+        ? <div className="rounded-2xl border border-card-border bg-card p-4 flex items-center justify-between gap-3" data-testid="panel-already-rated">
+            <p className="text-sm"><span className="font-medium">You've rated this place.</span> <span className="text-muted-foreground">One rating per crew member, so change it instead of adding another.</span></p>
+            <button type="button" onClick={() => { setEditing(myReview.id); document.querySelector(`[data-testid="review-${myReview.id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" }); }} className="shrink-0 inline-flex items-center gap-1 text-sm text-primary font-medium" data-testid="button-edit-my-review"><Pencil className="h-3.5 w-3.5" />Edit</button>
+          </div>
+        : <ReviewForm spotId={spot.id} category={spot.category} />}</div>
     </div>
+  );
+}
+
+/** The author removes their own rating. Asks once; the points for it go too. */
+function DeleteReview({ id, spotId }: { id: number; spotId: number }) {
+  const { toast } = useToast();
+  const [sure, setSure] = useState(false);
+  const m = useMutation({
+    mutationFn: async () => (await apiRequest("DELETE", `/api/reviews/${id}`)).json(),
+    onSuccess: () => {
+      for (const k of [["/api/spots", String(spotId)], ["/api/search"], ["/api/me"], ["/api/crew"], ["/api/leaderboard"], ["/api/highlights"], ["/api/me/contributions"]]) queryClient.invalidateQueries({ queryKey: k });
+      toast({ title: "Rating deleted" });
+    },
+    onError: (e: Error) => { setSure(false); toast({ title: "Couldn't delete it", description: e.message.replace(/^\d+: /, "").replace(/^\{"message":"|"\}$/g, ""), variant: "destructive" }); },
+  });
+  if (!sure) return <button type="button" onClick={() => setSure(true)} className="inline-flex items-center gap-1 text-muted-foreground hover:text-destructive font-medium" data-testid={`button-delete-review-${id}`}><Trash2 className="h-3 w-3" />Delete</button>;
+  return (
+    <span className="inline-flex items-center gap-2">
+      <button type="button" disabled={m.isPending} onClick={() => m.mutate()} className="font-semibold text-destructive" data-testid={`button-confirm-delete-review-${id}`}>{m.isPending ? "Deleting…" : "Delete rating?"}</button>
+      <button type="button" onClick={() => setSure(false)} className="text-muted-foreground" data-testid={`button-cancel-delete-review-${id}`}>Keep</button>
+    </span>
   );
 }
 

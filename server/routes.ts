@@ -25,6 +25,7 @@ import { registerAiPicks, fillStop, aiPrefOf, programsOf, claimAiPick, checkFirs
 import { registerSimilar } from "./similar";
 import { registerLayover } from "./layover";
 import { registerLounge } from "./lounge";
+import { registerMyCrew, requestFromInvite, forgetMember } from "./mycrew";
 import { dayKey } from "./metrics";
 import { SERVICES } from "@shared/services";
 import { track, visit, pageKey, outboundKey, report, untracked } from "./metrics";
@@ -140,6 +141,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (bad) return res.status(400).json({ message: bad });
     try {
       const u = await storage.createUser(p.data);
+      // crew invite link (?ref=..&crew=1): the inviter's crew request is waiting for the new member to accept
+      if (p.data.crewInvite && (u as any).referredBy) await requestFromInvite((u as any).referredBy as number, u.id);
       if (!isTestSignup(u.handle, u.email)) {
         track(req, "signup");
         // one line per sign-up so a missing referral can be traced later
@@ -203,6 +206,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const u = (req as any).user as User;
     if (confirm.toLowerCase() !== u.handle) return res.status(400).json({ message: "Type your handle to confirm" });
     await storage.deleteUser(u.id);
+    await forgetMember(u.id);
     res.json({ ok: true });
   });
   app.get("/api/me/contributions", requireUser, async (req, res) => res.json(await storage.userContributions((req as any).user.id)));
@@ -416,6 +420,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     // a price vote is optional; drop values that don't apply to this category (e.g. "Free" for a restaurant, anything for an FBO)
     const costLevel = p.data.costLevel != null && costOptions(spot.category).includes(p.data.costLevel) ? p.data.costLevel : null;
     if (p.data.rating === 0 && p.data.comment.trim().length < 10) return res.status(400).json({ message: "Tell crews why to go around (a sentence is enough)" });
+    // one rating per member per place (a double tap or a second visit used to post twice): point them at the one they have
+    const existing = await storage.myReviewFor(user.id, spot.id);
+    if (existing) return res.status(409).json({ message: "You've already rated this place. Edit your rating instead.", existingId: existing.id });
     const r = await storage.createReview({ ...p.data, costLevel });
     if (AI_ENABLED) {
       await storage.setReviewMod(r.id, { status: "pending", modState: "checking" });
@@ -423,6 +430,16 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       return res.status(201).json({ ...r, status: "pending", modState: "checking" });
     }
     res.status(201).json(r);
+  });
+  /** The author can delete their own rating (points for it go with it). */
+  app.delete("/api/reviews/:id", requireUser, writeLimit, async (req, res) => {
+    const user = (req as any).user as User;
+    const r = await storage.getReview(id(req));
+    if (!r) return res.status(404).json({ message: "Not found" });
+    if (r.userId !== user.id) return res.status(403).json({ message: "Only the author can delete this rating" });
+    await storage.deleteReview(r.id);
+    logChange({ actor: `@${user.handle}`, actorId: user.id, kind: "system", action: "review_delete_own", entity: "review", entityId: r.id, summary: `@${user.handle} deleted their own rating #${r.id} on listing #${r.spotId}`, detail: { rating: r.rating, comment: (r.comment || "").slice(0, 300) } });
+    res.json({ ok: true });
   });
   /** The author can fix their own rating, comment or price. */
   app.patch("/api/reviews/:id", requireUser, writeLimit, async (req, res) => {
@@ -655,7 +672,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   registerAiPicks(app, { requireAdmin, requireUser, userOf });
   registerOps(app, { requireAdmin, userOf });
   registerLounge(app, { userOf, isSuperAdmin }); // Crew Lounge: admins only until lounge_audience = members
-  registerLayover(app, { userOf, isSuperAdmin }); // Layover Today, Crew meetup, Rate a spot: admins only until layover_audience = members
+  registerLayover(app, { userOf, isSuperAdmin }); // Layover Today, Crew Up, Rate a spot: admins only until layover_audience = members
+  registerMyCrew(app, { userOf, isSuperAdmin, requireAdmin, requireUser }); // My Crew + launch switch (experience_audience) + member messages
   registerModFix(app, { requireAdmin, requireUser, ensureAirport: (c) => ensureAirport(c), byAdmin });
   app.get("/api/admin/costs", requireAdmin, async (req, res) => {
     const days = [7, 30, 90].includes(Number(req.query.days)) ? Number(req.query.days) : 30;

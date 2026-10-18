@@ -1,4 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { CrewButton } from "@/lib/mycrew";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { InterestChips } from "@/lib/interests";
 import { WrightCard } from "@/lib/club";
@@ -79,6 +80,7 @@ export default function CrewProfilePage() {
           )}
         </section>
       )}
+      {!isMe && me && <div className="flex items-center gap-3" data-testid="row-mycrew"><CrewButton userId={u.id} name={u.displayName} /></div>}
       {isMe && <p className="text-xs text-muted-foreground">This is how other crews see you. <Link href="/me" className="text-primary underline">Edit your profile</Link></p>}
 
       {data.hidden ? (
