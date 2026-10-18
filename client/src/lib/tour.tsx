@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
-import { ArrowLeft, ArrowRight, Check, ClipboardList, Coffee, Heart, Hotel, List, Map as MapIcon, MapPin, MessageSquare, PlaneLanding, Search, Share2, Sparkles, Star, UserPlus, UserRound, Users, UtensilsCrossed } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ClipboardList, Coffee, Heart, Hotel, List, Map as MapIcon, MapPin, MessageSquare, PlaneLanding, Search, Share2, Sparkles, Star, UserPlus, UserRound, Users, UtensilsCrossed, CalendarDays, Navigation, PlusCircle, MessagesSquare, ThumbsUp } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { POINTS, TIERS } from "@shared/tiers";
 import { Insignia } from "@/lib/auth";
 import { GoAroundIcon, Logo } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { skipWhatsNewForNewMember } from "@/lib/whatsNew";
+import { usePreview } from "@/lib/experience";
 
 const DONE_KEY = "wheelsdown-tour-done";
 const VERSION_KEY = "wheelsdown-tour-v";
@@ -39,19 +40,38 @@ const Band = ({ children }: { children: React.ReactNode }) => (
   </div>
 );
 
-const STEPS: { key: string; title: string; body: string; art: React.ReactNode; isNew?: boolean }[] = [
+/** preview: only shown when the new home screen, Plan layover, My Crew and the Lounge are open to this member. */
+const STEPS: { key: string; title: string; body: string; art: React.ReactNode; isNew?: boolean; preview?: boolean }[] = [
   {
     key: "welcome", title: "Welcome to Wheelsdown",
-    body: "Layover picks from crews who've actually been there: where to eat, what to do, where to stay and which FBOs treat you right. Here's a one-minute tour.",
+    body: "Layover picks from crews who've actually been there: where to eat, what to do, where to stay and which FBOs treat you right. Here's a quick tour.",
     art: <div className="flex flex-col items-center gap-3"><Logo className="h-16 w-16" /><p className="text-lg font-bold tracking-tight">Wheels<span className="text-primary">down</span></p><p className="text-xs text-white/60">Crew-vetted layover guide</p></div>,
   },
   {
-    key: "search", title: "Search your whole route", isNew: true,
-    body: "Type the airport codes for every stop, three or four letters each (OPF or KOPF). Filter by time, price, Grab & go or Sit-down, and food type, then switch to Map to see every pick along the route.",
+    key: "home", title: "Start with what you're doing", isNew: true, preview: true,
+    body: "The home screen opens on tiles for each job: Find spots, Add a spot, Plan layover, Rate a spot, the Crew lounge, Crew Up, My Crew and more. Each one sets up the bottom bar for that job. Tap the logo or Switch to come back.",
+    art: <div className="grid grid-cols-2 gap-2">
+      {([[Search, "Find spots"], [PlusCircle, "Add a spot"], [ClipboardList, "Plan layover"], [Users, "Crew Up"]] as const).map(([I, t], k) => (
+        <div key={t} className={cn("flex items-center gap-2 rounded-xl px-3 py-2.5 ring-1", k === 0 ? "bg-primary text-[#0B1222] ring-primary" : "bg-white/[0.06] ring-white/10")}><I className="h-4 w-4 shrink-0" /><span className="text-xs font-semibold">{t}</span></div>
+      ))}
+    </div>,
+  },
+  {
+    key: "search", title: "Search your whole route",
+    body: "Type the airport codes for every stop (OPF or KOPF). Filter by time, price, Grab & go or Sit-down and food type, then switch to Map. Collect hotel points? Add your programs in the Logbook and those hotels come first.",
     art: <div className="space-y-2.5">
       <div className="flex items-center gap-2 rounded-xl bg-white px-3 py-2.5 text-[#0B1222]"><Search className="h-4 w-4 text-[#0B1222]/50" /><span className="flex-1 font-code text-sm tracking-widest">KOPF KTEB KASE</span>
         <span className="inline-flex overflow-hidden rounded-full border border-[#0B1222]/15 text-[10px] font-semibold"><span className="inline-flex items-center gap-0.5 px-1.5 py-0.5"><List className="h-3 w-3" />List</span><span className="inline-flex items-center gap-0.5 bg-[#0B1222] px-1.5 py-0.5 text-white"><MapIcon className="h-3 w-3" />Map</span></span></div>
-      <div className="flex flex-wrap gap-1.5"><span className={chip}>Under 1 hr</span><span className={chip}>$$</span><span className={cn(chip, "bg-primary text-[#0B1222]")}>Grab &amp; go</span><span className={chip}>Pizza</span><span className={chip}>BBQ</span></div>
+      <div className="flex flex-wrap gap-1.5"><span className={chip}>Under 1 hr</span><span className={chip}>$$</span><span className={cn(chip, "bg-primary text-[#0B1222]")}>Grab &amp; go</span><span className={chip}>Pizza</span><span className={cn(chip, "inline-flex items-center gap-1 bg-sky-500 text-white")}><Hotel className="h-3 w-3" />Hilton</span></div>
+    </div>,
+  },
+  {
+    key: "today", title: "Layover today, on one screen", isNew: true, preview: true,
+    body: "Plan layover shows the field you're at: local time, sunset, weather and the METAR, your briefing picks and crew favorites. Tap Plan your day for a briefing, or Directions on any place to open Apple Maps or Google Maps.",
+    art: <div className="space-y-2">
+      <div className="flex items-center justify-between rounded-xl bg-white/[0.06] px-3 py-2 ring-1 ring-white/10"><span className="font-code text-xl font-bold tracking-wider text-primary">KMKE</span><span className="text-right"><span className="block font-code text-sm font-bold">10:32 AM</span><span className="inline-flex items-center gap-1 text-[10px] text-white/60"><span className="rounded bg-emerald-500 px-1 font-bold text-white">VFR</span>48°F · wind 220° 9 kt</span></span></div>
+      <div className="flex items-center gap-2 rounded-xl bg-primary px-3 py-2 text-[#0B1222]"><CalendarDays className="h-4 w-4" /><span className="flex-1 text-xs font-semibold">Plan your day at <span className="font-code">KMKE</span></span><ArrowRight className="h-3.5 w-3.5" /></div>
+      <div className="flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-[#0B1222]"><UtensilsCrossed className="h-4 w-4 text-[#0B1222]/60" /><span className="flex-1 truncate text-xs font-semibold">Oak Creek Diner</span><span className="inline-flex items-center gap-1 rounded-full border border-[#0B1222]/20 px-2 py-0.5 text-[10px] font-semibold"><Navigation className="h-3 w-3" />Directions</span></div>
     </div>,
   },
   {
@@ -65,7 +85,7 @@ const STEPS: { key: string; title: string; body: string; art: React.ReactNode; i
   },
   {
     key: "rate", title: "Rate it, or add what's missing", isNew: true,
-    body: `Been somewhere? Rate it for ${POINTS.review} points, plus ${POINTS.reviewDetail} more for a real comment. Add a place crews haven't found yet for ${POINTS.listing}. Tried an AI pick? Add it, and the first crew member to rate it earns +10 more. Places to avoid get a Go around.`,
+    body: `Rate a spot lists places you've been but haven't rated. Rate one for ${POINTS.review} points, plus ${POINTS.reviewDetail} more for a real comment. One rating per place, and you can edit or delete it. Add a place crews haven't found for ${POINTS.listing}. Places to avoid get a Go around.`,
     art: <div className="rounded-xl bg-white/[0.06] p-3.5 ring-1 ring-white/10">
       <p className="text-sm font-semibold">Versailles Restaurant</p>
       <div className="mt-1.5 flex items-center gap-1">{[1, 2, 3, 4, 5].map((i) => <Star key={i} className={cn("h-5 w-5", i <= 4 ? "fill-primary text-primary" : "text-white/25")} />)}<span className="ml-2 text-xs text-white/60">+{POINTS.review} pts</span></div>
@@ -75,7 +95,7 @@ const STEPS: { key: string; title: string; body: string; art: React.ReactNode; i
   },
   {
     key: "brief", title: "Trip briefings plan every stop", isNew: true,
-    body: "Build a briefing for your route. Overnights get breakfast, lunch, dinner, things to do and a hotel. Crew picks come first and your favorites are always included. One Add places button brings in more crew listings or AI picks. Finalize it for a map and a printable PDF for the crew.",
+    body: "Build a briefing for your route. Overnights get breakfast, lunch, dinner, things to do and a hotel. Crew picks come first and your favorites are always included. One Add places button brings in more crew listings or AI picks. Finalize it for a map, preview the PDF, then share it with the crew.",
     art: <div className="grid grid-cols-[1fr_auto_1.3fr] items-center gap-3">
       <div className="rounded-xl bg-white/[0.06] p-3 text-center ring-1 ring-white/10"><Heart className="mx-auto h-7 w-7 fill-rose-500 text-rose-500" /><p className="mt-1.5 text-[11px] text-white/70">Favorites</p></div>
       <ArrowRight className="h-4 w-4 text-white/40" />
@@ -90,22 +110,12 @@ const STEPS: { key: string; title: string; body: string; art: React.ReactNode; i
     </div>,
   },
   {
-    key: "hotels", title: "Hotels that earn your points", isNew: true,
-    body: "Filter hotels by rewards program: Hilton, Marriott, IHG, Hyatt, Wyndham, Choice or Best Western. Add the programs you collect under My hotel programs in your Logbook, and those hotels come first in search, AI picks and briefings.",
-    art: <div className="space-y-2.5">
-      <div className="flex flex-wrap gap-1.5">
-        {["Hilton", "Marriott", "IHG", "Hyatt"].map((p, k) => <span key={p} className={cn(chip, "inline-flex items-center gap-1", k === 0 && "bg-sky-500 text-white")}>{k === 0 && <Check className="h-3 w-3" />}{p}</span>)}
-      </div>
-      <div className="flex items-center gap-2.5 rounded-xl bg-white px-3 py-2 text-[#0B1222]"><Hotel className="h-4 w-4 text-sky-600" /><span className="flex-1 text-sm font-semibold">Hampton Inn Bedford</span><span className="rounded-md bg-sky-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">Hilton · yours</span></div>
-    </div>,
-  },
-  {
-    key: "checkin", title: "Check in and build your map",
-    body: "Check in when you're at a place. It's private and only works when your phone confirms you're there. Your Logbook keeps a map of everywhere you've added and visited.",
-    art: <div className="relative mx-auto h-32 w-full rounded-xl bg-[#14213A] ring-1 ring-white/10">
-      <svg viewBox="0 0 300 128" className="absolute inset-0 h-full w-full"><path d="M0 90 C60 70 90 110 150 80 S240 40 300 60" stroke="rgba(255,255,255,.12)" strokeWidth="10" fill="none" /><path d="M40 0 L70 128 M210 0 L180 128" stroke="rgba(255,255,255,.07)" strokeWidth="6" /></svg>
-      {[[22, 30], [48, 62], [70, 38], [84, 70]].map(([x, y], i) => <MapPin key={i} className={cn("absolute h-6 w-6 -translate-x-1/2 -translate-y-full", i % 2 ? "text-sky-300" : "text-primary")} style={{ left: `${x}%`, top: `${y}%` }} />)}
-      <div className="absolute bottom-2 left-2 rounded-full bg-primary px-2.5 py-1 text-[10px] font-bold text-[#0B1222]">Checked in</div>
+    key: "crew", title: "Your crew, Crew Up and the Lounge", isNew: true, preview: true,
+    body: "Add crew you fly with to My Crew. It's mutual, and you choose what they see. Crew Up tells your crew you're out at an airport tonight. The Crew lounge is for questions and tips with every crew; Helpful answers earn Lounge points.",
+    art: <div className="space-y-2">
+      <div className="flex items-center gap-2.5 rounded-xl bg-white/[0.06] px-3 py-2 ring-1 ring-white/10"><span className="grid h-8 w-8 place-items-center rounded-full bg-sky-500 text-xs font-bold">SR</span><span className="flex-1 text-sm font-semibold">Sam Rivera</span><span className="rounded-full bg-primary/25 px-2 py-0.5 font-code text-[10px] font-bold text-primary">Crew Up · KTEB</span></div>
+      <div className="rounded-xl bg-white px-3 py-2 text-[#0B1222]"><p className="flex items-center gap-1.5 text-xs font-semibold"><MessagesSquare className="h-3.5 w-3.5" />Best late-night food near KASE?</p>
+        <p className="mt-1 inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800"><ThumbsUp className="h-3 w-3" />Helpful · 4</p></div>
     </div>,
   },
   {
@@ -121,13 +131,13 @@ const STEPS: { key: string; title: string; body: string; art: React.ReactNode; i
     </div>,
   },
   {
-    key: "profile", title: "Follow crews, tell us what to fix", isNew: true,
-    body: "Finish your profile so crews know whose picks they're reading, and follow crews you trust to see their new picks. Your Logbook tells you when someone follows you. Something wrong or missing? Tap Send feedback at the bottom of any page.",
+    key: "profile", title: "Your Logbook, and telling us what to fix", isNew: true,
+    body: "Your Logbook holds your points, profile and settings, plus a private map of everywhere you've added or checked in. Finish your profile so crews know whose picks they're reading. Something wrong or missing? Tap Send feedback at the bottom of any page.",
     art: <div className="space-y-2.5">
       <div className="flex items-center gap-3 rounded-xl bg-white/[0.06] p-3 ring-1 ring-white/10"><div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-[#0B1222]"><UserRound className="h-5 w-5" /></div>
         <div className="flex-1"><div className="h-2 w-24 rounded bg-white/50" /><div className="mt-1.5 h-1.5 w-full overflow-hidden rounded bg-white/10"><div className="h-full w-3/5 rounded bg-primary" /></div></div></div>
       <div className="flex gap-2">
-        <div className="flex flex-1 items-center gap-2 rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-[#0B1222]"><UserPlus className="h-4 w-4" />Follow</div>
+        <div className="flex flex-1 items-center gap-2 rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-[#0B1222]"><MapPin className="h-4 w-4" />My map</div>
         <div className="flex flex-1 items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-[#0B1222]"><MessageSquare className="h-4 w-4" />Send feedback</div>
       </div>
     </div>,
@@ -139,7 +149,8 @@ export function TourHost() {
   const [open, setOpen] = useState(false);
   const [i, setI] = useState(0);
   const [mode, setMode] = useState<"full" | "new">("full");
-  const steps = mode === "new" ? STEPS.filter((x) => x.isNew) : STEPS;
+  const preview = usePreview();
+  const steps = STEPS.filter((x) => (preview || !x.preview) && (mode === "full" || x.isNew));
   const [, navigate] = useLocation();
   const touch = useRef<number | null>(null);
   // release notes after the tour's own "What's new" (v2) live in whatsNew.tsx, shown once per release per member

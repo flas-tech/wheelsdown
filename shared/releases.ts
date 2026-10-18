@@ -2,6 +2,11 @@
 export type Release = { date: string; sha?: string; title: string; notes: string[] };
 
 export const RELEASES: Release[] = [
+  { date: "2026-10-18", title: "Onboarding tour refreshed for new members (10 steps)", notes: [
+    "New steps: the home screen tiles, Layover today (Plan your day, weather, Directions to Apple/Google Maps), and My Crew + Crew Up + the Crew lounge. These three are marked preview and drop out of the tour if the launch switch is set back to admins.",
+    "Updated: search now mentions hotel programs (the separate hotels step is folded in), Rate covers the Rate a spot list and one rating per place, briefings mention Preview PDF, and the last step covers the Logbook map, profile and Send feedback (check-in step folded in).",
+    "TOUR_VERSION unchanged (2): existing members aren't shown the tour again; What's new 1.10/1.11 already told them. Anyone can replay it from Take the tour.",
+  ] },
   { date: "2026-10-18", title: "Crew feedback round: Plan your day tab, directions, pinned bottom bar, PDF preview, Add spot in briefings, remove crew, FAQ, home-screen footer (What's new 11)", notes: [
     "Layover today: Plan your day at [ICAO] tab under the airport card, starts /brief/new with the airport prefilled (wd-brief-prefill).",
     "Directions button (lib/directions.tsx) on listings, briefing picks, AI picks and Plan layover rows: Apple Maps or Google Maps. Counts as a map click and sets the Did you go? reminder like before. Today picks now carry address and coordinates.",
