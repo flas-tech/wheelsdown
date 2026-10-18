@@ -23,7 +23,7 @@ const ALL_RELEASES: Release[] = [
   {
     id: 10, date: "October 17, 2026",
     items: [
-      { icon: LayoutGrid, title: "A new home screen", body: "Open the app and pick what you're here for: plan a layover, find spots, or hang out in the Crew Lounge. The bottom bar changes to match. Prefer the old layout? Tap Use the classic app.", to: "/start" },
+      { icon: LayoutGrid, title: "A new home screen", body: "Open the app and pick what you're here for: plan a layover, find spots, or hang out in the Crew Lounge. The bottom bar changes to match. Adding a spot is one tap from the top.", to: "/start" },
       { icon: Contact, title: "My Crew", body: "Add the people you fly with. You both have to agree, and you choose what they see: your check-ins, your favorites, or neither. Find crew by name or @handle, or send your invite link.", to: "/mycrew" },
       { icon: Users, title: "Crew Up", body: "Make layover plans with your crew at the airport you're at. Only people in your crew see them, nothing more precise than the airport is shared, and plans end by themselves.", to: "/meetup" },
       { icon: MessagesSquare, title: "Crew Lounge", body: "Ask other crews, share what you know about airports, gear and layover life. Helpful answers earn Lounge points. Tail numbers are never allowed.", to: "/lounge" },

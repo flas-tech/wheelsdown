@@ -2,7 +2,7 @@
 // Signed-in members see it once the launch switch is on (admins always); guests are sent to Search.
 import { useEffect } from "react";
 import { useLocation } from "wouter";
-import { BookUser, ClipboardList, Contact, MessagesSquare, Search, Star, Trophy, Users } from "lucide-react";
+import { BookUser, ClipboardList, Contact, MessagesSquare, PlusCircle, Search, Star, Trophy, Users } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { setExperience, useAdminOnly, useExperience, usePreviewState, type Experience } from "@/lib/experience";
 import { Logo, ThemeToggle } from "@/lib/ui";
@@ -10,14 +10,16 @@ import { APP_VERSION } from "@/lib/version";
 import { cn } from "@/lib/utils";
 
 type Tile = { key: string; title: string; body: string; icon: typeof Search; href: string; exp: Experience | null | "keep"; tag?: string };
-// 2 columns x 4 rows. Each tile opens its page and sets the tailored nav that page lives in.
+// 2 columns: Find spots and Add a spot on top, Logbook full width at the bottom.
+// Each tile opens its page and sets the tailored nav that page lives in.
 const TILES: Tile[] = [
-  { key: "plan", title: "Plan layover", body: "Today at the field and your briefings", icon: ClipboardList, href: "/today", exp: "plan" },
   { key: "spots", title: "Find spots", body: "Crew-rated food, things to do, hotels", icon: Search, href: "/", exp: "spots" },
+  { key: "add", title: "Add a spot", body: "Share a place crews should know", icon: PlusCircle, href: "/add", exp: "spots" },
+  { key: "plan", title: "Plan layover", body: "Today at the field and your briefings", icon: ClipboardList, href: "/today", exp: "plan" },
+  { key: "rate", title: "Rate a spot", body: "Places waiting for your rating", icon: Star, href: "/rate", exp: "spots", tag: "New" },
   { key: "lounge", title: "Crew lounge", body: "Talk shop with other crews", icon: MessagesSquare, href: "/lounge", exp: "lounge", tag: "New" },
   { key: "meetup", title: "Crew Up", body: "Make layover plans with your crew", icon: Users, href: "/meetup", exp: "lounge", tag: "New" },
   { key: "mycrew", title: "My Crew", body: "Your crew friends and what you share", icon: Contact, href: "/mycrew", exp: "lounge", tag: "New" },
-  { key: "rate", title: "Rate a spot", body: "Places waiting for your rating", icon: Star, href: "/rate", exp: "spots", tag: "New" },
   { key: "leaderboard", title: "Leaderboard", body: "Points and status ranks", icon: Trophy, href: "/crew", exp: "lounge" },
   { key: "logbook", title: "Logbook", body: "Your profile, points and settings", icon: BookUser, href: "/me", exp: "keep" },
 ];
@@ -53,13 +55,14 @@ export default function StartPage() {
         {TILES.map((t) => {
           const last = t.exp !== "keep" && t.exp !== null && current === t.exp && (t.key === "plan" || t.key === "spots" || t.key === "lounge");
           return (
-            <li key={t.key}>
+            <li key={t.key} className={cn(t.key === "logbook" && "col-span-2")}>
               <button type="button" onClick={() => open(t)} data-testid={`tile-start-${t.key}`}
-                className={cn("group relative flex min-h-[8.75rem] w-full flex-col justify-between gap-3 rounded-2xl border p-3.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  t.key === "classic" ? "border-dashed border-border bg-transparent hover:border-foreground/40" : "bg-card hover:border-primary/60",
-                  last ? "border-primary ring-1 ring-primary/40" : t.key !== "classic" && "border-card-border")}>
+                className={cn("group relative flex w-full flex-col justify-between gap-3 rounded-2xl border p-3.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  t.key === "logbook" ? "min-h-0 flex-row items-center justify-start" : "min-h-[8.75rem]",
+                  "bg-card hover:border-primary/60",
+                  last ? "border-primary ring-1 ring-primary/40" : "border-card-border")}>
                 <span className="flex items-start justify-between gap-2">
-                  <span className={cn("grid h-10 w-10 place-items-center rounded-xl", t.key === "classic" ? "bg-muted" : "bg-primary/15")}><t.icon className="h-[22px] w-[22px]" /></span>
+                  <span className="grid h-10 w-10 place-items-center rounded-xl bg-primary/15"><t.icon className="h-[22px] w-[22px]" /></span>
                   {last ? <span className="rounded-full bg-primary/20 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider">Last used</span>
                     : t.tag && <span className="rounded-full border border-border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">{t.tag}</span>}
                 </span>
@@ -74,7 +77,6 @@ export default function StartPage() {
       </ul>
 
       <div className="mt-auto pt-6 text-center text-xs text-muted-foreground">
-        <button type="button" onClick={() => { setExperience(null); navigate("/"); }} className="font-semibold text-foreground underline-offset-2 hover:underline" data-testid="tile-start-classic">Use the classic app instead</button>
         {adminOnly && <p className="mt-3 rounded-full border border-dashed border-border px-3 py-1.5" data-testid="text-start-preview">Preview for admins. Members still see the classic app.</p>}
         <p className="mt-3">
           Version {APP_VERSION}

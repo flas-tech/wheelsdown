@@ -54,7 +54,7 @@ const SECTIONS: { title: string; items: QA[] }[] = [
       qa("What is My Crew?", "The people you fly with. Send a crew request from someone's profile, from Find in My Crew, or with your invite link. Nothing is shared until they accept. Declining and removing are quiet: nobody is told."),
       qa("What does my crew see?", "Your display name (even if you post anonymously), your profile and your Crew Up plans. In My Crew > Privacy you choose whether they also see your check-ins from the last 60 days and your favorites. Check-ins are off until you turn them on."),
       qa("What is Crew Up?", "Layover plans for your crew. Post that you're at an airport for a few hours, with an optional note and a public meeting place. Only people in your crew see it, never anything more exact than the airport, and it ends by itself. Hotel names, room numbers and tail numbers aren't allowed."),
-      qa("How do I get back to the old layout?", "On the home screen, tap Use the classic app. Tap the Wheelsdown logo any time to come back to the home screen."),
+      qa("How do I get back to the home screen?", "Tap the Wheelsdown logo at the top, or Switch in the bottom bar. Pick a different tile and the bottom bar changes to match."),
       qa("Does My Crew earn points?", "No. Adding crew earns nothing, so there's no reason to collect strangers. In the Crew Lounge, points come only from Helpful votes by other members."),
     ],
   },
