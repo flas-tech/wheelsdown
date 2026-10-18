@@ -10,6 +10,7 @@ import { FavoriteButton } from "@/lib/favorites";
 import { ShareButton } from "@/lib/share";
 import { CheckInButton } from "@/lib/checkins";
 import { trackOut } from "@/lib/metrics";
+import { DirectionsButton } from "@/lib/directions";
 import { CrewAvatar } from "@/lib/aircraft";
 import { ModNotice, type ModInfo } from "@/lib/moderation";
 import { COST_LABELS, costOptions, costRange, costUnit, hasCost, paceLabel, paceOf } from "@shared/cost";
@@ -110,6 +111,8 @@ export default function SpotPage() {
             ? <Link href={`/crew/${spot.userId}`} className="underline-offset-2 hover:underline text-foreground" data-testid="link-spot-author">{spot.submittedBy}</Link> : (spot.submittedBy || "crew")}
           {spot.userId && crew.get(spot.userId) && <TierChip tierId={crew.get(spot.userId)!.tierId} />}</p>
       </section>
+
+      <DirectionsButton place={spot} size="lg" testId="button-spot-directions" />
 
       <div className={cn("grid gap-2", spot.category === "do" || spot.category === "eat" ? "grid-cols-3" : hasCost(spot.category) ? "grid-cols-2" : "grid-cols-1")}>
         {hasCost(spot.category) && (

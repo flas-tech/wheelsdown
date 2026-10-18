@@ -133,7 +133,7 @@ async function airportOf(code: string) {
 }
 const tzOf = (lat: number, lon: number) => { try { return tzlookup(lat, lon); } catch { return null; } };
 const myReviewed = async (uid: number) => new Set((await rows(sql`SELECT spot_id FROM reviews WHERE user_id = ${uid}`)).map((r) => num(r.spot_id)));
-const pick = (s: SpotWithStats, rated: Set<number>): TodayPick => ({ id: s.id, name: s.name, category: s.category, milesFromField: s.milesFromField ?? 0, avgRating: s.avgRating ?? null, reviewCount: s.reviewCount, rated: rated.has(s.id) });
+const pick = (s: SpotWithStats, rated: Set<number>): TodayPick => ({ id: s.id, name: s.name, category: s.category, milesFromField: s.milesFromField ?? 0, avgRating: s.avgRating ?? null, reviewCount: s.reviewCount, rated: rated.has(s.id), icao: s.icao, address: s.address || null, lat: s.lat ?? null, lng: s.lng ?? null });
 const stopsOf = (raw: string): BriefingStop[] => { try { const v = JSON.parse(raw || "[]"); return Array.isArray(v) ? v : []; } catch { return []; } };
 const hasCheckin = async (uid: number, icao: string) =>
   !!(await rows(sql`SELECT 1 FROM checkins WHERE user_id = ${uid} AND icao = ${icao} AND created_at > ${Date.now() - MEETUP_RULES.checkinWindowHours * HOUR} LIMIT 1`))[0];

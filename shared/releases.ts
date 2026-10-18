@@ -2,6 +2,15 @@
 export type Release = { date: string; sha?: string; title: string; notes: string[] };
 
 export const RELEASES: Release[] = [
+  { date: "2026-10-18", title: "Crew feedback round: Plan your day tab, directions, pinned bottom bar, PDF preview, Add spot in briefings, remove crew, FAQ, home-screen footer (What's new 11)", notes: [
+    "Layover today: Plan your day at [ICAO] tab under the airport card, starts /brief/new with the airport prefilled (wd-brief-prefill).",
+    "Directions button (lib/directions.tsx) on listings, briefing picks, AI picks and Plan layover rows: Apple Maps or Google Maps. Counts as a map click and sets the Did you go? reminder like before. Today picks now carry address and coordinates.",
+    "Bottom bar: in the home-screen app iOS can leave the whole viewport short after a keyboard or picker closes, so the bar floated mid-screen. viewportFix now pins it against the tallest height seen in that orientation and re-checks on scroll (Joe's report from Crew Up and Ranks).",
+    "Preview PDF in the briefing export panel renders every page in the app with PDF.js (loaded on demand), with Share PDF from the preview. Feedback #37.",
+    "Add spot on every briefing stop header; on /brief/:id and /brief/new the Plan bar swaps Logbook for Add spot. Feedback #42.",
+    "My Crew: clear Remove from crew button in the opened row, plus a hint. Feedback #43.",
+    "FAQ: home screen, directions, Rate a spot, adding a spot, Plan layover, PDF preview, removing crew, the Lounge, and check-in sharing. Feedback #41. Standard footer on the home screen (shared SiteFooter). Feedback #40.",
+  ] },
   { date: "2026-10-17", title: "Launch: new home screen, My Crew, Crew Up, Crew Lounge open to members; delete your own rating (What's new 10)", notes: [
     "One launch switch (app_settings experience_audience, plus layover_audience and lounge_audience) flipped from Logbook > Home screen > Open to members, or PUT /api/admin/launch. Turning it off puts every member back on the classic app instantly, without a deploy; nothing they posted is lost.",
     "Home screen (/start): signed-in members land there once per visit; guests keep Search. Tiles: Plan layover, Find spots, Crew lounge, Crew Up, My Crew, Rate a spot, Leaderboard, Logbook, plus Use the classic app.",

@@ -7,7 +7,7 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { BadgeCheck, Contact, LayoutGrid, MessagesSquare, Trash2, Users, MapPinned, PanelBottom, ArrowUpDown, BellRing, CircleHelp, ClipboardCheck, Compass, Flame, ListPlus, RefreshCw, Sparkles, Star, Undo2 } from "lucide-react";
+import { BadgeCheck, Contact, LayoutGrid, MessagesSquare, Trash2, Users, MapPinned, PanelBottom, ArrowUpDown, BellRing, CircleHelp, ClipboardCheck, Compass, Flame, ListPlus, RefreshCw, Sparkles, Star, Undo2, Navigation, Eye, PlusCircle, UserMinus, CalendarDays } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -20,6 +20,18 @@ type DevFeature = "lounge";
 const PUBLIC_FEATURES = new Set<DevFeature>([]);
 
 const ALL_RELEASES: Release[] = [
+  {
+    id: 11, date: "October 18, 2026",
+    items: [
+      { icon: CalendarDays, title: "Plan your day at your airport", body: "Layover today now opens with Plan your day at the airport you're at. One tap starts a briefing for that field with crew picks, a map and a PDF." },
+      { icon: Navigation, title: "Directions in one tap", body: "Every place now has a Directions button: on the listing, on each briefing pick and on Plan layover. Choose Apple Maps or Google Maps and you're on your way." },
+      { icon: PanelBottom, title: "The bottom bar stays put", body: "On iPhone the bottom bar could float up the screen after typing or picking from a list, especially in the home-screen app. It now stays pinned to the bottom." },
+      { icon: Eye, title: "Preview the briefing PDF", body: "Tap Preview PDF to see every page before you send it to the crew, then Share PDF right from the preview." },
+      { icon: PlusCircle, title: "Add a spot from a briefing", body: "Each briefing stop has Add spot, and in Plan layover the bottom bar shows Add spot while you're in a briefing." },
+      { icon: UserMinus, title: "Remove someone from My Crew", body: "Tap the arrow on their row in My Crew, then Remove from crew. They aren't told." },
+      { icon: CircleHelp, title: "Updated questions and answers", body: "The FAQ now covers the home screen, Plan layover, Rate a spot, My Crew, Crew Up and the Lounge. The home screen also has the usual links at the bottom.", to: "/faq" },
+    ],
+  },
   {
     id: 10, date: "October 17, 2026",
     items: [

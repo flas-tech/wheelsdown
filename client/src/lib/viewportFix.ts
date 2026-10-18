@@ -17,6 +17,8 @@ export function installViewportFix() {
   const root = document.documentElement;
   const vv = window.visualViewport;
   let raf = 0;
+  const standalone = (navigator as any).standalone === true || window.matchMedia?.("(display-mode: standalone)").matches;
+  const tallest: Record<string, number> = {};
   const measure = () => {
     raf = 0;
     const typing = editable(document.activeElement);
@@ -26,6 +28,16 @@ export function installViewportFix() {
     if (vv && !typing && Math.abs(vv.scale - 1) < 0.01) {
       const gap = vv.offsetTop + vv.height - window.innerHeight;
       if (gap > 1 && gap < 600) shift = Math.round(gap);
+    }
+    // Home-screen app: no browser toolbars, so the screen height in an orientation never legitimately shrinks.
+    // iOS sometimes leaves BOTH the layout and visual viewport short after a keyboard or picker closes (so the
+    // check above sees no gap) and the bar floats mid-screen. Pin it against the tallest height seen instead.
+    if (standalone && !typing) {
+      const o = window.innerWidth > window.innerHeight ? "l" : "p";
+      const h = window.innerHeight;
+      if (h > (tallest[o] || 0)) tallest[o] = h;
+      const gap = tallest[o] - h;
+      if (gap > 1 && gap < 600 && gap > shift) shift = Math.round(gap);
     }
     root.style.setProperty("--vv-shift", `${shift}px`);
   };
@@ -44,6 +56,8 @@ export function installViewportFix() {
   vv?.addEventListener("resize", schedule);
   vv?.addEventListener("scroll", schedule);
   window.addEventListener("resize", schedule);
+  // re-check as the page scrolls too, so a stranded bar snaps back the moment you move
+  window.addEventListener("scroll", schedule, { passive: true });
   window.addEventListener("orientationchange", () => setTimeout(schedule, 300));
   document.addEventListener("visibilitychange", schedule);
   window.addEventListener("pageshow", schedule);

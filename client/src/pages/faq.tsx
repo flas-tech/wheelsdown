@@ -16,6 +16,8 @@ const SECTIONS: { title: string; items: QA[] }[] = [
     items: [
       qa("What is Wheelsdown?", "A layover guide written by flight crews: where to eat, what to do, where to stay and which FBOs treat crews right. Every crew listing comes from someone who has been there."),
       qa("How do I search my route?", "Type the airport code for each stop, three letters (OPF) or four (KOPF), separated by spaces. Pick Eat, Do, Stay or FBO intel, then narrow it down by time, price, Grab & go or Sit-down, food type or type of thing to do. Switch to Map to see every pick along the route."),
+      qa("What's on the home screen?", "Signed in, Wheelsdown opens on tiles for what you came to do: Find spots, Add a spot, Plan layover, Rate a spot, Crew lounge, Crew Up, My Crew, Leaderboard and Logbook. Each tile sets up the bottom bar for that job. Tap the Wheelsdown logo or Switch to come back."),
+      qa("How do I get directions to a place?", "Tap Directions on the place, on a briefing pick or on the Plan layover screen, then choose Apple Maps or Google Maps. It opens your maps app with the route."),
       qa("Do I need an account?", "No, anyone can search. You need a free account to rate, add places, build briefings, save favorites and earn points."),
       qa("How do I put Wheelsdown on my home screen?", "On iPhone, open getwheelsdown.com in Safari, tap Share, then Add to Home Screen. It updates itself when you reopen it, so you never need to add it again."),
     ],
@@ -24,6 +26,8 @@ const SECTIONS: { title: string; items: QA[] }[] = [
     title: "Ratings and listings",
     items: [
       qa("How do ratings work?", "Rate from 1 to 5 stars. A Go around (0 stars) warns crews to avoid a place. You can add what you paid and a comment. Each place takes one rating per crew member: edit it later, or delete it from the listing."),
+      qa("What is Rate a spot?", "A list of places you haven't rated yet: ones you checked in at, opened directions or a website for, had in a briefing, or saved as a favorite. Rate each in a couple of taps."),
+      qa("How do I add a spot?", "Tap Add a spot on the home screen, Add spot in the bottom bar, or Add spot on any briefing stop. Enter the name, the airport and what crews should know. A moderator checks new listings before they go public."),
       qa("What does Crew-vetted mean?", "A listing with 3 or more upvotes in the last year, at least 75% positive. Crew-vetted only in the filters shows just those."),
       qa("Can I edit someone else's listing?", "No. Only the member who added a listing can edit it. If something is wrong or a place has closed, vote it down with a reason or send feedback, and we'll fix it."),
       qa("Why are prices shown as ranges?", "Prices change, so we show what crews reported as a dollar range per person (or per night for hotels), like Under $15 or $15–30."),
@@ -44,7 +48,8 @@ const SECTIONS: { title: string; items: QA[] }[] = [
     items: [
       qa("What's a trip briefing?", "A plan for every stop on your trip. Overnights get breakfast, lunch, dinner, things to do and a hotel. Your favorites are always included, and crew picks come first."),
       qa("How do I change what's in a briefing?", "Use Up, Down and Remove on any pick. Add places at each stop brings in more crew listings or AI picks by type. Re-pick starts that stop over."),
-      qa("How do I send it to the crew?", "Tap Finalize briefing at the bottom to preview it, then Share PDF or Share link. Anyone with the link can view it. Done takes you back to all your briefings."),
+      qa("How do I send it to the crew?", "Tap Finalize briefing at the bottom to look it over. Preview PDF shows the exact pages before you send them. Then Share PDF or Share link. Anyone with the link can view it. Done takes you back to all your briefings."),
+      qa("What is Plan layover?", "One screen for the airport you're at or headed to: Plan your day at that airport (starts a briefing for it in one tap), weather and the METAR, sunrise and sunset, your briefing picks for that stop, crew favorites nearby, and Crew Up. Each place has Directions and Rate right on the row."),
       qa("Can I delete a briefing?", "Yes, at the bottom of the briefing. Deleting can't be undone."),
     ],
   },
@@ -52,9 +57,11 @@ const SECTIONS: { title: string; items: QA[] }[] = [
     title: "My Crew, Crew Up and the Lounge",
     items: [
       qa("What is My Crew?", "The people you fly with. Send a crew request from someone's profile, from Find in My Crew, or with your invite link. Nothing is shared until they accept. Declining and removing are quiet: nobody is told."),
+      qa("How do I remove someone from my crew?", "Open My Crew, tap the arrow on their row, then Remove from crew and Yes, remove. They aren't told, and they stop seeing your Crew Up plans and anything you share. You can also do it from their profile."),
       qa("What does my crew see?", "Your display name (even if you post anonymously), your profile and your Crew Up plans. In My Crew > Privacy you choose whether they also see your check-ins from the last 60 days and your favorites. Check-ins are off until you turn them on."),
       qa("What is Crew Up?", "Layover plans for your crew. Post that you're at an airport for a few hours, with an optional note and a public meeting place. Only people in your crew see it, never anything more exact than the airport, and it ends by itself. Hotel names, room numbers and tail numbers aren't allowed."),
       qa("How do I get back to the home screen?", "Tap the Wheelsdown logo at the top, or Switch in the bottom bar. Pick a different tile and the bottom bar changes to match."),
+      qa("What is the Crew Lounge?", "A place to talk shop with other crews: questions, tips and airport intel. Mark useful answers Helpful; that's how Lounge points are earned. Tail numbers aren't allowed."),
       qa("Does My Crew earn points?", "No. Adding crew earns nothing, so there's no reason to collect strangers. In the Crew Lounge, points come only from Helpful votes by other members."),
     ],
   },
@@ -69,7 +76,7 @@ const SECTIONS: { title: string; items: QA[] }[] = [
   {
     title: "Privacy and account",
     items: [
-      qa("Who can see my check-ins?", "Only you. Check-ins only work when your phone confirms you're at the place, and they build the private map in your Logbook."),
+      qa("Who can see my check-ins?", "Only you, unless you choose to share them with your crew in My Crew > Privacy (off by default, last 60 days only). Check-ins only work when your phone confirms you're at the place, and they build the private map in your Logbook."),
       qa("Can I post anonymously?", "Yes. In your Logbook profile, choose to post anonymously. Your name comes off everything you've posted, and your bio, badges and followers stay hidden."),
       qa("How do I delete my account?", "At the bottom of your Logbook. It permanently deletes your account, ratings, comments, votes and points. Listings you added stay up, credited to Former crew member."),
       qa("How do I know I have the latest version?", "The version number is at the bottom of every page and in your Logbook. Each release raises it by one. Updates install by themselves when you reopen the app, and Check for updates in your Logbook confirms you're current or updates on the spot."),

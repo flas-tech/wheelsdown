@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { Link } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Check, Copy, Loader2, MessageSquareText, Share2, UserCheck, UserPlus, X } from "lucide-react";
+import { Check, Copy, Loader2, MessageSquareText, Share2, UserCheck, UserMinus, UserPlus, X } from "lucide-react";
 import type { CrewRelation, MemberMessage, MyCrewResp, CrewRequest } from "@shared/mycrew";
 import type { PublicUser } from "@shared/tiers";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -66,6 +66,17 @@ export function CrewButton({ userId, name }: { userId: number; name: string }) {
   if (relation === "incoming") return <button type="button" className={cn(pill, "taxi-sign")} disabled={busy} onClick={() => act.mutate({ kind: "accept", userId, requestId, name })} data-testid="button-crew-accept">{busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}Accept crew request</button>;
   if (!allowsRequests) return <span className="text-xs text-muted-foreground" data-testid="text-crew-closed">Not taking crew requests</span>;
   return <button type="button" className={cn(pill, "taxi-sign")} disabled={busy} onClick={() => act.mutate({ kind: "request", userId, name })} data-testid="button-crew-add">{busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserPlus className="h-3.5 w-3.5" />}Add to My Crew</button>;
+}
+
+/** A plain, obvious "Remove from crew" control for someone already in your crew (asks once to confirm). */
+export function RemoveFromCrew({ userId, name }: { userId: number; name: string }) {
+  const act = useCrewAction();
+  const [sure, setSure] = useState(false);
+  const busy = act.isPending;
+  return sure
+    ? <span className="inline-flex items-center gap-2"><button type="button" className={cn(pill, "bg-destructive text-destructive-foreground")} disabled={busy} onClick={() => act.mutate({ kind: "remove", userId, name }, { onSettled: () => setSure(false) })} data-testid={`button-crew-remove-confirm-${userId}`}>{busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserMinus className="h-3.5 w-3.5" />}Yes, remove</button>
+        <button type="button" className="text-xs text-muted-foreground" onClick={() => setSure(false)} data-testid={`button-crew-remove-keep-${userId}`}>Keep</button></span>
+    : <button type="button" className={cn(pill, "border border-destructive/60 text-destructive")} onClick={() => setSure(true)} data-testid={`button-crew-remove-${userId}`}><UserMinus className="h-3.5 w-3.5" />Remove from crew</button>;
 }
 
 export function PersonLine({ p, sub }: { p: { id: number; displayName: string; aircraft: string; tierId: string; points: number; crewRole: string; homeBase: string }; sub?: string }) {

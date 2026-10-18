@@ -6,7 +6,7 @@ import { BookUser, ClipboardList, Contact, MessagesSquare, PlusCircle, Search, S
 import { useAuth } from "@/lib/auth";
 import { setExperience, useAdminOnly, useExperience, usePreviewState, type Experience } from "@/lib/experience";
 import { Logo, ThemeToggle } from "@/lib/ui";
-import { APP_VERSION } from "@/lib/version";
+import { SiteFooter } from "@/lib/footer";
 import { cn } from "@/lib/utils";
 
 type Tile = { key: string; title: string; body: string; icon: typeof Search; href: string; exp: Experience | null | "keep"; tag?: string };
@@ -78,10 +78,8 @@ export default function StartPage() {
 
       <div className="mt-auto pt-6 text-center text-xs text-muted-foreground">
         {adminOnly && <p className="mt-3 rounded-full border border-dashed border-border px-3 py-1.5" data-testid="text-start-preview">Preview for admins. Members still see the classic app.</p>}
-        <p className="mt-3">
-          Version {APP_VERSION}
-        </p>
       </div>
+      <SiteFooter className="mt-6 border-t border-border pt-4" />
     </div>
   );
 }

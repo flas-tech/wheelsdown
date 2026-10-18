@@ -15,6 +15,7 @@ import { CUISINES, cuisineLabel } from "@shared/cuisine";
 import { useToast } from "@/hooks/use-toast";
 import { CAT_META, fmtMinutes } from "@/lib/ui";
 import { cn } from "@/lib/utils";
+import { DirectionsButton } from "@/lib/directions";
 import type { AiPick } from "@/lib/briefPdf";
 
 /** "Crew pick" (listed and rated by crews) or "AI pick" (suggested where no crew has listed anything yet). */
@@ -62,7 +63,8 @@ function AiCard({ spot }: { spot: AiPick }) {
       {spot.description && <p className="mt-2 text-sm text-muted-foreground line-clamp-3">{spot.description}</p>}
       {spot.address && <a href={maps} onClick={went} target="_blank" rel="noopener noreferrer" className="mt-1.5 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"><MapPin className="h-3 w-3" />{spot.address}</a>}
       <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
-        <a href={out} onClick={went} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"><ExternalLink className="h-3 w-3" />{spot.website ? "Website" : "Maps"}</a>
+        <span className="inline-flex items-center gap-3"><DirectionsButton place={spot} visitHref={aiAddHref(spot)} testId={`button-ai-directions-${-spot.id}`} />
+        {spot.website && <a href={out} onClick={went} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"><ExternalLink className="h-3 w-3" />Website</a>}</span>
         <Link href={aiAddHref(spot)} className="inline-flex items-center gap-1 font-semibold text-primary" data-testid={`link-ai-add-${-spot.id}`}><Plus className="h-3.5 w-3.5" />Been here? Add it for crews</Link>
       </div>
       <FirstRateNote />

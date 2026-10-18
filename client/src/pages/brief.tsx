@@ -17,6 +17,8 @@ import { CAT_META, Chip, Stars, fmtMinutes, totalMinutes } from "@/lib/ui";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { DirectionsButton } from "@/lib/directions";
+import { PdfPreviewDialog } from "@/lib/pdfPreview";
 import { drawStaticMap, PIN_COLORS } from "@/lib/staticMap";
 import { buildBriefPdf, shareOrDownload, stopPins, layoverText, routeText, CAT_NAMES, isAi, aiReason, type AiPick, type BriefFull, type BriefStopFull } from "@/lib/briefPdf";
 import { errText } from "./add";
@@ -321,11 +323,13 @@ function ExportBar({ brief, preparedBy, onShared }: { brief: BriefFull; prepared
   const fresh = pdf && pdf.key === brief.updatedAt;
   const shareUrl = `${appUrl()}#/b/${brief.shareToken}`;
 
-  async function prepare() {
+  const [previewing, setPreviewing] = useState(false);
+  async function prepare(thenPreview = false) {
     setBusy(true);
     try {
       const out = await buildBriefPdf(brief, { appUrl: appUrl(), preparedBy });
       setPdf({ ...out, key: brief.updatedAt });
+      if (thenPreview) setPreviewing(true);
       // count one sponsor impression per stop that shows a sponsor line
       brief.stops.forEach((s) => s.sponsor && apiRequest("POST", `/api/ads/${s.sponsor.id}/impression`).catch(() => {}));
     } catch (e) {
@@ -356,7 +360,7 @@ function ExportBar({ brief, preparedBy, onShared }: { brief: BriefFull; prepared
             <Share2 className="h-4 w-4" /> Share PDF
           </button>
         ) : (
-          <button onClick={prepare} disabled={busy} className="h-11 rounded-full taxi-sign text-sm font-semibold inline-flex items-center justify-center gap-1.5 hover-elevate disabled:opacity-60" data-testid="button-brief-pdf">
+          <button onClick={() => prepare()} disabled={busy} className="h-11 rounded-full taxi-sign text-sm font-semibold inline-flex items-center justify-center gap-1.5 hover-elevate disabled:opacity-60" data-testid="button-brief-pdf">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />} {busy ? "Building PDF…" : "Prepare PDF"}
           </button>
         )}
@@ -364,8 +368,13 @@ function ExportBar({ brief, preparedBy, onShared }: { brief: BriefFull; prepared
           <Link2 className="h-4 w-4" /> Share link
         </button>
       </div>
+      <button type="button" onClick={() => (fresh ? setPreviewing(true) : prepare(true))} disabled={busy}
+        className="h-10 w-full rounded-full border border-border text-sm font-medium inline-flex items-center justify-center gap-1.5 hover-elevate disabled:opacity-60" data-testid="button-brief-preview-pdf">
+        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />} Preview PDF
+      </button>
+      <PdfPreviewDialog blob={fresh ? pdf!.blob : null} open={previewing && !!fresh} onOpenChange={setPreviewing} onSend={send} title={brief.title || "Trip briefing"} />
       <p className="text-[11px] text-muted-foreground">
-        {fresh ? "Ready. On iPhone, Share PDF opens Messages, Mail and AirDrop." : "The PDF has a cover with the routing, then one page per stop with the map and picks."}
+        {fresh ? "Ready. Preview it first, or Share PDF to open Messages, Mail and AirDrop on iPhone." : "The PDF has a cover with the routing, then one page per stop with the map and picks."}
         {IS_STATIC ? " Demo: shared links only open in this browser." : ""}
       </p>
     </div>
@@ -423,9 +432,14 @@ function StopSection({ stop, index, onRemove, onAddPick, onMove, onResuggest, on
           </div>
           <p className="mt-1 text-xs text-muted-foreground truncate">{stop.airport ? `${stop.airport.name}${stop.airport.city ? ` · ${stop.airport.city}` : ""}` : ""}</p>
         </div>
-        <button onClick={onResuggest} disabled={busy} className="shrink-0 h-8 rounded-full border border-border px-2.5 text-xs inline-flex items-center gap-1 hover-elevate disabled:opacity-50" data-testid={`button-resuggest-${index}`}>
-          <RefreshCw className="h-3.5 w-3.5" /> Re-pick
-        </button>
+        <span className="flex shrink-0 items-center gap-1.5">
+          <Link href={`/add/${stop.icao}`} className="h-8 rounded-full border border-border px-2.5 text-xs inline-flex items-center gap-1 font-semibold hover-elevate" data-testid={`link-stop-add-${index}`}>
+            <Plus className="h-3.5 w-3.5" /> Add spot
+          </Link>
+          <button onClick={onResuggest} disabled={busy} className="h-8 rounded-full border border-border px-2.5 text-xs inline-flex items-center gap-1 hover-elevate disabled:opacity-50" data-testid={`button-resuggest-${index}`}>
+            <RefreshCw className="h-3.5 w-3.5" /> Re-pick
+          </button>
+        </span>
       </div>
       {plan && <p className="text-[11px] text-muted-foreground">{plan.note}</p>}
 
@@ -500,6 +514,7 @@ function PickRow({ n, spot, count, onRemove, onUp, onDown, busy, readOnly, favor
               <MapPin className="h-3 w-3" />{spot.address}
             </a>
           )}
+          <div className="mt-2"><DirectionsButton place={spot} visitHref={ai ? aiAddHref(spot as AiPick) : undefined} testId={`button-pick-directions-${spot.id}`} /></div>
         </div>
       </div>
       {ai && (

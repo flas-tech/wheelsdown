@@ -8,7 +8,6 @@ import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { Shield } from "lucide-react";
 import StartPage from "@/pages/start";
 import LoungePage from "@/pages/lounge";
 import TodayPage from "@/pages/today";
@@ -41,7 +40,7 @@ import { Logo, ThemeProvider, ThemeToggle } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { FeedbackLink } from "@/lib/feedback";
 import { TourHost, TourLink } from "@/lib/tour";
-import { VersionLine } from "@/lib/version";
+import { SiteFooter } from "@/lib/footer";
 import { UpdateBar } from "@/lib/update";
 import { WhatsNewHost } from "@/lib/whatsNew";
 import { IS_STATIC } from "@/lib/queryClient";
@@ -56,7 +55,7 @@ function Shell() {
   useEffect(() => { if (loc !== "/") window.scrollTo(0, 0); }, [loc]);
   // members: the classic six-item nav; admins previewing an experience get a nav tailored to it (lib/experience.tsx)
   const { on: landing, ready: landingReady } = usePreviewState();
-  const nav = useNav().map((n) => ({ ...n, active: n.active(loc) }));
+  const nav = useNav(loc).map((n) => ({ ...n, active: n.active(loc) }));
   // the new landing page: once per visit, a signed-in member opening the app at home starts on /start
   const [, go] = useLocation();
   useEffect(() => {
@@ -135,22 +134,7 @@ function Shell() {
         </Switch>
         </ErrorBoundary>
         {!isAdmin && (
-          <footer className="print:hidden mt-12 space-y-3 text-xs text-muted-foreground">
-            <div className="flex items-center justify-between gap-3">
-              <p>{IS_STATIC ? "Demo build: sample data, and your additions are saved only in this browser." : "Crew-sourced. Verify hours and prices before you go."}</p>
-              <Link href="/admin" data-testid="link-admin" className="inline-flex shrink-0 items-center gap-1 hover:text-foreground"><Shield className="h-3.5 w-3.5" />Admin</Link>
-            </div>
-            <nav className="flex flex-wrap gap-x-4 gap-y-1" data-testid="nav-legal">
-              <Link href="/about" className="hover:text-foreground">About & Advertise</Link>
-              <Link href="/faq" className="hover:text-foreground" data-testid="link-footer-faq">FAQ</Link>
-              <Link href="/guidelines" className="hover:text-foreground">Guidelines</Link>
-              <Link href="/terms" className="hover:text-foreground">Terms</Link>
-              <Link href="/privacy" className="hover:text-foreground">Privacy</Link>
-              <TourLink className="hover:text-foreground" />
-              <FeedbackLink className="font-semibold text-foreground hover:text-primary" />
-            </nav>
-            <VersionLine className="text-[11px] text-muted-foreground/80" />
-          </footer>
+          <SiteFooter className="mt-12" />
         )}
       </main>
       <TourHost />

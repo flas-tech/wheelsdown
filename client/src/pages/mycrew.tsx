@@ -7,7 +7,7 @@ import type { CrewFindRow, CrewMember, CrewPrivacy, CrewShared } from "@shared/m
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { PreviewBadge, PreviewGate, errMsg, ago } from "@/lib/preview";
-import { CrewButton, CrewRequestList, InviteCrewCard, PersonLine, useCrewAction, useMyCrew } from "@/lib/mycrew";
+import { CrewButton, CrewRequestList, RemoveFromCrew, InviteCrewCard, PersonLine, useCrewAction, useMyCrew } from "@/lib/mycrew";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
@@ -74,7 +74,7 @@ function CrewList({ crew, onFind }: { crew: CrewMember[]; onFind: () => void }) 
   return (
     <div className="space-y-4">
       <section className="rounded-2xl border border-card-border bg-card" data-testid="section-crew-list">
-        <p className="px-4 pt-3 pb-2 text-xs text-muted-foreground">{crew.length} in your crew</p>
+        <p className="px-4 pt-3 pb-2 text-xs text-muted-foreground">{crew.length} in your crew · tap <ChevronRight className="inline h-3 w-3 -mt-0.5" /> to see what they share or remove them</p>
         <ul className="divide-y divide-border border-t border-border">
           {crew.map((c) => (
             <li key={c.id} data-testid={`crew-member-${c.id}`}>
@@ -102,7 +102,7 @@ function Shared({ member }: { member: CrewMember }) {
     <div className="space-y-3 border-t border-dashed border-border bg-muted/30 px-4 py-3 text-sm" data-testid={`shared-${member.id}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">In your crew since {new Date(member.since).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</p>
-        <CrewButton userId={member.id} name={member.displayName} />
+        <RemoveFromCrew userId={member.id} name={member.displayName} />
       </div>
       {isLoading || !data ? <Skeleton className="h-12 rounded-xl" /> : (
         <>

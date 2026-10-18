@@ -31,7 +31,7 @@ export type Metar = {
   visibility: string | null; ceilingFt: number | null; clouds: string; wx: string;
 };
 
-export type TodayPick = { id: number; name: string; category: string; milesFromField: number; avgRating: number | null; reviewCount: number; rated: boolean };
+export type TodayPick = { id: number; name: string; category: string; milesFromField: number; avgRating: number | null; reviewCount: number; rated: boolean; icao?: string; address?: string | null; lat?: number | null; lng?: number | null };
 export type TodayResp = {
   icao: string | null; source: "query" | "checkin" | "briefing" | null; checkedInAt: number | null;
   airport: { icao: string; name: string; city: string; region: string; country: string; lat: number; lon: number } | null;

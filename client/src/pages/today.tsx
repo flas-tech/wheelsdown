@@ -3,11 +3,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { useSearch } from "@/pages/home";
-import { BedDouble, ChevronRight, Clock, Compass, Heart, Loader2, PlaneLanding, Plane, RefreshCw, Star, Sunrise, Sunset, Users, Utensils, Wind } from "lucide-react";
+import { BedDouble, CalendarDays, ChevronRight, Clock, Compass, Heart, Loader2, PlaneLanding, Plane, RefreshCw, Star, Sunrise, Sunset, Users, Utensils, Wind } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { AirportCheckInCard } from "@/lib/checkins";
 import { PreviewBadge, PreviewGate, ago, errMsg } from "@/lib/preview";
 import { cn } from "@/lib/utils";
+import { DirectionsButton } from "@/lib/directions";
 import type { Metar, TodayPick, TodayResp } from "@shared/layover";
 
 const CAT_COLOR: Record<string, string> = {
@@ -113,6 +114,19 @@ function Board({ d, refreshing, onRefresh }: { d: TodayResp; refreshing: boolean
         </div>
       </section>
 
+      {/* Plan your day here: starts a trip briefing with this airport filled in */}
+      <Link href="/brief/new" onClick={() => sessionStorage.setItem("wd-brief-prefill", ap.icao)}
+        className="flex items-center justify-between gap-3 rounded-2xl taxi-sign p-4 hover-elevate" data-testid="link-today-plan-day">
+        <span className="flex min-w-0 items-center gap-3">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-black/10"><CalendarDays className="h-5 w-5" /></span>
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold">Plan your day at <span className="font-code">{ap.icao}</span></span>
+            <span className="block text-xs opacity-80">Food, things to do and a map from crew picks, ready to share</span>
+          </span>
+        </span>
+        <ChevronRight className="h-5 w-5 shrink-0" />
+      </Link>
+
       <Weather m={d.metar} failed={d.metarError} tz={d.tz} refreshing={refreshing} onRefresh={onRefresh} />
 
       {!d.checkedInAt && <AirportCheckInCard />}
@@ -215,6 +229,7 @@ function Picks({ list }: { list: TodayPick[] }) {
               <span className="block truncate text-sm font-medium">{p.name}</span>
               <span className="block text-xs text-muted-foreground">{p.avgRating != null ? `${p.avgRating.toFixed(1)} ★ · ${p.reviewCount} rating${p.reviewCount === 1 ? "" : "s"}` : "No ratings yet"}{p.milesFromField ? ` · ${p.milesFromField} mi` : ""}</span>
             </Link>
+            <DirectionsButton place={p} testId={`button-today-directions-${p.id}`} />
             {p.rated ? <span className="text-[11px] text-muted-foreground">Rated</span>
               : <Link href={`/spot/${p.id}?rate=1`} className="inline-flex h-8 shrink-0 items-center rounded-full border border-border px-3 text-xs font-semibold hover-elevate" data-testid={`link-today-rate-${p.id}`}>Rate</Link>}
           </li>

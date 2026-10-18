@@ -95,7 +95,12 @@ export const EXPERIENCE_NAV: Record<Experience, NavItem[]> = {
 /** Where each experience starts. */
 export const EXPERIENCE_HOME: Record<Experience, string> = { plan: "/today", spots: "/", lounge: "/lounge" };
 
-export function useNav(): NavItem[] {
+const ADD_SPOT: NavItem = { href: "/add", label: "Add spot", icon: PlusCircle, active: on("/add") };
+/** On a trip briefing (/brief/new, /brief/:id) Add spot takes Logbook's place in the bar, so a crew building a
+ *  brief can add a place they know in one tap (crew feedback #42). Logbook stays one tap away in the header. */
+export function useNav(loc = ""): NavItem[] {
   const e = useExperience();
-  return e ? EXPERIENCE_NAV[e] : CLASSIC_NAV;
+  const nav = e ? EXPERIENCE_NAV[e] : CLASSIC_NAV;
+  if (!/^\/brief\/[^/]+/.test(loc) || nav.some((n) => n.href === "/add")) return nav;
+  return nav.map((n) => (n.href === "/me" ? ADD_SPOT : n));
 }
