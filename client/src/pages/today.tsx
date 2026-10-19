@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { useSearch } from "@/pages/home";
-import { BedDouble, CalendarDays, ChevronRight, Clock, Compass, Heart, Loader2, PlaneLanding, Plane, RefreshCw, Star, Sunrise, Sunset, Users, Utensils, Wind } from "lucide-react";
+import { BedDouble, CalendarDays, ChevronRight, Clock, Compass, Heart, Loader2, PlaneLanding, Plane, RefreshCw, Sparkles, Star, Sunrise, Sunset, Users, Utensils, Wind } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { AirportCheckInCard } from "@/lib/checkins";
 import { PreviewBadge, PreviewGate, ago, errMsg } from "@/lib/preview";
@@ -222,6 +222,21 @@ function Picks({ list }: { list: TodayPick[] }) {
     <ul className="divide-y divide-border border-t border-border">
       {list.map((p) => {
         const Icon = CAT_ICON[p.category] || Star;
+        // an AI pick from the briefing: no listing page yet, so it offers "Add it" (the briefing's Been here? Add it for crews)
+        if (p.ai) {
+          const add = `/add/${p.icao}?name=${encodeURIComponent(p.name)}&cat=${p.category}&ai=${-p.id}${p.address ? `&addr=${encodeURIComponent(p.address)}` : ""}`;
+          return (
+            <li key={p.id} className="flex items-center gap-3 px-4 py-2.5" data-testid={`row-today-ai-${-p.id}`}>
+              <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium">{p.name}</span>
+                <span className="flex items-center gap-1 text-xs text-muted-foreground"><span className="inline-flex items-center gap-0.5 rounded-full bg-violet-500/15 px-1.5 text-[10px] font-semibold text-violet-700 dark:text-violet-300"><Sparkles className="h-2.5 w-2.5" />AI pick</span>{p.milesFromField ? ` · ${p.milesFromField} mi` : ""}</span>
+              </span>
+              <DirectionsButton place={p} visitHref={add} testId={`button-today-directions-ai-${-p.id}`} />
+              <Link href={add} className="inline-flex h-8 shrink-0 items-center rounded-full border border-border px-3 text-xs font-semibold hover-elevate" data-testid={`link-today-add-ai-${-p.id}`}>Add it</Link>
+            </li>
+          );
+        }
         return (
           <li key={p.id} className="flex items-center gap-3 px-4 py-2.5">
             <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />

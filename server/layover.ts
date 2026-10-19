@@ -16,6 +16,7 @@ import { flagShortText } from "./ai";
 import { findTailNumbers } from "@shared/tailNumber";
 import { pickable, pickScore } from "@shared/briefing";
 import { crewIds, areCrew } from "./mycrew";
+import { fillStop, aiPrefOf, programsOf } from "./aiPicks";
 import { MEETUP_RULES, meetupNoteProblem, type Metar, type Meetup, type MeetupPerson, type MeetupResp, type RateItem, type TodayPick, type TodayResp, type FlightCat } from "@shared/layover";
 import type { SpotWithStats, User, BriefingStop } from "@shared/schema";
 
@@ -198,7 +199,23 @@ export function registerLayover(app: Express, o: { userOf: (req: Request) => Pro
     const byId = new Map(spots.map((s) => [s.id, s]));
     const b = briefs.find((x) => stopsOf(x.stops).some((s) => s.icao === icao));
     const st = b ? stopsOf(b.stops).find((s) => s.icao === icao)! : null;
-    const briefPicks = st ? (st.picks || []).map((id) => byId.get(id)).filter(Boolean).map((s) => pick(s!, rated)) : [];
+    const crewInBrief = st ? (st.picks || []).map((id) => byId.get(id)).filter(Boolean) as SpotWithStats[] : [];
+    let briefPicks: TodayPick[] = crewInBrief.map((s) => pick(s, rated));
+    // AI picks in the briefing (open slots AI filled, plus ones the owner added): at airports where crews haven't
+    // listed things to do yet these are the whole "do" part of the plan, so they belong here too (Joe, KMMU, Oct 19).
+    // Same fill as the briefing page; it only reads saved AI picks, and gives up after a few seconds rather than hold the page.
+    if (st) {
+      const [pref, programs] = await Promise.all([aiPrefOf(u.id), programsOf(u.id)]);
+      const fill = await Promise.race([
+        fillStop(icao, st.layover, st.nights, crewInBrief, spots, undefined, st.ai ?? pref === "ai", st.aiAdd || [], programs, st.aiHide || []).catch(() => null),
+        new Promise<null>((r) => setTimeout(() => r(null), 4000)),
+      ]);
+      const aiRows: TodayPick[] = (fill?.aiPicks || []).map((c) => ({ id: c.id, name: c.name, category: c.category, milesFromField: c.milesFromField ?? 0, avgRating: null, reviewCount: 0, rated: false,
+        icao, address: c.address || null, lat: c.lat ?? null, lng: c.lng ?? null, ai: true }));
+      briefPicks = [...briefPicks, ...aiRows];
+      // the order the owner set in the briefing (crew ids positive, AI picks negative); anything unlisted keeps its place after
+      if (st.order?.length) { const at = new Map(st.order.map((id, k) => [id, k])); briefPicks.sort((a, z) => (at.get(a.id) ?? 999) - (at.get(z.id) ?? 999)); }
+    }
     const inBrief = new Set(briefPicks.map((p) => p.id));
     const top = (cat: string) => spots.filter((s) => s.category === cat && pickable(s) && !inBrief.has(s.id)).sort((a, z) => pickScore(z) - pickScore(a)).slice(0, 3).map((s) => pick(s, rated));
     const favIds = new Set(favRows.map((r) => num(r.spot_id)));
