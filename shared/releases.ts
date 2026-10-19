@@ -2,6 +2,13 @@
 export type Release = { date: string; sha?: string; title: string; notes: string[] };
 
 export const RELEASES: Release[] = [
+  { date: "2026-10-19", title: "Bottom bar steady while scrolling, briefing place preview, preview Close, invite wording, guest sign-up prompt (What's new 12)", notes: [
+    "Bottom bar: 1.11 re-measured the viewport on every scroll; during iOS momentum, the rubber-band bounce and Safari's toolbar collapse those numbers are briefly wrong, so the bar jumped. viewportFix now never moves the bar mid-scroll (waits 220 ms after the last scroll), ignores bounce, only uses the visual-viewport gap in Safari for 2.5 s after the keyboard closes, and caps the home-screen tallest height at the screen size. html/body overscroll-behavior-y: none (no bounce; also turns off pull-to-refresh in Safari). ?navdebug shows the numbers on a real iPhone. Note: WebKit bug 312149 (iOS 26 fixed bottom:0 painted at the wrong spot) can't be fully worked around from the page.",
+    "Briefing Add places: tapping a crew listing or AI pick opens a preview (description, address, Directions, Website, Crew ratings link, Add to briefing); the + still adds in one tap. Feedback #44.",
+    "PDF preview: Keep editing / Share / Close (Close goes to /brief). Feedback #45.",
+    "My Crew: the Find crew link did nothing on /mycrew (same route, only the query changed); now switches tab, and the page listens for hashchange. Feedback #52. Invite card reworded: Text a sign-up link (not on Wheelsdown) vs Add a member to My Crew (already a member), with a note on Crew Up that it doesn't invite to a plan. Feedback #53.",
+    "Guests: a few seconds after a signed-out search shows results, a one-time sheet lists what a free account adds (briefings, Layover today, My Crew/Crew Up, favorites, rating and badges, Lounge), at most once every 3 days per device. Feedback #55.",
+  ] },
   { date: "2026-10-18", title: "Onboarding tour refreshed for new members (10 steps)", notes: [
     "New steps: the home screen tiles, Layover today (Plan your day, weather, Directions to Apple/Google Maps), and My Crew + Crew Up + the Crew lounge. These three are marked preview and drop out of the tour if the launch switch is set back to admins.",
     "Updated: search now mentions hotel programs (the separate hotels step is folded in), Rate covers the Rate a spot list and one rating per place, briefings mention Preview PDF, and the last step covers the Logbook map, profile and Send feedback (check-in step folded in).",

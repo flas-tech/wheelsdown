@@ -25,6 +25,12 @@ function MyCrew() {
   const initial = (new URLSearchParams(search).get("tab") as Tab) || "crew";
   const [tab, setTab] = useState<Tab>(TABS.some(([t]) => t === initial) ? initial : "crew");
   useEffect(() => { const t = new URLSearchParams(search).get("tab") as Tab; if (t && TABS.some(([x]) => x === t)) setTab(t); }, [search, loc]);
+  // a link to /mycrew?tab=… from this same page only changes the query, which doesn't re-render the route (feedback #52)
+  useEffect(() => {
+    const on = () => { const t = new URLSearchParams(window.location.hash.split("?")[1] || "").get("tab") as Tab; if (t && TABS.some(([x]) => x === t)) setTab(t); };
+    window.addEventListener("hashchange", on); window.addEventListener("popstate", on);
+    return () => { window.removeEventListener("hashchange", on); window.removeEventListener("popstate", on); };
+  }, []);
   const { data, isLoading, error } = useMyCrew();
   const waiting = data?.incoming.length || 0;
 
@@ -50,7 +56,7 @@ function MyCrew() {
 
       {error ? <p className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">{errMsg(error)}</p>
         : isLoading || !data ? <div className="space-y-2"><Skeleton className="h-16 rounded-2xl" /><Skeleton className="h-16 rounded-2xl" /></div>
-        : tab === "crew" ? <CrewList crew={data.crew} onFind={() => setTab("find")} />
+        : tab === "crew" ? <CrewList crew={data.crew} onFind={() => { setTab("find"); window.scrollTo({ top: 0 }); }} />
         : tab === "requests" ? <Requests />
         : tab === "find" ? <Find />
         : <Privacy p={data.privacy} />}
@@ -66,9 +72,9 @@ function CrewList({ crew, onFind }: { crew: CrewMember[]; onFind: () => void }) 
         <Users className="mx-auto h-6 w-6 text-primary" />
         <p className="mt-2 font-semibold">No crew yet</p>
         <p className="mt-1 text-sm text-muted-foreground">Add the people you fly with. You both have to agree before anything is shared.</p>
-        <button type="button" onClick={onFind} className="mt-3 h-10 rounded-full taxi-sign px-5 text-sm font-semibold hover-elevate" data-testid="button-mycrew-find">Find crew</button>
+        <button type="button" onClick={onFind} className="mt-3 h-10 rounded-full taxi-sign px-5 text-sm font-semibold hover-elevate" data-testid="button-mycrew-find">Add a member to My Crew</button>
       </div>
-      <InviteCrewCard />
+      <InviteCrewCard onFind={onFind} />
     </div>
   );
   return (
@@ -90,7 +96,7 @@ function CrewList({ crew, onFind }: { crew: CrewMember[]; onFind: () => void }) 
           ))}
         </ul>
       </section>
-      <InviteCrewCard />
+      <InviteCrewCard onFind={onFind} />
     </div>
   );
 }
@@ -178,9 +184,9 @@ function Find() {
               </li>
             ))}
           </ul>
-        ) : <p className="rounded-2xl border border-card-border bg-card p-4 text-sm text-muted-foreground" data-testid="text-find-empty">Nobody matches "{term}". If they aren't on Wheelsdown yet, send them your invite link.</p>
+        ) : <p className="rounded-2xl border border-card-border bg-card p-4 text-sm text-muted-foreground" data-testid="text-find-empty">Nobody matches "{term}". If they aren't on Wheelsdown yet, text them a sign-up link below.</p>
       )}
-      <InviteCrewCard />
+      <InviteCrewCard inFind />
     </div>
   );
 }

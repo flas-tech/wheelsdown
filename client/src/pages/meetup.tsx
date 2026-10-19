@@ -53,7 +53,7 @@ function MeetupBoard() {
               <ul className="space-y-2">{data.crewElsewhere.map((m) => <li key={m.id}><Other m={m} showIcao /></li>)}</ul>
             </section>
           )}
-          <InviteCrewCard compact />
+          <InviteCrewCard compact crewUp />
         </>}
     </div>
   );

@@ -202,6 +202,8 @@
     @apply font-sans antialiased bg-background text-foreground;
   }
 
+  /* No rubber-band bounce at the top/bottom of the page: on iPhone the bounce drags the bottom tab bar around */
+  html, body { overscroll-behavior-y: none; }
   /* No zooming on phones: no double-tap zoom, no text inflation on rotate */
   html {
     touch-action: manipulation;

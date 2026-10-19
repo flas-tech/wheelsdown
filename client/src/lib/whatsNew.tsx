@@ -21,6 +21,15 @@ const PUBLIC_FEATURES = new Set<DevFeature>([]);
 
 const ALL_RELEASES: Release[] = [
   {
+    id: 12, date: "October 19, 2026",
+    items: [
+      { icon: PanelBottom, title: "Steadier bottom bar", body: "The bottom bar no longer jumps while you scroll, and the page doesn't bounce at the top or bottom anymore. Most noticeable in the home-screen app." },
+      { icon: Eye, title: "Look before you add", body: "In a briefing, tap a place under Add places to see its details and get directions. Only the + adds it to your plan." },
+      { icon: ClipboardCheck, title: "Briefing preview: Keep editing, Share or Close", body: "The PDF preview now has all three choices. Close takes you back to your briefings." },
+      { icon: Contact, title: "Invite vs. add to My Crew", body: "Text a sign-up link to crew who aren't on Wheelsdown yet. Add a member to My Crew for people who already are. The Find link on My Crew works again." },
+    ],
+  },
+  {
     id: 11, date: "October 18, 2026",
     items: [
       { icon: CalendarDays, title: "Plan your day at your airport", body: "Layover today now opens with Plan your day at the airport you're at. One tap starts a briefing for that field with crew picks, a map and a PDF." },

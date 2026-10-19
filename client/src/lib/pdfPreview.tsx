@@ -28,7 +28,8 @@ async function render(blob: Blob, host: HTMLDivElement, isCancelled: () => boole
   return doc.numPages;
 }
 
-export function PdfPreviewDialog({ blob, open, onOpenChange, onSend, title }: { blob: Blob | null; open: boolean; onOpenChange: (o: boolean) => void; onSend: () => void; title: string }) {
+/** Three ways out (crew feedback #45): Keep editing (back to the briefing), Share PDF, or Close (done: back to your briefings). */
+export function PdfPreviewDialog({ blob, open, onOpenChange, onSend, onExit, title }: { blob: Blob | null; open: boolean; onOpenChange: (o: boolean) => void; onSend: () => void; onExit?: () => void; title: string }) {
   const host = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<"loading" | "ready" | "failed">("loading");
   const [pages, setPages] = useState(0);
@@ -60,9 +61,10 @@ export function PdfPreviewDialog({ blob, open, onOpenChange, onSend, title }: { 
           {state === "failed" && <p className="py-10 text-center text-sm text-muted-foreground" data-testid="text-pdf-preview-failed">Couldn't show the preview on this device. Share PDF still works.</p>}
           <div ref={host} className="space-y-3" />
         </div>
-        <div className="grid grid-cols-2 gap-2 border-t border-border p-3 pb-[max(env(safe-area-inset-bottom),0.75rem)]">
+        <div className={`grid ${onExit ? "grid-cols-3" : "grid-cols-2"} gap-2 border-t border-border p-3 pb-[max(env(safe-area-inset-bottom),0.75rem)]`}>
           <button type="button" onClick={() => onOpenChange(false)} className="h-11 rounded-full border border-border text-sm font-medium hover-elevate" data-testid="button-pdf-preview-edit">Keep editing</button>
-          <button type="button" onClick={() => { onOpenChange(false); onSend(); }} className="h-11 rounded-full taxi-sign text-sm font-semibold inline-flex items-center justify-center gap-1.5 hover-elevate" data-testid="button-pdf-preview-send"><Share2 className="h-4 w-4" />Share PDF</button>
+          <button type="button" onClick={() => { onOpenChange(false); onSend(); }} className="h-11 rounded-full taxi-sign text-sm font-semibold inline-flex items-center justify-center gap-1.5 hover-elevate" data-testid="button-pdf-preview-send"><Share2 className="h-4 w-4" />Share</button>
+          {onExit && <button type="button" onClick={() => { onOpenChange(false); onExit(); }} className="h-11 rounded-full border border-border text-sm font-medium hover-elevate" data-testid="button-pdf-preview-exit">Close</button>}
         </div>
       </DialogContent>
     </Dialog>

@@ -1,4 +1,5 @@
 import { createContext, lazy, Suspense, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { GuestJoinPrompt } from "@/lib/guestPrompt";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { ArrowRight, Map as MapIcon, SlidersHorizontal, ChevronDown, MapPin, Clock, Search, Plus, X, ChevronRight, Lightbulb, ShieldCheck, List, Sparkles, Trophy, LocateFixed, Loader2, Utensils, Flame } from "lucide-react";
@@ -406,6 +407,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
   return (
     <div className="space-y-5">
       <VisitReminder />
+      <GuestJoinPrompt ready={!isLoading && !!data && legs.some((l) => !!l.airport)} icao={legs.find((l) => l.airport)?.airport?.icao} />
       {/* Category switcher */}
       <div className="flex items-center gap-2 overflow-x-auto no-scrollbar -mx-4 px-4">
         {(Object.keys(CAT_META) as Category[]).map((c) => {

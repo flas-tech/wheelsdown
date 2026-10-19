@@ -148,7 +148,13 @@ export function MessageList({ items, fresh }: { items: MemberMessage[]; fresh: S
 }
 
 /** Share your crew invite link. Used on My Crew and Crew Up. */
-export function InviteCrewCard({ compact }: { compact?: boolean }) {
+/**
+ * Two different things, kept apart (crew feedback #53):
+ *  - Invite: text a sign-up link to someone who isn't on Wheelsdown yet.
+ *  - Add to My Crew: send a crew request to someone who already is (Find).
+ * Neither one invites anybody to a Crew Up plan; those go to your whole crew automatically.
+ */
+export function InviteCrewCard({ compact, onFind, inFind, crewUp }: { compact?: boolean; onFind?: () => void; inFind?: boolean; crewUp?: boolean }) {
   const { data } = useMyCrew();
   const { me } = useAuth();
   const { toast } = useToast();
@@ -165,11 +171,14 @@ export function InviteCrewCard({ compact }: { compact?: boolean }) {
   if (!me) return null;
   return (
     <section className={cn("rounded-2xl border border-card-border bg-card p-4", compact && "p-3.5")} data-testid="card-invite-crew">
-      <p className="text-sm font-semibold">Invite other crew</p>
-      <p className="mt-0.5 text-xs text-muted-foreground">Send your link to the people you fly with. When they sign up, your crew request is waiting for them to accept. Members can also find you by your handle, @{me.handle}.</p>
+      <p className="text-sm font-semibold">Crew not on Wheelsdown yet?</p>
+      <p className="mt-0.5 text-xs text-muted-foreground">Text them a sign-up link. When they join, your crew request is waiting for them to accept. Already a member? {inFind ? "Search for them above and tap Add to My Crew." : <>Use <span className="font-medium text-foreground">Add a member</span> instead.</>} Members can also find you by your handle, @{me.handle}.</p>
+      {crewUp && <p className="mt-1 text-xs text-muted-foreground" data-testid="text-invite-crewup-note">This doesn't invite anyone to a Crew Up plan. Your plans go to everyone in My Crew.</p>}
       <div className="mt-3 flex flex-wrap gap-2">
-        <button type="button" onClick={share} disabled={!url} className={cn(pill, "taxi-sign h-10")} data-testid="button-invite-crew">{typeof navigator !== "undefined" && "share" in navigator ? <Share2 className="h-4 w-4" /> : <Copy className="h-4 w-4" />}Send invite link</button>
-        <Link href="/mycrew?tab=find" className={cn(pill, "border border-border h-10")} data-testid="link-find-crew"><UserPlus className="h-4 w-4" />Find crew on Wheelsdown</Link>
+        <button type="button" onClick={share} disabled={!url} className={cn(pill, "taxi-sign h-10")} data-testid="button-invite-crew">{typeof navigator !== "undefined" && "share" in navigator ? <Share2 className="h-4 w-4" /> : <Copy className="h-4 w-4" />}Text a sign-up link</button>
+        {!inFind && (onFind
+          ? <button type="button" onClick={onFind} className={cn(pill, "border border-border h-10")} data-testid="link-find-crew"><UserPlus className="h-4 w-4" />Add a member to My Crew</button>
+          : <Link href="/mycrew?tab=find" className={cn(pill, "border border-border h-10")} data-testid="link-find-crew"><UserPlus className="h-4 w-4" />Add a member to My Crew</Link>)}
       </div>
     </section>
   );

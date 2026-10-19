@@ -318,6 +318,7 @@ export function BriefEditorPage() {
 // ---------------- export / share ----------------
 function ExportBar({ brief, preparedBy, onShared }: { brief: BriefFull; preparedBy?: string; onShared?: () => void }) {
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const [pdf, setPdf] = useState<{ blob: Blob; fileName: string; key: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const fresh = pdf && pdf.key === brief.updatedAt;
@@ -372,7 +373,7 @@ function ExportBar({ brief, preparedBy, onShared }: { brief: BriefFull; prepared
         className="h-10 w-full rounded-full border border-border text-sm font-medium inline-flex items-center justify-center gap-1.5 hover-elevate disabled:opacity-60" data-testid="button-brief-preview-pdf">
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />} Preview PDF
       </button>
-      <PdfPreviewDialog blob={fresh ? pdf!.blob : null} open={previewing && !!fresh} onOpenChange={setPreviewing} onSend={send} title={brief.title || "Trip briefing"} />
+      <PdfPreviewDialog blob={fresh ? pdf!.blob : null} open={previewing && !!fresh} onOpenChange={setPreviewing} onSend={send} onExit={() => navigate("/brief")} title={brief.title || "Trip briefing"} />
       <p className="text-[11px] text-muted-foreground">
         {fresh ? "Ready. Preview it first, or Share PDF to open Messages, Mail and AirDrop on iPhone." : "The PDF has a cover with the routing, then one page per stop with the map and picks."}
         {IS_STATIC ? " Demo: shared links only open in this browser." : ""}
@@ -674,15 +675,36 @@ function AddPlaces({ stop, index, others, onAddCrew, onAddAi, busy }: { stop: Br
   const kindCount = (k: MoreKind) => crewOf(k).length + more.filter((m) => matchesFocus(m, k)).length;
   const total = others.length + more.length;
   const aiOn = cfg?.ai !== false;
-  const row = (s: SpotWithStats, onClick: () => void, meta: string, badge?: React.ReactNode, testId?: string) => (
-    <button key={s.id} type="button" onClick={onClick} disabled={busy} className="w-full flex items-center justify-between gap-3 px-3.5 py-2.5 text-left hover-elevate disabled:opacity-50" data-testid={testId}>
-      <span className="min-w-0">
-        <span className="flex items-center gap-1.5"><span className="truncate text-sm font-medium">{s.name}</span>{badge}</span>
-        <span className="block truncate text-[11px] text-muted-foreground">{meta}</span>
-      </span>
-      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border text-foreground" aria-label="Add to briefing"><Plus className="h-4 w-4" /></span>
-    </button>
-  );
+  // Tap a place to look at it first (crew feedback #44); only the + adds it to the briefing.
+  const [peek, setPeek] = useState<number | null>(null);
+  const row = (s: SpotWithStats, onClick: () => void, meta: string, badge?: React.ReactNode, testId?: string) => {
+    const open = peek === s.id;
+    const ai = isAi(s);
+    const site = (s as any).website as string | undefined;
+    return (
+      <div key={s.id} className={cn(open && "bg-muted/40")}>
+        <div className="flex items-center justify-between gap-2 pr-3">
+          <button type="button" onClick={() => setPeek(open ? null : s.id)} aria-expanded={open} className="min-w-0 flex-1 px-3.5 py-2.5 text-left hover-elevate" data-testid={testId ? `${testId}-peek` : undefined}>
+            <span className="flex items-center gap-1.5"><span className="truncate text-sm font-medium">{s.name}</span>{badge}<ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} /></span>
+            <span className={cn("block text-[11px] text-muted-foreground", open ? "whitespace-normal" : "truncate")}>{meta}</span>
+          </button>
+          <button type="button" onClick={onClick} disabled={busy} className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border text-foreground hover-elevate disabled:opacity-50" aria-label={`Add ${s.name} to briefing`} data-testid={testId}><Plus className="h-4 w-4" /></button>
+        </div>
+        {open && (
+          <div className="space-y-2 px-3.5 pb-3 text-xs" data-testid={testId ? `${testId}-preview` : undefined}>
+            {s.description && !ai && <p className="text-muted-foreground">{s.description}</p>}
+            {s.address && <p className="flex items-start gap-1 text-muted-foreground"><MapPin className="mt-0.5 h-3 w-3 shrink-0" />{s.address}</p>}
+            <div className="flex flex-wrap items-center gap-3">
+              <DirectionsButton place={s} visitHref={ai ? aiAddHref(s as AiPick) : undefined} testId={testId ? `${testId}-directions` : undefined} />
+              {site && <a href={site} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"><ExternalLink className="h-3 w-3" />Website</a>}
+              {!ai && <Link href={`/spot/${s.id}`} className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground">Crew ratings<ChevronRight className="h-3 w-3" /></Link>}
+            </div>
+            <button type="button" onClick={() => { onClick(); setPeek(null); }} disabled={busy} className="inline-flex h-9 items-center gap-1.5 rounded-full taxi-sign px-4 text-xs font-semibold hover-elevate disabled:opacity-50" data-testid={testId ? `${testId}-confirm` : undefined}><Plus className="h-3.5 w-3.5" />Add to briefing</button>
+          </div>
+        )}
+      </div>
+    );
+  };
   const head = (Icon: typeof Users, label: string, n: number, tone: string, testId: string) => (
     <p className={cn("flex items-center gap-1.5 bg-muted/50 px-3.5 py-1.5 text-[11px] font-semibold", tone)} data-testid={testId}><Icon className="h-3.5 w-3.5" />{label}<span className="font-code opacity-70">{n}</span></p>
   );
