@@ -486,7 +486,7 @@ function PlaceAutocomplete({ value, onChange, onPick, anchor, category, here, fi
         if (my === seq.current) { setHits(r); if (!r.length) setNote("No matches on the map — just type it in."); }
       } catch (e) { if (my === seq.current) { setHits([]); setNote(errText(e)); } }
       finally { if (my === seq.current) setBusy(false); }
-    }, 350);
+    }, 450);
     return () => clearTimeout(t);
   }, [value, anchor?.lat, anchor?.lng, category, mode]); // eslint-disable-line
 

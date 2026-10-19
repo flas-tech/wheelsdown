@@ -20,18 +20,33 @@ const cache = new Map<string, { at: number; v: PlaceHit[] }>();
 const TTL = 6 * 3600_000;
 let last = 0;
 
-async function photon(path: string): Promise<any> {
-  // gentle pacing: never more than ~4 requests/second from this server
-  const wait = Math.max(0, last + 250 - Date.now());
-  if (wait) await new Promise((r) => setTimeout(r, wait));
-  last = Date.now();
-  const ctl = new AbortController();
-  const t = setTimeout(() => ctl.abort(), 8000);
-  try {
-    const r = await fetch(PHOTON + path, { headers: { "User-Agent": UA, Accept: "application/json" }, signal: ctl.signal });
-    if (!r.ok) throw new Error(`Photon ${r.status}`);
-    return await r.json();
-  } finally { clearTimeout(t); }
+// Calls go out one at a time, at least 300 ms apart. (The old "last call" timestamp let simultaneous type-ahead
+// requests all leave together, and Photon's public server turns those bursts away: the 502s in the error log.)
+let chain: Promise<unknown> = Promise.resolve();
+function paced<T>(fn: () => Promise<T>): Promise<T> {
+  const run = chain.then(async () => {
+    const wait = Math.max(0, last + 300 - Date.now());
+    if (wait) await new Promise((r) => setTimeout(r, wait));
+    last = Date.now();
+    return fn();
+  });
+  chain = run.catch(() => {});
+  return run;
+}
+const retryable = (e: any) => /Photon (429|5\d\d)|abort|timeout|fetch failed|ECONN|ETIMEDOUT/i.test(String(e?.message || e) + String(e?.name || ""));
+async function photonOnce(path: string): Promise<any> {
+  const r = await fetch(PHOTON + path, { headers: { "User-Agent": UA, Accept: "application/json" }, signal: AbortSignal.timeout(6000) });
+  if (!r.ok) throw new Error(`Photon ${r.status}`);
+  return await r.json();
+}
+/** One Photon request, retried once after a short pause when the server is busy (429/5xx) or slow. */
+export async function photon(path: string): Promise<any> {
+  try { return await paced(() => photonOnce(path)); }
+  catch (e) {
+    if (!retryable(e)) throw e;
+    await new Promise((r) => setTimeout(r, 900));
+    return paced(() => photonOnce(path));
+  }
 }
 
 function toHit(f: any): PlaceHit | null {
@@ -71,11 +86,20 @@ export async function searchPlaces(q: string, lat: number, lng: number, cat?: st
     const d = 0.45; // ~30 miles box around the point
     const bbox = `&bbox=${(lng - d).toFixed(4)},${(lat - d).toFixed(4)},${(lng + d).toFixed(4)},${(lat + d).toFixed(4)}`;
     const base = `/api/?q=${encodeURIComponent(query)}&lat=${lat}&lon=${lng}&limit=8&lang=en${bbox}`;
-    let j = await photon(base + tagQuery(cat));
-    let hits = dedupe((j.features || []).map(toHit));
+    // each call can fail on its own; one bad call shouldn't throw away the other's results
+    const errs: string[] = [];
+    const tryPhoton = async (path: string) => { try { return dedupe((await photon(path)).features?.map(toHit) || []); } catch (e: any) { errs.push(String(e?.message || e)); return null; } };
+    const tagged = await tryPhoton(base + tagQuery(cat));
+    let hits = tagged || [];
     if (hits.length < 3) {
-      j = await photon(base);
-      hits = dedupe([...hits, ...(j.features || []).map(toHit)]);
+      const plain = await tryPhoton(base);
+      hits = dedupe([...hits, ...(plain || [])]);
+      // Photon down for both: OpenStreetMap's Nominatim has the same places
+      if (!tagged && !plain) {
+        const nom = await nominatimSearch(query, lat, lng, d).catch((e) => { errs.push(`Nominatim: ${String(e?.message || e)}`); return null; });
+        if (!nom) throw new Error(`Place search failed: ${errs.join("; ")}`);
+        hits = nom;
+      }
     }
     // an FBO is on the field: a same-named FBO at another airport (Boston for Bedford) is never the right answer
     if (cat === "fbo") hits = hits.filter((h) => milesApart({ lat, lng }, h) <= 4);
@@ -101,6 +125,26 @@ const milesApart = (a: { lat: number; lng: number }, b: { lat: number; lng: numb
   const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * toR) * Math.cos(b.lat * toR) * Math.sin(dLng / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(h));
 };
+
+/** Backup business search when Photon is down. Nominatim allows 1 request/second, so these are spaced out. */
+async function nominatimSearch(q: string, lat: number, lng: number, d: number): Promise<PlaceHit[]> {
+  const wait = Math.max(0, lastNom + 1100 - Date.now());
+  if (wait) await new Promise((r) => setTimeout(r, wait));
+  lastNom = Date.now();
+  const vb = `${lng - d},${lat + d},${lng + d},${lat - d}`;
+  const r = await fetch(`${NOMINATIM}/search?format=jsonv2&addressdetails=1&limit=8&bounded=1&viewbox=${vb}&q=${encodeURIComponent(q)}`, { headers: { "User-Agent": UA, Accept: "application/json" }, signal: AbortSignal.timeout(8000) });
+  if (!r.ok) throw new Error(`Nominatim ${r.status}`);
+  return dedupe(((await r.json()) as any[]).map((h) => {
+    const a = h.address || {};
+    const name = h.name || String(h.display_name || "").split(",")[0];
+    const la = Number(h.lat), ln = Number(h.lon);
+    if (!name || !Number.isFinite(la)) return null;
+    const city = a.city || a.town || a.village || a.suburb || a.county || "";
+    const street = [a.house_number, a.road].filter(Boolean).join(" ");
+    const address = [street, city, [a.state, a.postcode].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+    return { ref: `osm:${String(h.osm_type || "N")[0].toUpperCase()}${h.osm_id}`, name: String(name).slice(0, 120), address: address.slice(0, 200), city, lat: la, lng: ln, kind: String(h.type || "").replace(/_/g, " ") } as PlaceHit;
+  }));
+}
 
 /**
  * Turns a typed street address into map coordinates, preferring results near the airport (within maxMiles).

@@ -2,6 +2,7 @@
 // and describes from these instead of searching the web from scratch, so runs are faster and rarely come back empty.
 // Data © OpenStreetMap contributors.
 import { milesBetween } from "@shared/cost";
+import { photon as photonShared } from "./places";
 
 export type OsmCat = "eat" | "do" | "stay";
 export type Candidate = {
@@ -233,13 +234,16 @@ const P_FOOD: Record<string, string[]> = {
   southern: ["southern", "soul food"], wings: ["wings"], deli: ["deli", "sandwich"], breakfast: ["breakfast", "diner"], coffee: ["coffee"], bakery: ["bakery", "donut"], healthy: ["salad", "juice"], bar: ["brewery", "pub"],
 };
 type PF = { properties: Record<string, any>; geometry: { coordinates: [number, number] } };
+// Through the shared Photon client (places.ts): one request at a time, spaced out, retried once when busy.
+// Firing all 15+ calls at once got them turned away, and each failure counted as "no places": the KBFI "candidates 0".
+let photonFails = 0;
 async function photon(path: string): Promise<PF[]> {
-  const r = await fetch(`${PHOTON}${path}`, { headers: { "user-agent": UA }, signal: AbortSignal.timeout(8000) });
-  if (!r.ok) throw new Error(`photon ${r.status}`);
-  return ((await r.json()) as any).features || [];
+  try { return (await photonShared(path)).features || []; }
+  catch (e) { photonFails++; throw e; }
 }
 export async function photonCandidates(ap: { lat: number; lon: number }, specs: CandidateSpec[], want: Partial<Record<OsmCat, number>>): Promise<Candidate[]> {
   const out: Candidate[] = [];
+  const failsBefore = photonFails; let calls0 = 0;
   for (const s of specs) {
     const f = s.focus || "";
     const km = radiiFor(s)[1];
@@ -252,6 +256,7 @@ export async function photonCandidates(ap: { lat: number; lon: number }, specs: 
     const calls: Promise<PF[]>[] = (foodOnly ? [] : pts).map(([a, b]) => photon(`/reverse?lat=${(ap.lat + a).toFixed(5)}&lon=${(ap.lon + b).toFixed(5)}&radius=${Math.min(km, 20)}&limit=50&${tq}`).catch(() => []));
     if (f.startsWith("act:")) for (const t of tags) calls.push(photon(`/reverse?lat=${ap.lat.toFixed(5)}&lon=${ap.lon.toFixed(5)}&radius=${Math.min(km, 20)}&limit=25&osm_tag=${encodeURIComponent(t)}`).catch(() => [])); // each kind, so one doesn't crowd out the rest
     for (const w of words || []) calls.push(photon(`/api/?q=${encodeURIComponent(w)}&lat=${ap.lat.toFixed(5)}&lon=${ap.lon.toFixed(5)}&limit=40${s.category === "eat" ? "&osm_tag=amenity" : ""}`).catch(() => []));
+    calls0 += calls.length;
     const feats = (await Promise.all(calls)).flat();
     const seen = new Set<string>();
     for (const x of feats) {
@@ -268,6 +273,8 @@ export async function photonCandidates(ap: { lat: number; lon: number }, specs: 
         score: 10 - miles * (s.category === "eat" ? 0.9 : 0.35) + (address ? 0.5 : 0) + (p.osm_value === "park" ? -1.5 : 0), osmUrl: `https://www.openstreetmap.org/${type}/${p.osm_id}` });
     }
   }
+  // every call failed: that's an outage, not an empty area, so say so (the AI run is marked failed and retried)
+  if (calls0 && photonFails - failsBefore >= calls0) throw new Error("Photon unavailable for every candidate search");
   const res: Candidate[] = [];
   for (const s of specs) {
     const names = new Set<string>();

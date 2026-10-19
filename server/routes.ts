@@ -514,7 +514,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
   app.get("/api/places/search", placesLimit, async (req, res) => {
     try { res.json(await searchPlaces(String(req.query.q || ""), num(req.query.lat), num(req.query.lng), String(req.query.cat || ""))); }
-    catch { res.status(502).json({ message: "Autofill is unavailable right now. Type the details in." }); }
+    catch (e: any) { res.locals.errDetail = String(e?.message || e); res.status(502).json({ message: "Autofill is unavailable right now. Type the details in." }); }
   });
   app.get("/api/places/geocode", placesLimit, async (req, res) => {
     const ap = (await storage.resolveCode(String(req.query.icao || ""))) || (refAirport(String(req.query.icao || "")) as any);
@@ -524,7 +524,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
   app.get("/api/places/nearby", placesLimit, async (req, res) => {
     try { res.json(await nearbyPlaces(num(req.query.lat), num(req.query.lng), String(req.query.cat || ""))); }
-    catch { res.status(502).json({ message: "Nearby places are unavailable right now." }); }
+    catch (e: any) { res.locals.errDetail = String(e?.message || e); res.status(502).json({ message: "Nearby places are unavailable right now." }); }
   });
 
   // ---------- crew profiles ----------

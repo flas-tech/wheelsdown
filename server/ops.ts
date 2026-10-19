@@ -136,7 +136,7 @@ export function installOps(app: Express) {
     res.on("finish", () => {
       const u = (req as any)._user || (req as any).user;
       if (res.statusCode >= 500 && !res.locals.errLogged)
-        void recordError({ source: "api", message: `${res.statusCode} on ${req.method} ${req.path}`, path: req.path, method: req.method, status: res.statusCode, userId: u?.id ?? null });
+        void recordError({ source: "api", message: `${res.statusCode} on ${req.method} ${req.path}`, path: req.path, method: req.method, status: res.statusCode, userId: u?.id ?? null, detail: String(res.locals.errDetail || "") });
       const m = req.method;
       if (req.path.startsWith("/api/admin/") && m !== "GET" && m !== "HEAD" && res.statusCode < 400 && !/\/login$|\/ai-picks\/more$/.test(req.path)
         // moderation decisions, undo and AI fixes are already in the moderation log, which the Change log includes
