@@ -2,6 +2,14 @@
 export type Release = { date: string; sha?: string; title: string; notes: string[] };
 
 export const RELEASES: Release[] = [
+  { date: "2026-10-20", title: "Crew Up later plans and picked viewers, Following names first, tab dots (What's new 15)", notes: [
+    "Crew Up (#49): up to 6 plans at once, now or later (up to 30 days ahead, the airport's local time). New columns meetups.starts_at and meetups.viewer_ids (added with IF NOT EXISTS, nothing dropped). A new plan replaces only your plan at the same airport whose time overlaps; posting no longer ends plans at other airports.",
+    "Crew Up (#57, #48): Who sees it, All my crew or Pick crew with Select all. Picked plans are stored as viewer_ids; only those crew see them in Crew Up, Today, the My Crew badge and the red dot, can join them, and get the push. Ticking everyone is saved as All my crew.",
+    "Following (#58): the list of names comes first, each with Unfollow (Undo in the toast). Chips above the activity filter it to one person. Followers shows Follow back or Following on each row.",
+    "Tab dots (#51): Crew Up shows a red dot when a crew plan you can see was posted since you last opened Crew Up on this device (GET /api/preview/crewup-latest, localStorage wd-crewup-seen). My Crew shows one while a crew request is waiting. Logbook dot unchanged.",
+    "Updates: the bundle now carries the commit it was built from (__BUILD_ID__), so a copy that opened already out of date reloads itself (once per release per visit, then the Update bar). Joe's home-screen app was on 1.10 on Oct 20.",
+    "Rollback: redeploy 229544a. Its code ignores the new columns, but would show picked-crew plans to all crew and would end all of a member's plans on their next post.",
+  ] },
   { date: "2026-10-19", title: "Admin crew in join order, leaderboard Show all members (What's new 14)", notes: [
     "Admin Crew tab lists accounts in the order they joined, oldest first, with a Member since date. Points and bonus points are unchanged.",
     "Leaderboard still opens on the top 10. Show all members, under that list, loads everyone in rank order (up to 2000). Show top 10 collapses it. Search and home-base filters are unchanged. Your position stays under the top 10 only, not under the full list.",

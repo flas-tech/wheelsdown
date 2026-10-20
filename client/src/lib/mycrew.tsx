@@ -173,7 +173,7 @@ export function InviteCrewCard({ compact, onFind, inFind, crewUp }: { compact?: 
     <section className={cn("rounded-2xl border border-card-border bg-card p-4", compact && "p-3.5")} data-testid="card-invite-crew">
       <p className="text-sm font-semibold">Crew not on Wheelsdown yet?</p>
       <p className="mt-0.5 text-xs text-muted-foreground">Text them a sign-up link. When they join, your crew request is waiting for them to accept. Already a member? {inFind ? "Search for them above and tap Add to My Crew." : <>Use <span className="font-medium text-foreground">Add a member</span> instead.</>} Members can also find you by your handle, @{me.handle}.</p>
-      {crewUp && <p className="mt-1 text-xs text-muted-foreground" data-testid="text-invite-crewup-note">This doesn't invite anyone to a Crew Up plan. Your plans go to everyone in My Crew.</p>}
+      {crewUp && <p className="mt-1 text-xs text-muted-foreground" data-testid="text-invite-crewup-note">This doesn't invite anyone to a Crew Up plan. Your plans go to your My Crew, or just the people you pick.</p>}
       <div className="mt-3 flex flex-wrap gap-2">
         <button type="button" onClick={share} disabled={!url} className={cn(pill, "taxi-sign h-10")} data-testid="button-invite-crew">{typeof navigator !== "undefined" && "share" in navigator ? <Share2 className="h-4 w-4" /> : <Copy className="h-4 w-4" />}Text a sign-up link</button>
         {!inFind && (onFind

@@ -1,14 +1,15 @@
 // Crew Up (was "Crew meetup"): layover plans at the airport level, seen only by people in each other's My Crew.
 // No strangers: you see a plan only when the host is in your crew. Posts end by themselves.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { BadgeCheck, Clock, Flag, Loader2, LogOut, MapPin, ShieldCheck, UserCheck, UserPlus, Users } from "lucide-react";
+import { BadgeCheck, CalendarClock, Clock, Eye, Flag, Loader2, LogOut, MapPin, Plus, ShieldCheck, UserCheck, UserPlus, Users } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { CrewAvatar } from "@/lib/aircraft";
 import { PreviewBadge, PreviewGate, errMsg, left } from "@/lib/preview";
-import { InviteCrewCard } from "@/lib/mycrew";
+import { InviteCrewCard, useMyCrew } from "@/lib/mycrew";
+import { markCrewUpSeen } from "@/lib/tabDots";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { findTailNumbers } from "@shared/tailNumber";
@@ -19,6 +20,17 @@ export default function MeetupPage() { return <PreviewGate><MeetupBoard /></Prev
 
 const refresh = () => queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith("/api/preview/") });
 
+const SOON = 5 * 60_000;
+const localDate = (tz: string | null, t = Date.now()) => new Intl.DateTimeFormat("en-CA", { timeZone: tz || undefined, year: "numeric", month: "2-digit", day: "2-digit" }).format(t);
+const fmtStart = (m: { startsAt: number; tz: string | null }) => new Intl.DateTimeFormat(undefined, { timeZone: m.tz || undefined, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(m.startsAt);
+const upcoming = (m: Meetup) => m.startsAt > Date.now() + SOON;
+/** "Wed, Oct 22, 7:00 PM local" for later plans, "8 h left" once they've started. */
+function When({ m }: { m: Meetup }) {
+  return upcoming(m)
+    ? <span className="inline-flex items-center gap-1 text-xs font-medium text-foreground" data-testid={`text-meetup-when-${m.id}`}><CalendarClock className="h-3.5 w-3.5 text-primary" />{fmtStart(m)} local</span>
+    : <span className="inline-flex items-center gap-1 text-xs text-muted-foreground" data-testid={`text-meetup-when-${m.id}`}><Clock className="h-3.5 w-3.5" />{left(m.expiresAt)}</span>;
+}
+
 function MeetupBoard() {
   const [code, setCode] = useState<string>(() => new URLSearchParams(window.location.hash.split("?")[1] || window.location.search.slice(1)).get("icao")?.toUpperCase() || "");
   const [typed, setTyped] = useState("");
@@ -26,13 +38,19 @@ function MeetupBoard() {
     queryKey: ["/api/preview/meetups", code], queryFn: async () => (await apiRequest("GET", `/api/preview/meetups${code ? `?icao=${encodeURIComponent(code)}` : ""}`)).json(), staleTime: 20_000, refetchInterval: 60_000, retry: false,
   });
   const go = (c: string) => { const v = c.trim().toUpperCase(); if (v.length >= 3) { setCode(v); setTyped(""); } };
+  // opening Crew Up clears its red dot (#51)
+  useEffect(() => { if (data) markCrewUpSeen(); }, [data]);
+  const [more, setMore] = useState(false);
+  useEffect(() => setMore(false), [data?.icao]);
+  const mineHere = data?.icao ? data.mine.filter((m) => m.icao === data.icao) : [];
+  const full = (data?.mine.length || 0) >= MEETUP_RULES.maxPlans;
 
   return (
     <div className="space-y-4" data-testid="page-meetup">
       <header className="space-y-1">
         <PreviewBadge />
         <h1 className="text-xl font-semibold">Crew Up</h1>
-        <p className="text-sm text-muted-foreground">Make layover plans with your crew. Only people in your <Link href="/mycrew" className="font-medium text-foreground underline underline-offset-2">My Crew</Link> see them. Airport level only, and they end by themselves.</p>
+        <p className="text-sm text-muted-foreground">Make layover plans with your crew, tonight or for a trip coming up. Only people in your <Link href="/mycrew" className="font-medium text-foreground underline underline-offset-2">My Crew</Link> see them, or just the ones you pick. Airport level only, and they end by themselves.</p>
       </header>
 
       <form onSubmit={(e) => { e.preventDefault(); go(typed); }} className="flex gap-2">
@@ -45,8 +63,22 @@ function MeetupBoard() {
         : error ? <p className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground" data-testid="text-meetup-error">{errMsg(error)}</p>
         : !data ? null : <>
           {data.crewCount === 0 && <p className="rounded-2xl border border-primary/50 bg-primary/5 p-4 text-sm" data-testid="text-meetup-nocrew"><span className="font-semibold">Add your crew first.</span> <span className="text-muted-foreground">Crew Up plans are only seen by people in your crew, so nobody sees yours until you've added someone and they've accepted.</span></p>}
-          {!data.icao ? <p className="rounded-2xl border border-dashed border-border bg-card p-4 text-sm text-muted-foreground" data-testid="text-meetup-empty">Type the airport you're at to make plans with your crew there.</p>
-            : data.mine ? <Posted d={data} /> : <><Compose d={data} /><CrewHere d={data} /></>}
+          {data.mine.length > 0 && (
+            <section className="space-y-2" data-testid="section-meetup-mine">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Your plans</h2>
+              <ul className="space-y-2">{data.mine.map((m) => <li key={m.id}><Posted mine={m} /></li>)}</ul>
+            </section>
+          )}
+          {!data.icao ? <p className="rounded-2xl border border-dashed border-border bg-card p-4 text-sm text-muted-foreground" data-testid="text-meetup-empty">Type the airport you're at, or where you're headed, to make plans with your crew there.</p>
+            : <>
+              {full ? <p className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground" data-testid="text-meetup-full">You have {MEETUP_RULES.maxPlans} plans posted. End one to make another.</p>
+                : mineHere.length && !more ? (
+                  <button type="button" onClick={() => setMore(true)} className="inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-full border border-border bg-card text-sm font-semibold hover-elevate" data-testid="button-meetup-another">
+                    <Plus className="h-4 w-4" />Make another plan at <span className="font-code">{data.icao}</span>
+                  </button>
+                ) : <Compose d={data} onPosted={() => setMore(false)} />}
+              <CrewHere d={data} />
+            </>}
           {data.crewElsewhere.length > 0 && (
             <section className="space-y-2" data-testid="section-crew-elsewhere">
               <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Your crew at other airports</h2>
@@ -59,10 +91,20 @@ function MeetupBoard() {
   );
 }
 
-function Compose({ d }: { d: MeetupResp }) {
+function Compose({ d, onPosted }: { d: MeetupResp; onPosted?: () => void }) {
   const icao = d.icao!;
   const { me } = useAuth();
   const { toast } = useToast();
+  const crew = useMyCrew().data?.crew || [];
+  const today = localDate(d.tz);
+  // 7 PM local by default: today, or tomorrow once it's already evening there
+  const localHour = Number(new Intl.DateTimeFormat("en-US", { timeZone: d.tz || undefined, hour: "numeric", hourCycle: "h23" }).format(Date.now())) % 24;
+  const [later, setLater] = useState(false);
+  const [date, setDate] = useState(() => (localHour >= 18 ? localDate(d.tz, Date.now() + 86400_000) : today));
+  const [time, setTime] = useState("19:00");
+  const [pickAll, setPickAll] = useState(true);
+  const [picked, setPicked] = useState<number[]>([]);
+  const toggle = (id: number) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
   const [note, setNote] = useState("");
   const [hours, setHours] = useState<number>(MEETUP_RULES.defaultHours);
   const [spotId, setSpotId] = useState<number | null>(null);
@@ -71,19 +113,38 @@ function Compose({ d }: { d: MeetupResp }) {
   const tails = findTailNumbers(note).length > 0;
   const priv = meetupNoteProblem(note);
   const post = useMutation({
-    mutationFn: async () => (await apiRequest("POST", "/api/preview/meetups", { icao, note: note.trim(), hours, spotId })).json(),
-    onSuccess: () => { toast({ title: `Posted to your crew at ${icao}`, description: `Ends in ${hours} hours, or when you end it.` }); void refresh(); },
+    mutationFn: async () => (await apiRequest("POST", "/api/preview/meetups", { icao, note: note.trim(), hours, spotId, ...(later ? { startDate: date, startTime: time } : {}), viewers: pickAll ? null : picked })).json(),
+    onSuccess: () => {
+      toast({ title: pickAll ? `Posted to your crew at ${icao}` : `Shared with ${picked.length} of your crew at ${icao}`, description: later ? `Starts ${date} at ${time} local, for ${hours} hours.` : `Ends in ${hours} hours, or when you end it.` });
+      setNote(""); setLater(false); onPosted?.(); void refresh();
+    },
     onError: (e) => toast({ title: "Couldn't post", description: errMsg(e), variant: "destructive" }),
   });
-  const blocked = tails || !!priv || note.length > MEETUP_RULES.noteMax || (d.requireCheckin && !d.verifiedHere);
+  const blocked = tails || !!priv || note.length > MEETUP_RULES.noteMax || (d.requireCheckin && !d.verifiedHere && !later) || (!pickAll && !picked.length) || (later && (!date || !time));
+  const maxDate = localDate(d.tz, Date.now() + MEETUP_RULES.maxDaysAhead * 86400_000);
+  const chip = (on: boolean) => cn("h-9 rounded-full border px-3.5 text-sm font-medium", on ? "border-primary bg-primary text-primary-foreground" : "border-border hover-elevate");
   return (
     <section className="space-y-4 rounded-2xl border border-card-border bg-card p-4" data-testid="card-meetup-compose">
       <div className="flex items-start gap-3">
         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary/15"><Users className="h-5 w-5" /></span>
         <div>
-          <h2 className="text-base font-semibold">At <span className="font-code">{icao}</span> tonight?</h2>
-          <p className="text-xs text-muted-foreground">Post your plans and your crew sees them. Nobody outside your crew does.</p>
+          <h2 className="text-base font-semibold">Plans at <span className="font-code">{icao}</span></h2>
+          <p className="text-xs text-muted-foreground">Tonight or a trip coming up. Your crew sees them, or only the people you pick. Nobody outside your crew does.</p>
         </div>
+      </div>
+      <div>
+        <p className="text-xs font-medium text-muted-foreground">When</p>
+        <div className="mt-1 flex flex-wrap gap-1.5">
+          <button type="button" onClick={() => setLater(false)} className={chip(!later)} data-testid="chip-meetup-now">Now</button>
+          <button type="button" onClick={() => setLater(true)} className={chip(later)} data-testid="chip-meetup-later">Later</button>
+        </div>
+        {later && (
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <input type="date" value={date} min={today} max={maxDate} onChange={(e) => setDate(e.target.value)} className="h-11 w-full min-w-0 rounded-xl border border-input bg-background px-3 text-base" data-testid="input-meetup-date" aria-label="Date" />
+            <input type="time" value={time} onChange={(e) => setTime(e.target.value)} className="h-11 w-full min-w-0 rounded-xl border border-input bg-background px-3 text-base" data-testid="input-meetup-time" aria-label="Time" />
+            <p className="col-span-2 text-[11px] text-muted-foreground">Local time at {icao}. Up to {MEETUP_RULES.maxDaysAhead} days ahead.</p>
+          </div>
+        )}
       </div>
       <label className="block">
         <span className="text-xs font-medium text-muted-foreground">A short note (optional)</span>
@@ -95,7 +156,7 @@ function Compose({ d }: { d: MeetupResp }) {
         <p className="text-xs font-medium text-muted-foreground">Around for</p>
         <div className="mt-1 flex flex-wrap gap-1.5">
           {MEETUP_RULES.hours.map((h) => (
-            <button key={h} type="button" onClick={() => setHours(h)} className={cn("h-9 rounded-full border px-3.5 text-sm font-medium", hours === h ? "border-primary bg-primary text-primary-foreground" : "border-border hover-elevate")} data-testid={`chip-meetup-hours-${h}`}>{h} h</button>
+            <button key={h} type="button" onClick={() => setHours(h)} className={chip(hours === h)} data-testid={`chip-meetup-hours-${h}`}>{h} h</button>
           ))}
         </div>
       </div>
@@ -106,42 +167,68 @@ function Compose({ d }: { d: MeetupResp }) {
           {options.map((s) => <option key={s.id} value={s.id}>{s.name}{s.avgRating != null ? ` · ${s.avgRating.toFixed(1)}★` : ""}</option>)}
         </select>
       </label>
-      {d.requireCheckin && !d.verifiedHere && <p className="text-xs text-destructive">Check in at {icao} first, so crews know you're really here.</p>}
+      {crew.length > 0 && (
+        <div data-testid="meetup-audience">
+          <p className="text-xs font-medium text-muted-foreground">Who sees it</p>
+          <div className="mt-1 flex flex-wrap gap-1.5">
+            <button type="button" onClick={() => setPickAll(true)} className={chip(pickAll)} data-testid="chip-meetup-all">All my crew ({crew.length})</button>
+            <button type="button" onClick={() => setPickAll(false)} className={chip(!pickAll)} data-testid="chip-meetup-pick">Pick crew</button>
+          </div>
+          {!pickAll && (
+            <div className="mt-2 rounded-xl border border-border bg-background">
+              <div className="flex items-center justify-between border-b border-border px-3 py-2 text-xs">
+                <span className="text-muted-foreground" data-testid="text-meetup-picked">{picked.length} of {crew.length} picked</span>
+                <button type="button" onClick={() => setPicked(picked.length === crew.length ? [] : crew.map((c) => c.id))} className="font-semibold text-foreground underline underline-offset-2" data-testid="button-meetup-selectall">{picked.length === crew.length ? "Clear" : "Select all"}</button>
+              </div>
+              <ul className="max-h-60 divide-y divide-border overflow-y-auto">
+                {crew.map((c) => (
+                  <li key={c.id}>
+                    <label className="flex cursor-pointer items-center gap-3 px-3 py-2.5">
+                      <input type="checkbox" checked={picked.includes(c.id)} onChange={() => toggle(c.id)} className="h-5 w-5 accent-[hsl(var(--primary))]" data-testid={`check-meetup-viewer-${c.id}`} />
+                      <CrewAvatar aircraft={c.aircraft} className="h-7 w-7 shrink-0" />
+                      <span className="min-w-0 flex-1 truncate text-sm">{c.displayName}</span>
+                      <span className="shrink-0 text-xs text-muted-foreground">{c.crewRole}</span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+      {d.requireCheckin && !d.verifiedHere && !later && <p className="text-xs text-destructive">Check in at {icao} first, so crews know you're really here.</p>}
       <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground"><ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />Your crew sees {me?.displayName || "your display name"}, your role and aircraft icon. No location beyond the airport is shared.</p>
       <button type="button" onClick={() => post.mutate()} disabled={post.isPending || blocked} className="h-11 w-full rounded-full taxi-sign text-sm font-semibold hover-elevate disabled:opacity-60" data-testid="button-meetup-post">
-        {post.isPending ? "Posting…" : `Post to my crew at ${icao}`}
+        {post.isPending ? "Posting…" : pickAll ? `Post to my crew at ${icao}` : `Post to ${picked.length || "picked"} crew at ${icao}`}
       </button>
     </section>
   );
 }
 
-function Posted({ d }: { d: MeetupResp }) {
+function Posted({ mine }: { mine: Meetup }) {
   const { toast } = useToast();
-  const mine = d.mine!;
   const end = useMutation({
     mutationFn: async () => (await apiRequest("DELETE", `/api/preview/meetups/${mine.id}`)).json(),
-    onSuccess: () => { toast({ title: "Ended", description: "You're no longer listed here." }); void refresh(); },
+    onSuccess: () => { toast({ title: "Ended", description: "You're no longer listed there." }); void refresh(); },
   });
+  const who = !mine.viewers ? "All my crew" : mine.viewers.length <= 3 ? mine.viewers.map((p) => p.name).join(", ") : `${mine.viewers.slice(0, 2).map((p) => p.name).join(", ")} + ${mine.viewers.length - 2} more`;
   return (
-    <div className="space-y-4">
-      <section className="rounded-2xl border border-primary/60 bg-card p-4" data-testid="card-meetup-mine">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-primary">You're posted at <span className="font-code">{mine.icao}</span></p>
-          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Clock className="h-3.5 w-3.5" />{left(mine.expiresAt)}</span>
-        </div>
-        {mine.note && <p className="mt-1.5 text-sm" data-testid="text-meetup-mynote">{mine.note}</p>}
-        {mine.spot && <PlaceLine s={mine.spot} />}
-        <div className="mt-3">
-          <p className="text-xs font-medium text-muted-foreground">Who's in</p>
-          {mine.attendees.length ? (
-            <ul className="mt-1.5 space-y-1.5" data-testid="list-meetup-attendees">{mine.attendees.map((p) => <li key={p.id}><Person p={p} /></li>)}</ul>
-          ) : <p className="mt-1 text-sm text-muted-foreground">No one yet. Crew who tap I'm in show up here.</p>}
-        </div>
-        <button type="button" onClick={() => end.mutate()} disabled={end.isPending} className="mt-3 inline-flex h-9 items-center gap-1.5 rounded-full border border-border px-3.5 text-xs font-semibold hover-elevate" data-testid="button-meetup-end"><LogOut className="h-3.5 w-3.5" />End it</button>
-      </section>
-
-      <CrewHere d={d} />
-    </div>
+    <section className="rounded-2xl border border-primary/60 bg-card p-4" data-testid={`card-meetup-mine-${mine.id}`}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-primary">{upcoming(mine) ? "Coming up at" : "You're posted at"} <span className="font-code">{mine.icao}</span></p>
+        <When m={mine} />
+      </div>
+      {mine.note && <p className="mt-1.5 text-sm" data-testid="text-meetup-mynote">{mine.note}</p>}
+      {mine.spot && <PlaceLine s={mine.spot} />}
+      <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground" data-testid={`text-meetup-viewers-${mine.id}`}><Eye className="h-3.5 w-3.5 shrink-0" /><span className="truncate">Seen by {who}</span></p>
+      <div className="mt-3">
+        <p className="text-xs font-medium text-muted-foreground">Who's in</p>
+        {mine.attendees.length ? (
+          <ul className="mt-1.5 space-y-1.5" data-testid="list-meetup-attendees">{mine.attendees.map((p) => <li key={p.id}><Person p={p} /></li>)}</ul>
+        ) : <p className="mt-1 text-sm text-muted-foreground">No one yet. Crew who tap I'm in show up here.</p>}
+      </div>
+      <button type="button" onClick={() => end.mutate()} disabled={end.isPending} className="mt-3 inline-flex h-9 items-center gap-1.5 rounded-full border border-border px-3.5 text-xs font-semibold hover-elevate" data-testid={`button-meetup-end-${mine.id}`}><LogOut className="h-3.5 w-3.5" />{upcoming(mine) ? "Cancel it" : "End it"}</button>
+    </section>
   );
 }
 
@@ -172,8 +259,9 @@ function Other({ m, showIcao }: { m: Meetup; showIcao?: boolean }) {
     <article className="rounded-2xl border border-card-border bg-card p-4" data-testid={`card-meetup-${m.id}`}>
       <div className="flex items-start justify-between gap-3">
         <Person p={m.host} />
-        <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground">{showIcao && <span className="mr-1 rounded bg-muted px-1.5 font-code font-bold text-foreground">{m.icao}</span>}<Clock className="h-3.5 w-3.5" />{left(m.expiresAt)}</span>
+        <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground">{showIcao && <span className="mr-1 rounded bg-muted px-1.5 font-code font-bold text-foreground">{m.icao}</span>}{!upcoming(m) && <When m={m} />}</span>
       </div>
+      {upcoming(m) && <p className="mt-2"><When m={m} /></p>}
       {m.note && <p className="mt-2 text-sm">{m.note}</p>}
       {m.spot && <PlaceLine s={m.spot} />}
       <div className="mt-3 flex items-center justify-between gap-2">

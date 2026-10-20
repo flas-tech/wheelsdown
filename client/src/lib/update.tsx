@@ -6,6 +6,9 @@ import { RefreshCw } from "lucide-react";
 import { IS_STATIC, API_BASE } from "./queryClient";
 
 const EVENT = "wheelsdown:update";
+const TRIED = "wd-update-tried";
+declare const __BUILD_ID__: string;
+const BUILT = typeof __BUILD_ID__ === "string" ? __BUILD_ID__ : "";
 let base: string | null = null;
 let ready = false;
 
@@ -23,8 +26,14 @@ async function check(): Promise<Check> {
     if (!r.ok) return "offline";
     const { version } = (await r.json()) as { version?: string };
     if (!version) return "offline";
-    if (!base) { base = version; return "current"; }
+    // a build stamped with its release compares with that, so a copy that opened already out of date (an iPhone home-screen
+    // app restored from memory, still on 1.10 days later) updates too; unstamped builds (local dev) learn it on the first check
+    if (!base) base = BUILT || version;
     if (version === base) return "current";
+    // don't reload over and over if the server and this copy keep disagreeing: once per release per visit, then the Update bar
+    let again = false;
+    try { again = sessionStorage.getItem(TRIED) === version; sessionStorage.setItem(TRIED, version); } catch { /* private mode */ }
+    if (again) { ready = true; window.dispatchEvent(new Event(EVENT)); return "update"; }
     ready = true;
     // coming back to the app: nothing is in progress, so just reload
     if (document.visibilityState === "visible" && !busy()) { window.location.reload(); return "update"; }

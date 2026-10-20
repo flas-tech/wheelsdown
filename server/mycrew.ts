@@ -18,6 +18,7 @@ import {
   type CrewPrivacy, type CrewPerson, type CrewMember, type CrewRequest, type MyCrewResp, type CrewFindRow, type CrewShared, type MemberMessage, type CrewRelation,
 } from "@shared/mycrew";
 import type { User } from "@shared/schema";
+import { meetupVisibleTo, meetupStart } from "@shared/layover";
 
 type Mw = (req: Request, res: Response, next: NextFunction) => any;
 const rows = async <T = any>(q: ReturnType<typeof sql>) => (await db().execute(q)).rows as T[];
@@ -127,8 +128,10 @@ export function registerMyCrew(app: Express, o: { userOf: (req: Request) => Prom
     const privs = crewOther.length ? await rows(sql`SELECT * FROM crew_privacy WHERE user_id IN (${sql.join(crewOther.map((c) => sql`${c.id}`), sql`, `)})`) : [];
     const privBy = new Map(privs.map((p) => [num(p.user_id), p]));
     const now = Date.now();
-    const ups = crewOther.length ? await rows(sql`SELECT user_id, icao FROM meetups WHERE status = 'live' AND expires_at > ${now} AND user_id IN (${sql.join(crewOther.map((c) => sql`${c.id}`), sql`, `)})`).catch(() => []) : [];
-    const upBy = new Map(ups.map((u) => [num(u.user_id), String(u.icao)]));
+    // their Crew Up badge: the soonest plan they shared with you (plans can be for later, and for picked crew only)
+    const ups = crewOther.length ? await rows(sql`SELECT user_id, icao, starts_at, created_at, viewer_ids FROM meetups WHERE status = 'live' AND expires_at > ${now} AND user_id IN (${sql.join(crewOther.map((c) => sql`${c.id}`), sql`, `)})`).catch(() => []) : [];
+    const upBy = new Map<number, string>();
+    for (const u of ups.filter((r) => meetupVisibleTo(r, uid)).sort((a, z) => meetupStart(z) - meetupStart(a))) upBy.set(num(u.user_id), String(u.icao));
     const crew: CrewMember[] = crewOther.map((c) => {
       const p = ppl.get(c.id); if (!p) return null;
       const pv = privBy.get(c.id);

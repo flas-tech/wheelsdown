@@ -18,7 +18,7 @@ import { findTailNumbers } from "@shared/tailNumber";
 import { pickable, pickScore } from "@shared/briefing";
 import { crewIds, areCrew } from "./mycrew";
 import { fillStop, aiPrefOf, programsOf } from "./aiPicks";
-import { MEETUP_RULES, meetupNoteProblem, type Metar, type Meetup, type MeetupPerson, type MeetupResp, type RateItem, type TodayPick, type TodayResp, type FlightCat } from "@shared/layover";
+import { MEETUP_RULES, meetupNoteProblem, meetupViewers, meetupVisibleTo, meetupStart, type Metar, type Meetup, type MeetupPerson, type MeetupResp, type RateItem, type TodayPick, type TodayResp, type FlightCat } from "@shared/layover";
 import type { SpotWithStats, User, BriefingStop } from "@shared/schema";
 
 type Mw = (req: Request, res: Response, next: NextFunction) => any;
@@ -41,6 +41,9 @@ export async function ensureLayoverTables() {
   await db().execute(sql`CREATE TABLE IF NOT EXISTS meetups (id serial PRIMARY KEY, user_id integer NOT NULL, icao text NOT NULL, note text NOT NULL DEFAULT '',
     spot_id integer, status text NOT NULL DEFAULT 'live', created_at bigint NOT NULL DEFAULT 0, expires_at bigint NOT NULL DEFAULT 0)`);
   await db().execute(sql`CREATE INDEX IF NOT EXISTS meetups_icao_idx ON meetups (icao, expires_at)`);
+  // future plans (#49) and picked viewers (#57): additive, so the release before still runs on the same table
+  await db().execute(sql`ALTER TABLE meetups ADD COLUMN IF NOT EXISTS starts_at bigint NOT NULL DEFAULT 0`);
+  await db().execute(sql`ALTER TABLE meetups ADD COLUMN IF NOT EXISTS viewer_ids text`);
   await db().execute(sql`CREATE TABLE IF NOT EXISTS meetup_joins (meetup_id integer NOT NULL, user_id integer NOT NULL, created_at bigint NOT NULL DEFAULT 0, PRIMARY KEY (meetup_id, user_id))`);
   await db().execute(sql`INSERT INTO app_settings (key, value) VALUES ('layover_audience', 'admins') ON CONFLICT (key) DO NOTHING`);
 }
@@ -136,6 +139,19 @@ async function airportOf(code: string) {
   return { icao, name: a?.name || ref?.name || icao, city: a?.city || ref?.city || "", region: a?.region || ref?.region || "", country: a?.country || ref?.country || "", lat, lon };
 }
 const tzOf = (lat: number, lon: number) => { try { return tzlookup(lat, lon); } catch { return null; } };
+/** A wall-clock time at the airport (its time zone) as a UTC instant. */
+function zonedToUtc(tz: string, y: number, mo: number, d: number, h: number, mi: number) {
+  const wall = Date.UTC(y, mo - 1, d, h, mi);
+  const off = (t: number) => {
+    const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: tz, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })
+      .formatToParts(new Date(t)).map((x) => [x.type, x.value]));
+    return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute) - Math.floor(t / 60_000) * 60_000;
+  };
+  let t = wall - off(wall);
+  t = wall - off(t);
+  return t;
+}
+const tzAt = async (icao: string) => { const ap = await airportOf(icao); return ap ? tzOf(ap.lat, ap.lon) : null; };
 const myReviewed = async (uid: number) => new Set((await rows(sql`SELECT spot_id FROM reviews WHERE user_id = ${uid}`)).map((r) => num(r.spot_id)));
 const pick = (s: SpotWithStats, rated: Set<number>): TodayPick => ({ id: s.id, name: s.name, category: s.category, milesFromField: s.milesFromField ?? 0, avgRating: s.avgRating ?? null, reviewCount: s.reviewCount, rated: rated.has(s.id), icao: s.icao, address: s.address || null, lat: s.lat ?? null, lng: s.lng ?? null });
 const stopsOf = (raw: string): BriefingStop[] => { try { const v = JSON.parse(raw || "[]"); return Array.isArray(v) ? v : []; } catch { return []; } };
@@ -225,9 +241,9 @@ export function registerLayover(app: Express, o: { userOf: (req: Request) => Pro
 
     const now = Date.now();
     const mineM = (await rows(sql`SELECT 1 FROM meetups WHERE user_id = ${u.id} AND icao = ${icao} AND status = 'live' AND expires_at > ${now} LIMIT 1`))[0];
-    // Crew Up is crew-only: count plans here from people in your crew
+    // Crew Up is crew-only: count plans here from people in your crew (that they shared with you)
     const myCrew = Array.from(await crewIds(u.id));
-    const others = myCrew.length ? num((await rows(sql`SELECT COUNT(*) AS n FROM meetups WHERE icao = ${icao} AND status = 'live' AND expires_at > ${now} AND user_id IN (${sql.join(myCrew.map((i) => sql`${i}`), sql`, `)})`))[0]?.n) : 0;
+    const others = myCrew.length ? (await rows(sql`SELECT viewer_ids FROM meetups WHERE icao = ${icao} AND status = 'live' AND expires_at > ${now} AND user_id IN (${sql.join(myCrew.map((i) => sql`${i}`), sql`, `)})`)).filter((r) => meetupVisibleTo(r, u.id)).length : 0;
 
     const out: TodayResp = {
       icao, source, checkedInAt, airport: ap, tz, sun: sunFor(ap.lat, ap.lon, tz), metar: metarR.v, metarError: metarR.err,
@@ -259,12 +275,14 @@ export function registerLayover(app: Express, o: { userOf: (req: Request) => Pro
   }
   async function shape(list: any[], viewer: number, icao: string): Promise<Meetup[]> {
     if (!list.length) return [];
+    const tz = await tzAt(icao);
     const ids = list.map((r) => num(r.id));
     const joins = await rows(sql`SELECT meetup_id, user_id FROM meetup_joins WHERE meetup_id IN (${sql.join(ids.map((i) => sql`${i}`), sql`, `)})`);
     const spotIds = list.map((r) => r.spot_id).filter((x) => x != null).map(num);
     const spots = spotIds.length ? await rows(sql`SELECT id, name, category FROM spots WHERE id IN (${sql.join(spotIds.map((i) => sql`${i}`), sql`, `)}) AND status = 'live'`) : [];
     const spotBy = new Map(spots.map((s) => [num(s.id), { id: num(s.id), name: String(s.name), category: String(s.category) }]));
-    const ppl = await people(Array.from(new Set([...list.map((r) => num(r.user_id)), ...joins.map((j) => num(j.user_id))])), icao);
+    const picked = list.filter((r) => num(r.user_id) === viewer).flatMap((r) => meetupViewers(r.viewer_ids) || []);
+    const ppl = await people(Array.from(new Set([...list.map((r) => num(r.user_id)), ...joins.map((j) => num(j.user_id)), ...picked])), icao);
     return list.map((r) => {
       const mine = num(r.user_id) === viewer;
       const js = joins.filter((j) => num(j.meetup_id) === num(r.id));
@@ -274,13 +292,15 @@ export function registerLayover(app: Express, o: { userOf: (req: Request) => Pro
         mine, joined: js.some((j) => num(j.user_id) === viewer), joins: js.length,
         // the host sees who's in; everyone else sees a count, plus themselves
         attendees: mine ? js.map((j) => ppl.get(num(j.user_id))).filter(Boolean) as MeetupPerson[] : [],
+        startsAt: meetupStart(r), tz,
+        ...(mine ? { viewers: meetupViewers(r.viewer_ids)?.map((id) => ppl.get(id)).filter(Boolean) as MeetupPerson[] ?? null } : {}),
       };
     }).filter((m) => m.host.id);
   }
 
   app.get("/api/preview/meetups", gate, async (req, res) => {
     const u = me(req), now = Date.now();
-    const mineAll = await rows(sql`SELECT * FROM meetups WHERE user_id = ${u.id} AND status = 'live' AND expires_at > ${now} ORDER BY created_at DESC`);
+    const mineAll = (await rows(sql`SELECT * FROM meetups WHERE user_id = ${u.id} AND status = 'live' AND expires_at > ${now}`)).sort((a, z) => meetupStart(a) - meetupStart(z));
     const myAirports = Array.from(new Set(mineAll.map((r) => String(r.icao))));
     const q = String(req.query.icao || "").trim().toUpperCase();
     const lastCk = !q && !myAirports[0] ? (await rows(sql`SELECT icao FROM checkins WHERE user_id = ${u.id} AND created_at > ${now - MEETUP_RULES.checkinWindowHours * HOUR} ORDER BY created_at DESC LIMIT 1`))[0] : null;
@@ -288,16 +308,19 @@ export function registerLayover(app: Express, o: { userOf: (req: Request) => Pro
     const ap = start ? await airportOf(start) : null;
     if (q && !ap) return res.status(404).json({ message: `We don't know the airport ${q}. Check the code.` });
     const icao = ap?.icao || null;
-    const mineRow = icao ? mineAll.find((r) => r.icao === icao) : undefined;
-    // crew-only: you see plans from people in your crew (both of you agreed), never from strangers
+    // crew-only: you see plans from people in your crew (both of you agreed), never from strangers,
+    // and only the ones they shared with you when they picked who sees it (#57)
     const myCrew = Array.from(await crewIds(u.id));
-    const crewRows = myCrew.length ? await rows(sql`SELECT * FROM meetups WHERE status = 'live' AND expires_at > ${now} AND user_id IN (${sql.join(myCrew.map((i) => sql`${i}`), sql`, `)}) ORDER BY created_at DESC LIMIT 100`) : [];
+    const crewRows = (myCrew.length ? await rows(sql`SELECT * FROM meetups WHERE status = 'live' AND expires_at > ${now} AND user_id IN (${sql.join(myCrew.map((i) => sql`${i}`), sql`, `)}) ORDER BY created_at DESC LIMIT 200`) : [])
+      .filter((r) => meetupVisibleTo(r, u.id)).sort((a, z) => meetupStart(a) - meetupStart(z));
     const othersRows = icao ? crewRows.filter((r) => r.icao === icao) : [];
     const elsewhere: any[] = [];
     for (const code of Array.from(new Set(crewRows.filter((r) => r.icao !== icao).map((r) => String(r.icao))))) elsewhere.push(...(await shape(crewRows.filter((r) => r.icao === code), u.id, code)));
-    const [mine] = mineRow && icao ? await shape([mineRow], u.id, icao) : [null];
+    const mine: Meetup[] = [];
+    for (const code of Array.from(new Set(mineAll.map((r) => String(r.icao))))) mine.push(...(await shape(mineAll.filter((r) => r.icao === code), u.id, code)));
+    mine.sort((a, z) => a.startsAt - z.startsAt);
     const out: MeetupResp = {
-      icao, mine: mine || null, others: icao ? await shape(othersRows, u.id, icao) : [], crewElsewhere: elsewhere, crewCount: myCrew.length, myAirports,
+      icao, tz: ap ? tzOf(ap.lat, ap.lon) : null, mine, others: icao ? await shape(othersRows, u.id, icao) : [], crewElsewhere: elsewhere, crewCount: myCrew.length, myAirports,
       requireCheckin: MEETUP_RULES.requireCheckin, verifiedHere: icao ? await hasCheckin(u.id, icao) : false,
     };
     res.json(out);
@@ -308,6 +331,11 @@ export function registerLayover(app: Express, o: { userOf: (req: Request) => Pro
     note: z.string().trim().max(MEETUP_RULES.noteMax, `Keep it under ${MEETUP_RULES.noteMax} characters`).default(""),
     hours: z.coerce.number().refine((h) => (MEETUP_RULES.hours as readonly number[]).includes(h), "Pick how long you're around").default(MEETUP_RULES.defaultHours),
     spotId: z.coerce.number().int().positive().nullable().optional(),
+    // later plans (#49): the airport's local date and time; missing = starting now
+    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+    startTime: z.string().regex(/^\d{2}:\d{2}$/).optional().nullable(),
+    // who sees it (#57): crew member ids; missing or null = all of your crew
+    viewers: z.array(z.coerce.number().int().positive()).max(500).nullable().optional(),
   });
   app.post("/api/preview/meetups", gate, writeLimit, async (req, res) => {
     const u = me(req);
@@ -329,20 +357,52 @@ export function registerLayover(app: Express, o: { userOf: (req: Request) => Pro
       spotId = s.id;
     }
     const now = Date.now();
-    // one at a time: a new post replaces the old one
-    await db().execute(sql`UPDATE meetups SET status = 'ended' WHERE user_id = ${u.id} AND status = 'live'`);
-    const r = (await rows(sql`INSERT INTO meetups (user_id, icao, note, spot_id, status, created_at, expires_at) VALUES (${u.id}, ${ap.icao}, ${note}, ${spotId}, 'live', ${now}, ${now + p.data.hours * HOUR}) RETURNING id`))[0];
+    const tz = tzOf(ap.lat, ap.lon) || "UTC";
+    let start = now;
+    if (p.data.startDate && p.data.startTime) {
+      const [y, mo, d] = p.data.startDate.split("-").map(Number), [h, mi] = p.data.startTime.split(":").map(Number);
+      const t = zonedToUtc(tz, y, mo, d, h, mi);
+      if (!Number.isFinite(t)) return res.status(400).json({ message: "Check the date and time." });
+      if (t < now - 30 * 60_000) return res.status(400).json({ message: "That time has already passed. Pick a later one, or Now." });
+      if (t > now + MEETUP_RULES.maxDaysAhead * DAY) return res.status(400).json({ message: `Plans can start up to ${MEETUP_RULES.maxDaysAhead} days ahead.` });
+      start = Math.max(now, t);
+    }
+    const end = start + p.data.hours * HOUR;
+    // who sees it: only people in your crew; ticking everyone is the same as All my crew
+    const crew = await crewIds(u.id);
+    let viewers: number[] | null = null;
+    if (p.data.viewers) {
+      viewers = Array.from(new Set(p.data.viewers.filter((id) => crew.has(id))));
+      if (!viewers.length) return res.status(400).json({ message: "Pick at least one person from your crew, or All my crew." });
+      if (viewers.length >= crew.size) viewers = null;
+    }
+    const mineLive = await rows(sql`SELECT id, icao, starts_at, created_at, expires_at FROM meetups WHERE user_id = ${u.id} AND status = 'live' AND expires_at > ${now}`);
+    // a new plan at the same airport that overlaps one you already posted replaces it (like editing it)
+    const overlap = mineLive.filter((m) => m.icao === ap.icao && meetupStart(m) < end && num(m.expires_at) > start).map((m) => num(m.id));
+    if (mineLive.length - overlap.length >= MEETUP_RULES.maxPlans) return res.status(400).json({ message: `You have ${MEETUP_RULES.maxPlans} plans posted. End one first.` });
+    if (overlap.length) await db().execute(sql`UPDATE meetups SET status = 'ended' WHERE user_id = ${u.id} AND id IN (${sql.join(overlap.map((i) => sql`${i}`), sql`, `)})`);
+    const r = (await rows(sql`INSERT INTO meetups (user_id, icao, note, spot_id, status, created_at, starts_at, expires_at, viewer_ids)
+      VALUES (${u.id}, ${ap.icao}, ${note}, ${spotId}, 'live', ${now}, ${start}, ${end}, ${viewers ? viewers.join(",") : null}) RETURNING id`))[0];
     await db().execute(sql`DELETE FROM meetup_joins WHERE meetup_id IN (SELECT id FROM meetups WHERE status <> 'live' OR expires_at < ${now - 7 * DAY})`);
     await db().execute(sql`DELETE FROM meetups WHERE expires_at < ${now - 7 * DAY}`);
-    res.status(201).json({ ok: true, id: num(r.id) });
-    // tell their crew (once per poster and airport every 90 minutes, so editing a plan doesn't spam anyone)
-    const key = `${u.id}:${ap.icao}`;
+    res.status(201).json({ ok: true, id: num(r.id), startsAt: start });
+    // tell the people who can see it (once per poster, airport and day every 90 minutes, so editing a plan doesn't spam anyone)
+    const later = start - now > 30 * 60_000;
+    const whenTxt = later ? new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(start) : "";
+    const key = `${u.id}:${ap.icao}:${new Date(start).toISOString().slice(0, 10)}`;
     if (now - (crewUpSent.get(key) || 0) > 90 * 60_000) {
       crewUpSent.set(key, now);
       const where = spotId ? (await storage.getSpot(spotId))?.name : "";
-      const body = [note, where ? `Meet at ${where}` : "", `Around for ${p.data.hours} h`].filter(Boolean).join(" · ");
-      for (const id of Array.from(await crewIds(u.id))) notify(id, "crewup_posted", { title: `${u.displayName} posted Crew Up at ${ap.icao}`, body, link: `/meetup?icao=${ap.icao}`, tag: `crewup-${u.id}` });
+      const body = [whenTxt ? `${whenTxt} local` : "", note, where ? `Meet at ${where}` : "", `Around for ${p.data.hours} h`].filter(Boolean).join(" · ");
+      for (const id of viewers || Array.from(crew)) notify(id, "crewup_posted", { title: `${u.displayName} posted Crew Up at ${ap.icao}`, body, link: `/meetup?icao=${ap.icao}`, tag: `crewup-${u.id}` });
     }
+  });
+  /** Red dot on the Crew Up tab (#51): when the newest crew plan you can see was posted. The client compares it with your last visit. */
+  app.get("/api/preview/crewup-latest", gate, async (req, res) => {
+    const u = me(req), now = Date.now();
+    const myCrew = Array.from(await crewIds(u.id));
+    const list = myCrew.length ? (await rows(sql`SELECT created_at, viewer_ids FROM meetups WHERE status = 'live' AND expires_at > ${now} AND user_id IN (${sql.join(myCrew.map((i) => sql`${i}`), sql`, `)})`)).filter((r) => meetupVisibleTo(r, u.id)) : [];
+    res.set("Cache-Control", "no-store").json({ latest: list.reduce((m, r) => Math.max(m, num(r.created_at)), 0), count: list.length });
   });
   app.delete("/api/preview/meetups/:id", gate, async (req, res) => {
     const u = me(req);
@@ -354,7 +414,7 @@ export function registerLayover(app: Express, o: { userOf: (req: Request) => Pro
     const m = (await rows(sql`SELECT * FROM meetups WHERE id = ${id} AND status = 'live' AND expires_at > ${now}`))[0];
     if (!m) return res.status(404).json({ message: "Those plans have ended." });
     if (num(m.user_id) === u.id) return res.status(400).json({ message: "That's yours." });
-    if (!(await areCrew(u.id, num(m.user_id)))) return res.status(404).json({ message: "Those plans have ended." });
+    if (!(await areCrew(u.id, num(m.user_id))) || !meetupVisibleTo(m, u.id)) return res.status(404).json({ message: "Those plans have ended." });
     const j = await db().execute(sql`INSERT INTO meetup_joins (meetup_id, user_id, created_at) VALUES (${id}, ${u.id}, ${now}) ON CONFLICT DO NOTHING RETURNING meetup_id`);
     res.json({ ok: true });
     const jk = `${id}:${u.id}`;

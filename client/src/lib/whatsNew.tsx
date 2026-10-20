@@ -21,6 +21,15 @@ const PUBLIC_FEATURES = new Set<DevFeature>([]);
 
 const ALL_RELEASES: Release[] = [
   {
+    id: 15, date: "October 20, 2026",
+    items: [
+      { icon: CalendarDays, title: "Crew Up plans for later", body: "Post plans for tonight or a trip coming up, up to 30 days ahead, at more than one airport. Times are local at that airport.", to: "/meetup" },
+      { icon: Eye, title: "Pick who sees your plans", body: "When you post a Crew Up, share it with all of your crew or tick just the people you want. Only they see it and get the notification.", to: "/meetup" },
+      { icon: UserMinus, title: "Following, names first", body: "Following now lists your crews first, each with Unfollow. Tap a name above the activity to see just theirs.", to: "/following" },
+      { icon: BellRing, title: "Red dots on Crew Up and My Crew", body: "A dot shows on Crew Up when your crew posts new plans, and on My Crew when a crew request is waiting." },
+    ],
+  },
+  {
     id: 14, date: "October 19, 2026",
     items: [
       { icon: Users, title: "See the whole leaderboard", body: "The board still opens on the top 10. Show all members, just below that list, shows everyone in rank order.", to: "/crew" },
