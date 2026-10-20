@@ -283,7 +283,7 @@ function ReviewForm({ spotId, category, edit, onDone }: { spotId: number; catego
             className="w-full rounded-xl border border-input bg-background p-3 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           />
           {goAround && <p className="text-[11px] text-muted-foreground">A go-around counts as 0 stars in the average and keeps this place out of suggested trip briefings when most crews say go around.</p>}
-          <p className="text-xs text-muted-foreground">Posting as <b className="text-foreground" data-testid="text-posting-as">{me ? publicName(me) : ""}</b> (<Link href="/me" className="underline">change</Link>) · +{POINTS.reviewDetail} more pts for a comment of 40+ characters</p>
+          <p className="text-xs text-muted-foreground">Posting as <b className="text-foreground" data-testid="text-posting-as">{me ? publicName(me) : ""}</b> (<Link href="/settings" className="underline">change</Link>) · +{POINTS.reviewDetail} more pts for a comment of 40+ characters</p>
           <div className="flex gap-2">
             <button type="submit" disabled={rating == null || needWhy || m.isPending} data-testid="button-submit-review" className="flex-1 h-10 rounded-full taxi-sign text-sm font-semibold disabled:opacity-50 hover-elevate">
               {m.isPending ? (edit ? "Saving…" : "Posting…") : edit ? "Save changes" : needWhy ? "Add a reason to go around" : goAround ? "Post go-around" : comment.trim() ? "Post rating & comment" : "Post rating"}

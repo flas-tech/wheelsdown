@@ -58,7 +58,7 @@ const STEPS: { key: string; title: string; body: string; art: React.ReactNode; i
   },
   {
     key: "search", title: "Search your whole route",
-    body: "Type the airport codes for every stop (OPF or KOPF). Filter by time, price, Grab & go or Sit-down and food type, then switch to Map. Collect hotel points? Add your programs in the Logbook and those hotels come first.",
+    body: "Type the airport codes for every stop (OPF or KOPF). Filter by time, price, Grab & go or Sit-down and food type, then switch to Map. Collect hotel points? Add your programs in Settings (the gear on your Logbook) and those hotels come first.",
     art: <div className="space-y-2.5">
       <div className="flex items-center gap-2 rounded-xl bg-white px-3 py-2.5 text-[#0B1222]"><Search className="h-4 w-4 text-[#0B1222]/50" /><span className="flex-1 font-code text-sm tracking-widest">KOPF KTEB KASE</span>
         <span className="inline-flex overflow-hidden rounded-full border border-[#0B1222]/15 text-[10px] font-semibold"><span className="inline-flex items-center gap-0.5 px-1.5 py-0.5"><List className="h-3 w-3" />List</span><span className="inline-flex items-center gap-0.5 bg-[#0B1222] px-1.5 py-0.5 text-white"><MapIcon className="h-3 w-3" />Map</span></span></div>
@@ -76,7 +76,7 @@ const STEPS: { key: string; title: string; body: string; art: React.ReactNode; i
   },
   {
     key: "ai", title: "No crew picks yet? Pick with AI", isNew: true,
-    body: "Where crews haven't listed a place, tap Pick with AI for real nearby options, always tagged AI pick so you know they aren't crew-rated. Want more? Choose a food type or Surprise me for what the area is known for. Prefer crew or Prefer AI is in your Logbook.",
+    body: "Where crews haven't listed a place, tap Pick with AI for real nearby options, always tagged AI pick so you know they aren't crew-rated. Want more? Choose a food type or Surprise me for what the area is known for. Prefer crew or Prefer AI is in Settings, the gear on your Logbook.",
     art: <div className="space-y-2">
       <div className="flex items-center gap-2.5 rounded-xl bg-white/[0.06] px-3 py-2 ring-1 ring-white/10"><span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/20 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-300"><Users className="h-3 w-3" />Crew pick</span><span className="text-sm font-semibold">Joe's Stone Crab</span></div>
       <div className="flex items-center gap-2.5 rounded-xl border border-dashed border-violet-300/60 px-3 py-2"><span className="inline-flex items-center gap-1 rounded-full bg-violet-400/20 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-violet-200"><Sparkles className="h-3 w-3" />AI pick</span><span className="text-sm font-semibold">Pastrami House</span></div>
@@ -132,7 +132,7 @@ const STEPS: { key: string; title: string; body: string; art: React.ReactNode; i
   },
   {
     key: "profile", title: "Your Logbook, and telling us what to fix", isNew: true,
-    body: "Your Logbook holds your points, profile and settings, plus a private map of everywhere you've added or checked in. Finish your profile so crews know whose picks they're reading. Something wrong or missing? Tap Send feedback at the bottom of any page.",
+    body: "Your Logbook holds your points and badges, plus a private map of everywhere you've added or checked in. Tap the gear for Settings: your profile, notifications and AI picks. Finish your profile so crews know whose picks they're reading. Something wrong or missing? Tap Send feedback at the bottom of any page.",
     art: <div className="space-y-2.5">
       <div className="flex items-center gap-3 rounded-xl bg-white/[0.06] p-3 ring-1 ring-white/10"><div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-[#0B1222]"><UserRound className="h-5 w-5" /></div>
         <div className="flex-1"><div className="h-2 w-24 rounded bg-white/50" /><div className="mt-1.5 h-1.5 w-full overflow-hidden rounded bg-white/10"><div className="h-full w-3/5 rounded bg-primary" /></div></div></div>

@@ -1,0 +1,235 @@
+// Push notifications on this device: setup, the Settings card, and the app-icon badge.
+// iPhone/iPad: only in the home-screen app (iOS 16.4+), and the permission prompt must come straight from a tap.
+// Server side and payload format: server/push.ts. Background script: client/public/sw.js (notifications only, no caching).
+import { useEffect, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { BellOff, BellRing, Loader2, Moon, Share, SquarePlus } from "lucide-react";
+import { DEFAULT_NOTIFY_PREFS, type NotifyPrefs, type PushConfig } from "@shared/push";
+import { apiRequest, queryClient, IS_STATIC } from "@/lib/queryClient";
+import { useAuth } from "@/lib/auth";
+import { useToast } from "@/hooks/use-toast";
+import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
+
+const SW_URL = "/sw.js";
+const errText = (e: unknown) => String((e as Error)?.message || e).replace(/^\d+:\s*/, "").replace(/^\{"message":"(.*)"\}$/, "$1");
+
+export const isIOS = () => typeof navigator !== "undefined" && (/iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
+export const isStandalone = () => typeof window !== "undefined" && ((navigator as any).standalone === true || window.matchMedia?.("(display-mode: standalone)").matches);
+const supported = () => typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+
+/** What this device can do right now. */
+export type DeviceState = "unsupported" | "install" | "denied" | "off" | "on";
+
+export function usePushConfig() {
+  const { me } = useAuth();
+  return useQuery<PushConfig>({ queryKey: ["/api/push/config"], enabled: !!me && !IS_STATIC, staleTime: 60_000, retry: false });
+}
+
+const b64ToBytes = (s: string) => {
+  const pad = "=".repeat((4 - (s.length % 4)) % 4);
+  const raw = atob((s + pad).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+};
+const register = () => navigator.serviceWorker.register(SW_URL, { scope: "/" });
+const zone = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return undefined; } };
+
+async function currentSub(): Promise<PushSubscription | null> {
+  if (!supported()) return null;
+  const reg = await navigator.serviceWorker.getRegistration("/");
+  return (await reg?.pushManager.getSubscription()) || null;
+}
+
+export function useDeviceState(): [DeviceState, () => Promise<void>] {
+  const [s, setS] = useState<DeviceState>("off");
+  const check = async () => {
+    // iPhone/iPad Safari tab: no notifications until it's opened from the home screen
+    if (isIOS() && !isStandalone()) { setS("install"); return; }
+    if (!supported()) { setS("unsupported"); return; }
+    if (Notification.permission === "denied") { setS("denied"); return; }
+    setS((await currentSub().catch(() => null)) ? "on" : "off");
+  };
+  useEffect(() => { void check(); }, []);
+  return [s, check];
+}
+
+/** Call straight from a tap. Asks iOS/Android for permission, then signs this device up with the server. */
+export async function enablePush(publicKey: string) {
+  const perm = await Notification.requestPermission();
+  if (perm !== "granted") throw new Error(perm === "denied" ? "Notifications are blocked for Wheelsdown. Turn them on in Settings > Notifications > Wheelsdown." : "Notifications weren't allowed.");
+  const reg = (await navigator.serviceWorker.getRegistration("/")) || (await register());
+  await navigator.serviceWorker.ready;
+  const sub = (await reg.pushManager.getSubscription()) || (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(publicKey) }));
+  const j = sub.toJSON();
+  await apiRequest("POST", "/api/push/subscribe", { endpoint: j.endpoint, keys: j.keys, tz: zone() });
+}
+
+export async function disablePush() {
+  const sub = await currentSub();
+  if (!sub) return;
+  await apiRequest("POST", "/api/push/unsubscribe", { endpoint: sub.endpoint }).catch(() => {});
+  await sub.unsubscribe().catch(() => {});
+}
+
+/**
+ * Mounted once in the app shell. For members who have push available: registers the background script (so turning
+ * notifications on is instant), re-sends this device's subscription if it changed, follows taps on a notification when
+ * the app is already open, and keeps the red number on the home-screen icon in step with unread notifications.
+ */
+export function PushHost({ unread }: { unread: number }) {
+  const { data } = usePushConfig();
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!data?.available || !supported()) return;
+    register().then(async (reg) => {
+      const sub = await reg.pushManager.getSubscription();
+      if (sub && Notification.permission === "granted") {
+        const j = sub.toJSON();
+        apiRequest("POST", "/api/push/subscribe", { endpoint: j.endpoint, keys: j.keys, tz: zone() }).catch(() => {});
+      }
+    }).catch(() => {});
+    const onMsg = (e: MessageEvent) => {
+      if (e.data?.type === "wd-open" && typeof e.data.url === "string") {
+        try { const u = new URL(e.data.url); if (u.origin === location.origin) { location.hash = u.hash || "#/"; setTick((t) => t + 1); } } catch { /* ignore */ }
+      }
+    };
+    navigator.serviceWorker.addEventListener("message", onMsg);
+    return () => navigator.serviceWorker.removeEventListener("message", onMsg);
+  }, [data?.available]);
+  useEffect(() => {
+    const n = navigator as any;
+    if (!isStandalone() || typeof n.setAppBadge !== "function") return;
+    (unread > 0 ? n.setAppBadge(unread) : n.clearAppBadge?.())?.catch?.(() => {});
+  }, [unread]);
+  return null;
+}
+
+const ROWS: { key: keyof NotifyPrefs; title: string; body: string }[] = [
+  { key: "crewRequests", title: "Crew requests", body: "Someone wants to add you, or accepts your request." },
+  { key: "crewUp", title: "Crew Up plans", body: "Someone in My Crew posts plans at an airport." },
+  { key: "crewUpJoins", title: "Who's in", body: "A crew member says they're in on your Crew Up." },
+  { key: "team", title: "From Wheelsdown", body: "Replies to your feedback and notes from the team." },
+];
+const hourLabel = (h: number) => (h === 0 ? "12 AM" : h < 12 ? `${h} AM` : h === 12 ? "12 PM" : `${h - 12} PM`);
+
+/** Settings > Notifications. */
+export function NotificationSettings() {
+  const { me } = useAuth();
+  const { toast } = useToast();
+  const cfg = usePushConfig();
+  const [state, recheck] = useDeviceState();
+  const [busy, setBusy] = useState(false);
+  const prefs = cfg.data?.prefs || DEFAULT_NOTIFY_PREFS;
+  const save = useMutation({
+    mutationFn: async (p: Partial<NotifyPrefs>) => (await apiRequest("PUT", "/api/push/prefs", p)).json(),
+    onMutate: (p) => { queryClient.setQueryData<PushConfig>(["/api/push/config"], (c) => c && { ...c, prefs: { ...c.prefs, ...p } }); },
+    onSuccess: (r: { prefs: NotifyPrefs }) => queryClient.setQueryData<PushConfig>(["/api/push/config"], (c) => c && { ...c, prefs: r.prefs }),
+    onError: (e) => { toast({ title: "Couldn't save", description: errText(e), variant: "destructive" }); queryClient.invalidateQueries({ queryKey: ["/api/push/config"] }); },
+  });
+  const test = useMutation({
+    mutationFn: async () => (await apiRequest("POST", "/api/push/test")).json(),
+    onSuccess: (r: { sent: number; failed: number }) => toast({ title: r.sent ? "Test sent" : "Didn't arrive", description: r.sent ? `Sent to ${r.sent} device${r.sent === 1 ? "" : "s"}. It should show up in a few seconds.` : "None of your devices took it. Turn notifications off and on again on this device." }),
+    onError: (e) => toast({ title: "Couldn't send a test", description: errText(e), variant: "destructive" }),
+  });
+  if (!me || !cfg.data?.available) return null;
+  const adminOnly = !!me.isAdmin;
+  const turnOn = async () => {
+    setBusy(true);
+    try {
+      await enablePush(cfg.data!.publicKey);
+      await recheck();
+      queryClient.invalidateQueries({ queryKey: ["/api/push/config"] });
+      toast({ title: "Notifications on", description: "This device will get crew requests and Crew Up plans. Send a test to check." });
+    } catch (e) { toast({ title: "Couldn't turn on notifications", description: errText(e), variant: "destructive" }); await recheck(); }
+    finally { setBusy(false); }
+  };
+  const turnOff = async () => {
+    setBusy(true);
+    try { await disablePush(); await recheck(); queryClient.invalidateQueries({ queryKey: ["/api/push/config"] }); toast({ title: "Notifications off on this device" }); }
+    finally { setBusy(false); }
+  };
+  return (
+    <section id="notifications" className={cn("rounded-2xl bg-card p-4 space-y-3 scroll-mt-24", adminOnly ? "border border-dashed border-primary/60" : "border border-card-border")} data-testid="section-push">
+      {adminOnly && <AudienceNote />}
+      <div className="flex items-start gap-3">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary/15 text-primary">{state === "on" ? <BellRing className="h-5 w-5" /> : <BellOff className="h-5 w-5" />}</span>
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold">Notifications</h2>
+          <p className="text-xs text-muted-foreground" data-testid="text-push-state">
+            {state === "on" ? "On for this device." : state === "denied" ? "Blocked for Wheelsdown on this device." : state === "install" ? "On iPhone, notifications work in the home-screen app." : state === "unsupported" ? "This browser can't get notifications." : "Get crew requests and Crew Up plans on your lock screen."}
+            {cfg.data.devices > 0 && state !== "on" ? ` On for ${cfg.data.devices} other device${cfg.data.devices === 1 ? "" : "s"}.` : ""}
+          </p>
+        </div>
+      </div>
+
+      {state === "install" && (
+        <ol className="space-y-2 rounded-xl bg-muted/60 p-3 text-xs" data-testid="list-push-install">
+          <li className="flex items-center gap-2"><span className="grid h-5 w-5 place-items-center rounded-full bg-background font-bold">1</span>In Safari, tap <Share className="inline h-3.5 w-3.5" /> Share.</li>
+          <li className="flex items-center gap-2"><span className="grid h-5 w-5 place-items-center rounded-full bg-background font-bold">2</span>Tap <SquarePlus className="inline h-3.5 w-3.5" /> Add to Home Screen, then Add.</li>
+          <li className="flex items-center gap-2"><span className="grid h-5 w-5 place-items-center rounded-full bg-background font-bold">3</span>Open Wheelsdown from its icon and come back here.</li>
+        </ol>
+      )}
+      {state === "denied" && <p className="rounded-xl bg-muted/60 p-3 text-xs">To allow them, open your phone's Settings, then Notifications, then Wheelsdown, and turn on Allow Notifications. Then come back here.</p>}
+
+      <div className="flex flex-wrap gap-2">
+        {state === "off" && <button type="button" onClick={turnOn} disabled={busy} className="inline-flex h-10 items-center gap-1.5 rounded-full taxi-sign px-4 text-sm font-semibold hover-elevate disabled:opacity-50" data-testid="button-push-on">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <BellRing className="h-4 w-4" />}Turn on notifications</button>}
+        {state === "on" && <>
+          <button type="button" onClick={() => test.mutate()} disabled={test.isPending} className="inline-flex h-10 items-center gap-1.5 rounded-full taxi-sign px-4 text-sm font-semibold hover-elevate disabled:opacity-50" data-testid="button-push-test">{test.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <BellRing className="h-4 w-4" />}Send a test</button>
+          <button type="button" onClick={turnOff} disabled={busy} className="inline-flex h-10 items-center rounded-full border border-border px-4 text-sm font-medium hover-elevate disabled:opacity-50" data-testid="button-push-off">Turn off on this device</button>
+        </>}
+      </div>
+
+      <ul className="divide-y divide-border border-t border-border">
+        {ROWS.map((r) => (
+          <li key={r.key} className="flex items-center justify-between gap-3 py-2.5">
+            <span className="min-w-0"><span className="block text-sm font-medium">{r.title}</span><span className="block text-[11px] text-muted-foreground">{r.body}</span></span>
+            <Switch checked={!!prefs[r.key]} onCheckedChange={(v) => save.mutate({ [r.key]: v })} aria-label={r.title} data-testid={`switch-push-${r.key}`} />
+          </li>
+        ))}
+        <li className="py-2.5">
+          <div className="flex items-center justify-between gap-3">
+            <span className="min-w-0"><span className="flex items-center gap-1.5 text-sm font-medium"><Moon className="h-3.5 w-3.5" />Rest hours</span><span className="block text-[11px] text-muted-foreground">Notifications still arrive, but without sound, between these times where you are.</span></span>
+            <Switch checked={prefs.quiet} onCheckedChange={(v) => save.mutate({ quiet: v, tz: zone() || prefs.tz })} aria-label="Rest hours" data-testid="switch-push-quiet" />
+          </div>
+          {prefs.quiet && (
+            <div className="mt-2 flex items-center gap-2 text-xs">
+              <select value={prefs.quietStart} onChange={(e) => save.mutate({ quietStart: Number(e.target.value), tz: zone() || prefs.tz })} className="h-9 rounded-lg border border-input bg-background px-2 text-base sm:text-xs" aria-label="Rest hours start" data-testid="select-quiet-start">
+                {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{hourLabel(h)}</option>)}
+              </select>
+              <span className="text-muted-foreground">to</span>
+              <select value={prefs.quietEnd} onChange={(e) => save.mutate({ quietEnd: Number(e.target.value), tz: zone() || prefs.tz })} className="h-9 rounded-lg border border-input bg-background px-2 text-base sm:text-xs" aria-label="Rest hours end" data-testid="select-quiet-end">
+                {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{hourLabel(h)}</option>)}
+              </select>
+            </div>
+          )}
+        </li>
+      </ul>
+    </section>
+  );
+}
+
+/** Admins: who push is open to. Instant, no deploy. */
+function AudienceNote() {
+  const { toast } = useToast();
+  const q = useQuery<{ audience: "admins" | "members"; devices: number; members: number; last24h: { kind: string; sent: number; failed: number }[] }>({ queryKey: ["/api/admin/push"], queryFn: async () => (await apiRequest("GET", "/api/admin/push")).json(), retry: false });
+  const m = useMutation({
+    mutationFn: async (audience: "admins" | "members") => (await apiRequest("PUT", "/api/admin/push", { audience })).json(),
+    onSuccess: (r: { audience: string }) => {
+      for (const k of ["/api/admin/push", "/api/push/config"]) queryClient.invalidateQueries({ queryKey: [k] });
+      toast({ title: r.audience === "members" ? "Notifications open to members" : "Notifications back to admins only" });
+    },
+    onError: (e) => toast({ title: "Couldn't change it", description: errText(e), variant: "destructive" }),
+  });
+  if (!q.data) return <p className="text-[11px] font-semibold uppercase tracking-wider text-primary">Admin preview</p>;
+  const live = q.data.audience === "members";
+  const sent = q.data.last24h.reduce((a, r) => a + r.sent, 0), failed = q.data.last24h.reduce((a, r) => a + r.failed, 0);
+  return (
+    <div className="space-y-2 border-b border-dashed border-border pb-3" data-testid="row-push-audience">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-primary">{live ? "Open to members" : "Admin preview"}</p>
+      <div className="flex items-start justify-between gap-3">
+        <span><span className="block text-xs font-semibold">Open notifications to members</span><span className="block text-[11px] text-muted-foreground">{live ? "On: every member can turn them on here." : "Off: only admins see this and get notifications."} {q.data.members} member{q.data.members === 1 ? "" : "s"} on {q.data.devices} device{q.data.devices === 1 ? "" : "s"}. Last 24 h: {sent} sent{failed ? `, ${failed} failed` : ""}.</span></span>
+        <Switch checked={live} disabled={m.isPending} onCheckedChange={(v) => { if (window.confirm(v ? "Let every member turn on notifications?" : "Turn notifications back to admins only? Members stop getting them; their settings are kept.")) m.mutate(v ? "members" : "admins"); }} aria-label="Open notifications to members" data-testid="switch-push-audience" />
+      </div>
+    </div>
+  );
+}

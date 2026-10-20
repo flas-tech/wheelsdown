@@ -62,7 +62,7 @@ export const CLASSIC_NAV: NavItem[] = [
   { href: "/favorites", label: "Favorites", icon: Heart, active: on("/favorites") },
   { href: "/brief", label: "Brief", icon: ClipboardList, active: (l) => on("/brief", "/b")(l) },
   { href: "/crew", label: "Crew", icon: Trophy, active: on("/crew") },
-  { href: "/me", label: "Logbook", icon: BookUser, active: on("/me", "/notifications") },
+  { href: "/me", label: "Logbook", icon: BookUser, active: on("/me", "/notifications", "/settings") },
 ];
 
 export const EXPERIENCE_NAV: Record<Experience, NavItem[]> = {
@@ -71,7 +71,7 @@ export const EXPERIENCE_NAV: Record<Experience, NavItem[]> = {
     { href: "/brief", label: "Briefings", icon: ClipboardList, active: (l) => l === "/brief" || (on("/brief")(l) && l !== "/brief/new") || on("/b")(l) },
     { href: "/brief/new", label: "New brief", icon: ClipboardPlus, active: (l) => l === "/brief/new" },
     { href: "/rate", label: "Rate", icon: Star, active: on("/rate") },
-    { href: "/me", label: "Logbook", icon: BookUser, active: on("/me", "/notifications") },
+    { href: "/me", label: "Logbook", icon: BookUser, active: on("/me", "/notifications", "/settings") },
     SWITCH,
   ],
   spots: [
@@ -79,7 +79,7 @@ export const EXPERIENCE_NAV: Record<Experience, NavItem[]> = {
     { href: "/add", label: "Add spot", icon: PlusCircle, active: on("/add") },
     { href: "/rate", label: "Rate", icon: Star, active: on("/rate") },
     { href: "/favorites", label: "Favorites", icon: Heart, active: on("/favorites") },
-    { href: "/me", label: "Logbook", icon: BookUser, active: on("/me", "/notifications") },
+    { href: "/me", label: "Logbook", icon: BookUser, active: on("/me", "/notifications", "/settings") },
     SWITCH,
   ],
   lounge: [
@@ -87,7 +87,7 @@ export const EXPERIENCE_NAV: Record<Experience, NavItem[]> = {
     { href: "/meetup", label: "Crew Up", icon: Users, active: on("/meetup") },
     { href: "/mycrew", label: "My Crew", icon: Contact, active: on("/mycrew") },
     { href: "/crew", label: "Ranks", icon: Trophy, active: (l) => on("/crew", "/following", "/followers")(l) },
-    { href: "/me", label: "Logbook", icon: BookUser, active: on("/me", "/notifications") },
+    { href: "/me", label: "Logbook", icon: BookUser, active: on("/me", "/notifications", "/settings") },
     SWITCH,
   ],
 };

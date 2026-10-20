@@ -7,7 +7,7 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { BadgeCheck, Contact, LayoutGrid, MessagesSquare, Trash2, Users, MapPinned, PanelBottom, ArrowUpDown, BellRing, CircleHelp, ClipboardCheck, Compass, Flame, ListPlus, RefreshCw, Sparkles, Star, Undo2, Navigation, Eye, PlusCircle, UserMinus, CalendarDays } from "lucide-react";
+import { Settings, BadgeCheck, Contact, LayoutGrid, MessagesSquare, Trash2, Users, MapPinned, PanelBottom, ArrowUpDown, BellRing, CircleHelp, ClipboardCheck, Compass, Flame, ListPlus, RefreshCw, Sparkles, Star, Undo2, Navigation, Eye, PlusCircle, UserMinus, CalendarDays } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -20,6 +20,12 @@ type DevFeature = "lounge";
 const PUBLIC_FEATURES = new Set<DevFeature>([]);
 
 const ALL_RELEASES: Release[] = [
+  {
+    id: 13, date: "October 20, 2026",
+    items: [
+      { icon: Settings, title: "Settings has its own page", body: "Tap the gear at the top of your Logbook for your profile, AI picks, hotel programs, privacy and sign out. Your Logbook is now just your points, badges, map and check-ins.", to: "/settings" },
+    ],
+  },
   {
     id: 12, date: "October 19, 2026",
     items: [

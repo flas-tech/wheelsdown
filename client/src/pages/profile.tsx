@@ -20,7 +20,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { CREW_ROLES } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
-import { LogOut, Star, ThumbsUp, ThumbsDown, PlusCircle, MessageSquare, ShieldCheck, Award, Gift, Activity, ChevronRight, UserPlus, CircleHelp } from "lucide-react";
+import { Settings, Star, ThumbsUp, ThumbsDown, PlusCircle, MessageSquare, ShieldCheck, Award, Gift, Activity, ChevronRight, UserPlus, CircleHelp } from "lucide-react";
 import { TIERS, POINTS, tierFor, publicName, SOLO_POINTS, hasSoloed, type TierId, type ActivityItem } from "@shared/tiers";
 import type { SpotWithStats, Review } from "@shared/schema";
 import { useAuth, Insignia, tierById, PostAsToggle } from "@/lib/auth";
@@ -80,7 +80,7 @@ export function TierCard({ points, name, sub, tierId, aircraft }: { points: numb
 }
 
 export default function ProfilePage() {
-  const { me, loading, logout, openAuth } = useAuth();
+  const { me, loading, openAuth } = useAuth();
   const { data: contrib, isLoading } = useQuery<{ spots: (SpotWithStats & { mod?: { state: string; note: string; editPending: boolean } })[]; reviews: (Review & { spotName: string })[]; activity: ActivityItem[] }>({
     queryKey: ["/api/me/contributions"], enabled: !!me,
     refetchInterval: (q) => (q.state.data?.spots.some((s) => s.mod?.state === "checking") || q.state.data?.reviews.some((r) => r.modState === "checking") ? 5000 : false),
@@ -151,19 +151,6 @@ export default function ProfilePage() {
       {me.achievements && <BadgeProgressGrid progress={me.achievements} />}
       <InviteCard refId={me.id} referrals={b.referrals || 0} />
       <FeedbackCard />
-      <Link href="/faq" className="flex items-center justify-between gap-3 rounded-2xl border border-card-border bg-card px-4 py-3 hover-elevate" data-testid="link-me-faq">
-        <span className="flex items-center gap-3"><CircleHelp className="h-5 w-5 text-primary" /><span><span className="block text-sm font-semibold">Questions and answers</span><span className="block text-xs text-muted-foreground">Points, ratings, AI picks, briefings, privacy</span></span></span>
-        <ChevronRight className="h-4 w-4 text-muted-foreground" />
-      </Link>
-      <PreviewCard />
-      <VersionCard />
-      <p className="text-center text-xs text-muted-foreground">New here, or forgot where something is? <TourLink className="font-semibold text-foreground underline hover:text-primary" /></p>
-
-      <ProfileSettings />
-
-      <AiPrefCard />
-      <ProgramsCard />
-
       <ActivityLog items={contrib?.activity} loading={isLoading} />
 
       <section className="rounded-2xl border border-card-border bg-card">
@@ -222,8 +209,10 @@ export default function ProfilePage() {
         </section>
       )}
 
-      <DeleteAccount />
-      <button onClick={logout} data-testid="button-logout" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"><LogOut className="h-4 w-4" />Sign out</button>
+      <Link href="/settings" className="flex items-center justify-between gap-3 rounded-2xl border border-card-border bg-card px-4 py-3 hover-elevate" data-testid="link-me-settings">
+        <span className="flex items-center gap-3"><Settings className="h-5 w-5 text-primary" /><span><span className="block text-sm font-semibold">Settings</span><span className="block text-xs text-muted-foreground">Profile, notifications, AI picks, hotel programs, sign out</span></span></span>
+        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+      </Link>
     </div>
   );
 }
@@ -252,7 +241,7 @@ function Participation({ b }: { b: { participation: number; listings: number; re
   );
 }
 
-function ProfileSettings() {
+export function ProfileSettings() {
   const { me } = useAuth();
   const { toast } = useToast();
   const [f, setF] = useState({ displayName: "", crewRole: "Pilot", homeBase: "", anonymous: false, email: "", aircraft: "", bio: "", interests: [] as string[] });
@@ -376,7 +365,7 @@ export function TierLadder({ points, signedIn = true }: { points: number; signed
   );
 }
 
-function DeleteAccount() {
+export function DeleteAccount() {
   const { me, logout } = useAuth();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
@@ -415,7 +404,7 @@ function ModChip({ kind }: { kind: "checking" | "held" | "edit_held" | "waiting"
 }
 
 /** Admins only: try the landing page and tailored navigation before members get it. */
-function PreviewCard() {
+export function PreviewCard() {
   const exp = useExperience();
   const { me } = useAuth();
   const on = usePreview();

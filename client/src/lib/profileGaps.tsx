@@ -1,4 +1,5 @@
 import { Check, ChevronRight } from "lucide-react";
+import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 
 type Me = { bio?: string | null; aircraft?: string | null; interests?: string[] | null; homeBase?: string | null; email?: string | null; anonymous?: boolean };
@@ -22,14 +23,16 @@ export function useProfileGaps() {
   return profileGaps(me as Me | null);
 }
 
-/** Checklist on the Logbook; each item jumps to its field in the profile settings below. */
+/** Checklist on the Logbook; each item opens Settings at its field. */
 export function ProfileChecklist() {
   const { todo, total } = useProfileGaps();
   if (!todo.length) return null;
   const done = total - todo.length;
+  const [, navigate] = useLocation();
   const go = (id: string) => {
     const el = document.getElementById(id);
-    if (!el) return;
+    // the profile fields live on Settings now
+    if (!el) { navigate(`/settings?focus=${id}`); return; }
     el.scrollIntoView({ behavior: "smooth", block: "center" });
     const f = el.querySelector<HTMLElement>("input, textarea, button");
     setTimeout(() => f?.focus({ preventScroll: true }), 400);
@@ -53,7 +56,7 @@ export function ProfileChecklist() {
           </li>
         ))}
       </ul>
-      <p className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground"><Check className="h-3 w-3" />The dot on Logbook clears when everything's filled in and saved.</p>
+      <p className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground"><Check className="h-3 w-3" />The dot on Logbook clears when everything's filled in and saved in Settings.</p>
     </section>
   );
 }

@@ -26,6 +26,7 @@ import { registerSimilar } from "./similar";
 import { registerLayover } from "./layover";
 import { registerLounge } from "./lounge";
 import { registerMyCrew, requestFromInvite, forgetMember } from "./mycrew";
+import { registerPush, forgetPush } from "./push";
 import { dayKey } from "./metrics";
 import { SERVICES } from "@shared/services";
 import { track, visit, pageKey, outboundKey, report, untracked } from "./metrics";
@@ -207,6 +208,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (confirm.toLowerCase() !== u.handle) return res.status(400).json({ message: "Type your handle to confirm" });
     await storage.deleteUser(u.id);
     await forgetMember(u.id);
+    await forgetPush(u.id);
     res.json({ ok: true });
   });
   app.get("/api/me/contributions", requireUser, async (req, res) => res.json(await storage.userContributions((req as any).user.id)));
@@ -674,6 +676,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   registerLounge(app, { userOf, isSuperAdmin }); // Crew Lounge: admins only until lounge_audience = members
   registerLayover(app, { userOf, isSuperAdmin }); // Layover Today, Crew Up, Rate a spot: admins only until layover_audience = members
   registerMyCrew(app, { userOf, isSuperAdmin, requireAdmin, requireUser }); // My Crew + launch switch (experience_audience) + member messages
+  registerPush(app, { userOf, isSuperAdmin, requireAdmin, requireUser }); // push notifications (push_audience: admins until opened)
   registerModFix(app, { requireAdmin, requireUser, ensureAirport: (c) => ensureAirport(c), byAdmin });
   app.get("/api/admin/costs", requireAdmin, async (req, res) => {
     const days = [7, 30, 90].includes(Number(req.query.days)) ? Number(req.query.days) : 30;

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useMutation } from "@tanstack/react-query";
-import { Bell, Check, Loader2, UserPlus } from "lucide-react";
+import { Bell, Check, Loader2, Settings, UserPlus } from "lucide-react";
 import type { PublicUser } from "@shared/tiers";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth, TierChip } from "@/lib/auth";
@@ -18,7 +18,8 @@ export function LogbookTabs() {
   const n = useUnreadCount();
   const tabs = [["/me", "Logbook"], ["/notifications", "Notifications"]] as const;
   return (
-    <div className="grid grid-cols-2 rounded-2xl bg-muted p-1" role="tablist" aria-label="Logbook sections">
+    <div className="flex items-center gap-2">
+    <div className="grid flex-1 grid-cols-2 rounded-2xl bg-muted p-1" role="tablist" aria-label="Logbook sections">
       {tabs.map(([href, label]) => {
         const on = loc === href;
         return (
@@ -31,6 +32,8 @@ export function LogbookTabs() {
           </button>
         );
       })}
+    </div>
+    <Link href="/settings" aria-label="Settings" title="Settings" className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-muted text-muted-foreground hover:text-foreground hover-elevate" data-testid="link-settings"><Settings className="h-5 w-5" /></Link>
     </div>
   );
 }

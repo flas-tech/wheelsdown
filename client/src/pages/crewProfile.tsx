@@ -81,7 +81,7 @@ export default function CrewProfilePage() {
         </section>
       )}
       {!isMe && me && <div className="flex items-center gap-3" data-testid="row-mycrew"><CrewButton userId={u.id} name={u.displayName} /></div>}
-      {isMe && <p className="text-xs text-muted-foreground">This is how other crews see you. <Link href="/me" className="text-primary underline">Edit your profile</Link></p>}
+      {isMe && <p className="text-xs text-muted-foreground">This is how other crews see you. <Link href="/settings" className="text-primary underline">Edit your profile</Link></p>}
 
       {data.hidden ? (
         <div className="rounded-2xl border border-dashed border-border p-5 text-center" data-testid="text-crew-hidden">

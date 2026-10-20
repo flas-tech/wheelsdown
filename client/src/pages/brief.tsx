@@ -595,7 +595,7 @@ function AiNote({ stop, onAi, busy }: { stop: BriefStopFull; onAi?: (on: boolean
         </button>
         <div className="flex basis-full flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
           <Link href={`/add/${stop.icao}`} className="inline-flex items-center gap-1 font-semibold text-primary" data-testid="link-ai-offer-add"><Plus className="h-3 w-3" />Add a spot at {stop.icao}</Link>
-          <Link href="/me?s=ai" className="text-muted-foreground underline underline-offset-2" data-testid="link-ai-setting">Always fill gaps with AI? Choose Prefer AI</Link>
+          <Link href="/settings?s=ai" className="text-muted-foreground underline underline-offset-2" data-testid="link-ai-setting">Always fill gaps with AI? Choose Prefer AI</Link>
         </div>
       </div>
     );

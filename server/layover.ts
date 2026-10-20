@@ -9,6 +9,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import tzlookup from "tz-lookup";
 import { db } from "./db";
+import { notify } from "./push";
 import { storage } from "./storage";
 import { refAirport } from "./airportsData";
 import { logChange } from "./ops";
@@ -21,6 +22,8 @@ import { MEETUP_RULES, meetupNoteProblem, type Metar, type Meetup, type MeetupPe
 import type { SpotWithStats, User, BriefingStop } from "@shared/schema";
 
 type Mw = (req: Request, res: Response, next: NextFunction) => any;
+const crewUpSent = new Map<string, number>();
+const joinSent = new Set<string>();
 const rows = async <T = any>(q: ReturnType<typeof sql>) => (await db().execute(q)).rows as T[];
 const num = (v: unknown) => Number(v) || 0;
 const HOUR = 3600_000;
@@ -332,6 +335,14 @@ export function registerLayover(app: Express, o: { userOf: (req: Request) => Pro
     await db().execute(sql`DELETE FROM meetup_joins WHERE meetup_id IN (SELECT id FROM meetups WHERE status <> 'live' OR expires_at < ${now - 7 * DAY})`);
     await db().execute(sql`DELETE FROM meetups WHERE expires_at < ${now - 7 * DAY}`);
     res.status(201).json({ ok: true, id: num(r.id) });
+    // tell their crew (once per poster and airport every 90 minutes, so editing a plan doesn't spam anyone)
+    const key = `${u.id}:${ap.icao}`;
+    if (now - (crewUpSent.get(key) || 0) > 90 * 60_000) {
+      crewUpSent.set(key, now);
+      const where = spotId ? (await storage.getSpot(spotId))?.name : "";
+      const body = [note, where ? `Meet at ${where}` : "", `Around for ${p.data.hours} h`].filter(Boolean).join(" · ");
+      for (const id of Array.from(await crewIds(u.id))) notify(id, "crewup_posted", { title: `${u.displayName} posted Crew Up at ${ap.icao}`, body, link: `/meetup?icao=${ap.icao}`, tag: `crewup-${u.id}` });
+    }
   });
   app.delete("/api/preview/meetups/:id", gate, async (req, res) => {
     const u = me(req);
@@ -344,8 +355,13 @@ export function registerLayover(app: Express, o: { userOf: (req: Request) => Pro
     if (!m) return res.status(404).json({ message: "Those plans have ended." });
     if (num(m.user_id) === u.id) return res.status(400).json({ message: "That's yours." });
     if (!(await areCrew(u.id, num(m.user_id)))) return res.status(404).json({ message: "Those plans have ended." });
-    await db().execute(sql`INSERT INTO meetup_joins (meetup_id, user_id, created_at) VALUES (${id}, ${u.id}, ${now}) ON CONFLICT DO NOTHING`);
+    const j = await db().execute(sql`INSERT INTO meetup_joins (meetup_id, user_id, created_at) VALUES (${id}, ${u.id}, ${now}) ON CONFLICT DO NOTHING RETURNING meetup_id`);
     res.json({ ok: true });
+    const jk = `${id}:${u.id}`;
+    if ((j.rows as any[]).length && !joinSent.has(jk)) {
+      joinSent.add(jk);
+      notify(num(m.user_id), "crewup_joined", { title: `${u.displayName} is in for your Crew Up`, body: `At ${m.icao}. Tap to see who's coming.`, link: `/meetup?icao=${m.icao}`, tag: `join-${id}` });
+    }
   });
   app.delete("/api/preview/meetups/:id/join", gate, async (req, res) => {
     await db().execute(sql`DELETE FROM meetup_joins WHERE meetup_id = ${Number(req.params.id)} AND user_id = ${me(req).id}`);

@@ -10,6 +10,7 @@ import { rateLimit } from "express-rate-limit";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "./db";
+import { notify } from "./push";
 import { storage } from "./storage";
 import { logChange } from "./ops";
 import {
@@ -70,6 +71,8 @@ export async function privacyOf(userId: number): Promise<CrewPrivacy> {
 }
 export async function addMessage(userId: number, m: { kind: MemberMessage["kind"]; title: string; body?: string; link?: string }) {
   const r = (await rows(sql`INSERT INTO member_messages (user_id, kind, title, body, link, created_at) VALUES (${userId}, ${m.kind}, ${m.title.slice(0, 160)}, ${(m.body || "").slice(0, 2000)}, ${(m.link || "").slice(0, 200)}, ${Date.now()}) RETURNING id`))[0];
+  // the same message on their lock screen, if they turned notifications on
+  notify(userId, m.kind === "crew_accepted" ? "crew_accepted" : "team", { title: m.title, body: m.body, link: m.link || "/notifications", tag: `msg-${num(r?.id)}` });
   return num(r?.id);
 }
 /** A pending crew request from the inviter, made when someone signs up through a crew invite link. They still have to accept. */
@@ -192,6 +195,7 @@ export function registerMyCrew(app: Express, o: { userOf: (req: Request) => Prom
     // a declined pair can ask again later: reuse the row so the pair stays unique
     await db().execute(sql`DELETE FROM crew_links WHERE status = 'declined' AND LEAST(requester_id, addressee_id) = ${Math.min(uid, other)} AND GREATEST(requester_id, addressee_id) = ${Math.max(uid, other)}`);
     const row = (await rows(sql`INSERT INTO crew_links (requester_id, addressee_id, status, created_at) VALUES (${uid}, ${other}, 'pending', ${now}) ON CONFLICT DO NOTHING RETURNING id`))[0];
+    if (row) notify(other, "crew_request", { title: `${me(req).displayName} wants to add you to their crew`, body: [me(req).crewRole, me(req).homeBase].filter(Boolean).join(" · ") || "Tap to accept or decline.", link: "/mycrew?tab=requests", tag: `crewreq-${uid}` });
     res.status(201).json({ relation: "outgoing", requestId: row ? num(row.id) : null });
   });
 

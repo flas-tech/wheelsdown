@@ -78,7 +78,7 @@ export function FirstRateNote({ className }: { className?: string }) {
   return <p className={cn("mt-1.5 text-[11px] text-emerald-700 dark:text-emerald-400", className)} data-testid="text-first-rate">+10 points if you're the first crew member to add and rate it.</p>;
 }
 
-/** Hotel rewards programs the member collects (Logbook). Their hotels come first in AI picks, briefs and search. */
+/** Hotel rewards programs the member collects (Settings). Their hotels come first in AI picks, briefs and search. */
 export function useMyPrograms(): ProgramId[] {
   const { me } = useAuth();
   const { data } = useQuery<{ programs: ProgramId[] }>({ queryKey: ["/api/me/programs"], enabled: !!me, staleTime: 5 * 60_000 });
@@ -164,7 +164,7 @@ export function useAiPref() {
   return (me && data?.pref) || "crew";
 }
 
-/** Logbook setting: Prefer crew or Prefer AI. */
+/** Settings: Prefer crew or Prefer AI. */
 export function AiPrefCard() {
   const { me } = useAuth();
   const pref = useAiPref();

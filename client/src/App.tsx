@@ -36,6 +36,9 @@ import { CrewAvatar } from "@/lib/aircraft";
 import { tierFor } from "@shared/tiers";
 import { NoticeDot } from "@/lib/notices";
 import NotificationsPage from "@/pages/notifications";
+import SettingsPage from "@/pages/settings";
+import { PushHost } from "@/lib/push";
+import { useUnreadCount } from "@/lib/notices";
 import { Logo, ThemeProvider, ThemeToggle } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { FeedbackLink } from "@/lib/feedback";
@@ -50,6 +53,7 @@ function Shell() {
   useEffect(() => { trackPage(loc); }, [loc]);
   const [, setSearch] = useSearch();
   const { me, openAuth } = useAuth();
+  const unread = useUnreadCount();
   const isAdmin = loc.startsWith("/admin");
   // New page starts at the top (home keeps its own scroll for browse mode)
   useEffect(() => { if (loc !== "/") window.scrollTo(0, 0); }, [loc]);
@@ -66,7 +70,7 @@ function Shell() {
     if (!seen && loc === "/" && !deep) go("/start", { replace: true });
   }, [landingReady, landing]); // eslint-disable-line
   // the landing page has no navigation at all
-  if (loc === "/start") return (<><StartPage /><TourHost /><UpdateBar /><WhatsNewHost /></>);
+  if (loc === "/start") return (<><StartPage /><TourHost /><UpdateBar /><WhatsNewHost /><PushHost unread={unread} /></>);
   return (
     <div className="min-h-[100dvh] flex flex-col">
       <header className="print:hidden sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur pt-safe-top px-safe">
@@ -111,6 +115,7 @@ function Shell() {
           <Route path="/admin" component={AdminPage} />
           <Route path="/me" component={ProfilePage} />
           <Route path="/notifications" component={NotificationsPage} />
+          <Route path="/settings" component={SettingsPage} />
           <Route path="/crew" component={CrewPage} />
           <Route path="/following" component={FollowingPage} />
           <Route path="/followers" component={FollowingPage} />
@@ -139,6 +144,7 @@ function Shell() {
       </main>
       <TourHost />
       <UpdateBar />
+      <PushHost unread={unread} />
       <WhatsNewHost />
 
       {/* iOS-style tab bar */}
