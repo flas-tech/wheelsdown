@@ -277,7 +277,7 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
     const canon = (b: string) => resolve(b)?.icao || b.trim().toUpperCase();
     const base = String(query.get("base") || "").trim() ? canon(String(query.get("base"))) : "";
     const rows = ranked.filter((u) => (!q || u.displayName.toLowerCase().includes(q) || (!!u.handle && u.handle.toLowerCase().includes(q))) && (!base || (!!u.homeBase && canon(u.homeBase) === base)));
-    const offset = Number(query.get("offset")) || 0, limit = Math.min(1000, Number(query.get("limit")) || 50);
+    const offset = Number(query.get("offset")) || 0, limit = Math.min(2000, Number(query.get("limit")) || 50);
     let around: { rows: typeof ranked; position: number } | null = null;
     const aid = Number(query.get("around")) || 0;
     if (aid && !q && !base) { const pos = ranked.findIndex((u) => u.id === aid); if (pos >= limit) { const from = Math.max(limit, pos - 3); around = { rows: ranked.slice(from, pos + 4), position: pos + 1 }; } }

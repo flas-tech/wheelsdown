@@ -521,7 +521,7 @@ export class DatabaseStorage {
       const top = Math.max(0, opts.limit || 0);
       if (pos >= top && top > 0) { const from = Math.max(top, pos - 3); around = { rows: ranked.slice(from, pos + 4), position: pos + 1 }; }
     }
-    const offset = Math.max(0, opts.offset || 0), limit = Math.min(1000, Math.max(1, opts.limit || 50));
+    const offset = Math.max(0, opts.offset || 0), limit = Math.min(2000, Math.max(1, opts.limit || 50));
     return { total: rows.length, crewTotal: all.length, base: base || null, rows: rows.slice(offset, offset + limit), offset, limit, around };
   }
   /** Home bases people have set, most common first (used for type-ahead, not as preset filters). */

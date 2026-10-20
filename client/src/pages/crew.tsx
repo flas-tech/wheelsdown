@@ -12,7 +12,8 @@ import { CrewAvatar } from "@/lib/aircraft";
 type Row = PublicUser & { rank: number };
 type Board = { total: number; crewTotal: number; base: string | null; rows: Row[]; offset: number; limit: number; around?: { rows: Row[]; position: number } | null };
 const PAGE = 50;
-const TOP = 10; // the unfiltered board shows only the top 10; search reaches everyone
+const TOP = 10; // the unfiltered board shows only the top 10 until Show all members
+const ALL = 2000;
 
 function useDebounced<T>(v: T, ms = 250) {
   const [d, setD] = useState(v);
@@ -25,11 +26,12 @@ export default function CrewPage() {
   const [q, setQ] = useState("");
   const [base, setBase] = useState("");
   const [shown, setShown] = useState(PAGE);
+  const [all, setAll] = useState(false);
   const dq = useDebounced(q.trim()), dbase = useDebounced(base.trim().toUpperCase());
   useEffect(() => setShown(PAGE), [dq, dbase]);
 
   const filtered = !!dq || dbase.length >= 3;
-  const params = new URLSearchParams({ offset: "0", limit: String(filtered ? shown : TOP) });
+  const params = new URLSearchParams({ offset: "0", limit: String(filtered ? shown : all ? ALL : TOP) });
   if (dq) params.set("q", dq);
   if (dbase.length >= 3) params.set("base", dbase);
   if (!filtered && me) params.set("around", String(me.id));
@@ -106,7 +108,7 @@ export default function CrewPage() {
         </div>
       </div>
       <p className="-mt-3 text-[11px] text-muted-foreground" data-testid="text-crew-count">
-        {first ? (filtered ? `${first.total} of ${first.crewTotal} crew match${first.base ? ` · base ${first.base}` : ""}` : first.crewTotal > TOP ? `Top ${TOP} of ${first.crewTotal} crew · search to find anyone` : `${first.crewTotal} crew ranked`) : "\u00a0"}
+        {first ? (filtered ? `${first.total} of ${first.crewTotal} crew match${first.base ? ` · base ${first.base}` : ""}` : all ? `${first.crewTotal} crew, in rank order` : first.crewTotal > TOP ? `Top ${TOP} of ${first.crewTotal} crew` : `${first.crewTotal} crew ranked`) : "\u00a0"}
         {base.trim().length > 0 && base.trim().length < 3 ? " · type 3 or 4 characters for a base" : ""}
       </p>
 
@@ -115,7 +117,13 @@ export default function CrewPage() {
         {!isLoading && rows.length === 0 && <li className="p-4 text-sm text-muted-foreground" data-testid="text-crew-empty">No crew match that search.</li>}
         {rows.map((u) => <CrewRow key={u.id} u={u} meId={me?.id} />)}
       </ol>
-      {around && around.rows.length > 0 && (
+      {!filtered && !all && (first?.crewTotal ?? 0) > TOP && (
+        <button type="button" onClick={() => setAll(true)} data-testid="link-crew-all" className="w-full text-center text-sm font-semibold text-primary underline underline-offset-2 hover:text-foreground">Show all members</button>
+      )}
+      {!filtered && all && (
+        <button type="button" onClick={() => { setAll(false); window.scrollTo({ top: 0 }); }} data-testid="link-crew-top" className="w-full text-center text-sm font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground">Show top 10</button>
+      )}
+      {around && !all && around.rows.length > 0 && (
         <section className="space-y-2" data-testid="section-my-neighborhood">
           <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
             <span className="h-px flex-1 bg-border" />

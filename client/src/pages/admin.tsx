@@ -492,8 +492,11 @@ function AdsManager() {
 }
 
 
+const memberSince = (t: number) => t ? new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "—";
+
 function UsersAdmin() {
   const { data } = useQuery<PublicUser[]>({ queryKey: ["/api/admin/users"], queryFn: admGet("/api/admin/users") });
+  const joined = [...(data || [])].sort((a, b) => (a.createdAt - b.createdAt) || (a.id - b.id));
   const [amt, setAmt] = useState<Record<number, string>>({});
   const grant = useMutation({
     mutationFn: ({ id, delta }: { id: number; delta: number }) => adm("POST", `/api/admin/users/${id}/bonus`, { delta }),
@@ -502,11 +505,12 @@ function UsersAdmin() {
   return (
     <div className="mt-3 rounded-xl border border-card-border bg-card overflow-x-auto">
       <table className="w-full text-sm">
-        <thead className="text-left text-xs text-muted-foreground"><tr><th className="p-2.5">Crew</th><th className="p-2.5">Status</th><th className="p-2.5 text-right">Points</th><th className="p-2.5">Bonus points</th></tr></thead>
+        <thead className="text-left text-xs text-muted-foreground"><tr><th className="p-2.5">Crew</th><th className="p-2.5">Member since</th><th className="p-2.5">Status</th><th className="p-2.5 text-right">Points</th><th className="p-2.5">Bonus points</th></tr></thead>
         <tbody className="divide-y divide-border">
-          {(data || []).map((u) => (
+          {joined.map((u) => (
             <tr key={u.id} data-testid={`row-admin-user-${u.handle}`}>
               <td className="p-2.5"><p className="font-medium leading-tight">{u.displayName}{u.anonymous && <span className="ml-1 text-[10px] uppercase text-muted-foreground">posts anonymously</span>}</p><p className="text-xs text-muted-foreground">@{u.handle} · {u.crewRole}{u.homeBase ? " · " + u.homeBase : ""}</p></td>
+              <td className="p-2.5 whitespace-nowrap text-xs text-muted-foreground" data-testid={`text-member-since-${u.handle}`}>{memberSince(u.createdAt)}</td>
               <td className="p-2.5"><TierChip tierId={u.tierId} /></td>
               <td className="p-2.5 text-right font-code font-bold tabular">{u.points.toLocaleString()}</td>
               <td className="p-2.5">
@@ -519,7 +523,7 @@ function UsersAdmin() {
           ))}
         </tbody>
       </table>
-      <p className="p-2.5 text-xs text-muted-foreground">Bonus points cover activity outside the app (events, imports, corrections). Everything else is counted from the crew member's activity.</p>
+      <p className="p-2.5 text-xs text-muted-foreground">Listed in the order they joined, oldest first. Bonus points cover activity outside the app (events, imports, corrections). Everything else is counted from the crew member's activity.</p>
     </div>
   );
 }

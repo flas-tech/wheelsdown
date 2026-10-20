@@ -21,6 +21,12 @@ const PUBLIC_FEATURES = new Set<DevFeature>([]);
 
 const ALL_RELEASES: Release[] = [
   {
+    id: 14, date: "October 19, 2026",
+    items: [
+      { icon: Users, title: "See the whole leaderboard", body: "The board still opens on the top 10. Show all members, just below that list, shows everyone in rank order.", to: "/crew" },
+    ],
+  },
+  {
     id: 13, date: "October 20, 2026",
     items: [
       { icon: Settings, title: "Settings has its own page", body: "Tap the gear at the top of your Logbook for your profile, AI picks, hotel programs, privacy and sign out. Your Logbook is now just your points, badges, map and check-ins.", to: "/settings" },

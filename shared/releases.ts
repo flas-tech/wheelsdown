@@ -2,6 +2,10 @@
 export type Release = { date: string; sha?: string; title: string; notes: string[] };
 
 export const RELEASES: Release[] = [
+  { date: "2026-10-19", title: "Admin crew in join order, leaderboard Show all members (What's new 14)", notes: [
+    "Admin Crew tab lists accounts in the order they joined, oldest first, with a Member since date. Points and bonus points are unchanged.",
+    "Leaderboard still opens on the top 10. Show all members, under that list, loads everyone in rank order (up to 2000). Show top 10 collapses it. Search and home-base filters are unchanged. Your position stays under the top 10 only, not under the full list.",
+  ] },
   { date: "2026-10-20", title: "Go-live notification prompt, once on the next app open", notes: [
     "When push_audience flips to members, each signed-in member is asked once the next time they open the app, if that device doesn't already have notifications on. Stored in localStorage wd-push-ask so it doesn't repeat. iPhone Safari gets Add to Home Screen steps; Android and the home-screen app get Turn on notifications from the tap. Skipped during the same visit as the signup tour, and while another dialog is open.",
     "/api/push/config now includes opened (true only when push_audience is members). Admins don't see the prompt until they open it to members.",
