@@ -2,6 +2,11 @@
 export type Release = { date: string; sha?: string; title: string; notes: string[] };
 
 export const RELEASES: Release[] = [
+  { date: "2026-10-20", title: "What's new link in the footer, signup tour adds home screen and notifications", notes: [
+    "Footer: a labeled What's new link next to the version line. It opens the latest three releases (not only unseen ones), with Earlier releases for the rest. The version number still opens the same notes.",
+    "Signup tour: last step is Add it to your home screen, with iPhone/iPad and Android steps, then Turn on notifications (lands on /settings?s=push). New accounts see it. Existing members keep their finished tour; Take the tour replays it. TOUR_VERSION stays 2.",
+    "Until push_audience is members, Settings shows the same Apple and Android steps instead of the Turn on button, so the tour doesn't land on an empty page.",
+  ] },
   { date: "2026-10-20", title: "Settings page (gear on the Logbook) and push notifications for admins (What's new 13)", notes: [
     "New /settings page, opened from a gear next to the Logbook | Notifications tabs and a Settings row at the bottom of the Logbook. Moved there from the Logbook: Profile, Prefer crew/AI, hotel programs, Home screen preview + launch switch (admins), version, FAQ, tour link, sign out, delete account. Finish your profile items open Settings at the field (?focus=pf-…). Links that pointed at /me for settings now go to /settings.",
     "Push notifications (server/push.ts, client/src/lib/push.tsx, client/public/sw.js): Web Push with VAPID keys generated once and kept in app_settings vapid_keys (or VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY env). Payloads are Apple Declarative Web Push ({web_push: 8030, notification}) so iOS 18.4+ shows them directly; sw.js shows them elsewhere and only handles push + notification taps (no fetch handler, no caching).",

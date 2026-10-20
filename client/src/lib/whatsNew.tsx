@@ -125,7 +125,7 @@ const markSeen = (n = LATEST_RELEASE) => apiRequest("PUT", "/api/me/release-seen
 
 /** New account: the welcome tour covers everything, so mark the current notes as seen. */
 export function skipWhatsNewForNewMember() { skipCheck = true; void markSeen(); }
-/** Open the notes again (FAQ, Logbook). */
+/** Open the notes again (footer, FAQ, Settings). Shows the latest releases, not only unseen ones. */
 export function openWhatsNew() { window.dispatchEvent(new Event(EVENT)); }
 
 /** Mounted once in the app shell. */
@@ -133,6 +133,7 @@ export function WhatsNewHost() {
   const { me } = useAuth();
   const [, navigate] = useLocation();
   const [show, setShow] = useState<Release[] | null>(null);
+  const [manual, setManual] = useState(false);
   const { data } = useQuery<{ seen: number | null }>({ queryKey: ["/api/me/release-seen"], enabled: !!me, staleTime: Infinity });
   useEffect(() => {
     if (!me || !data || skipCheck || show) return;
@@ -144,12 +145,13 @@ export function WhatsNewHost() {
     return () => clearTimeout(t);
   }, [me?.id, data?.seen]); // eslint-disable-line
   useEffect(() => {
-    const on = () => setShow(RELEASES.slice(0, 2));
+    const on = () => { setManual(true); setShow(RELEASES.slice(0, 3)); };
     window.addEventListener(EVENT, on);
     return () => window.removeEventListener(EVENT, on);
   }, []);
   const close = (to?: string) => {
     setShow(null);
+    setManual(false);
     if (me && (data?.seen ?? 0) < LATEST_RELEASE) void markSeen();
     if (to) navigate(to);
   };
@@ -166,7 +168,7 @@ export function WhatsNewHost() {
               <DialogTitle className="text-lg font-semibold leading-tight text-white">Fresh in Wheelsdown</DialogTitle>
             </div>
           </div>
-          <DialogDescription className="relative mt-2 text-xs text-white/70">Version 1.{show[0].id} · {show[0].date}. Here's what changed since you last looked.</DialogDescription>
+          <DialogDescription className="relative mt-2 text-xs text-white/70">{manual ? `The latest notes, starting with version 1.${show[0].id} · ${show[0].date}.` : `Version 1.${show[0].id} · ${show[0].date}. Here's what changed since you last looked.`}</DialogDescription>
         </div>
         <div className="space-y-5 px-5 py-4">
           {show.map((r, k) => (
@@ -187,8 +189,9 @@ export function WhatsNewHost() {
             </section>
           ))}
         </div>
-        <div className="sticky bottom-0 border-t border-border bg-background p-3">
-          <button type="button" onClick={() => close()} autoFocus className="h-11 w-full rounded-full taxi-sign text-sm font-semibold hover-elevate" data-testid="button-whats-new-done">Got it</button>
+        <div className="sticky bottom-0 flex gap-2 border-t border-border bg-background p-3">
+          {manual && show.length < RELEASES.length && <button type="button" onClick={() => setShow(RELEASES)} className="h-11 flex-1 rounded-full border border-border text-sm font-medium hover-elevate" data-testid="button-whats-new-earlier">Earlier releases</button>}
+          <button type="button" onClick={() => close()} autoFocus className="h-11 flex-1 rounded-full taxi-sign text-sm font-semibold hover-elevate" data-testid="button-whats-new-done">Got it</button>
         </div>
       </DialogContent>
     </Dialog>

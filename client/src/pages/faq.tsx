@@ -19,7 +19,7 @@ const SECTIONS: { title: string; items: QA[] }[] = [
       qa("What's on the home screen?", "Signed in, Wheelsdown opens on tiles for what you came to do: Find spots, Add a spot, Plan layover, Rate a spot, Crew lounge, Crew Up, My Crew, Leaderboard and Logbook. Each tile sets up the bottom bar for that job. Tap the Wheelsdown logo or Switch to come back."),
       qa("How do I get directions to a place?", "Tap Directions on the place, on a briefing pick or on the Plan layover screen, then choose Apple Maps or Google Maps. It opens your maps app with the route."),
       qa("Do I need an account?", "No, anyone can search. You need a free account to rate, add places, build briefings, save favorites and earn points."),
-      qa("How do I put Wheelsdown on my home screen?", "On iPhone, open getwheelsdown.com in Safari, tap Share, then Add to Home Screen. It updates itself when you reopen it, so you never need to add it again."),
+      qa("How do I put Wheelsdown on my home screen?", "On iPhone or iPad, open getwheelsdown.com in Safari, tap Share, then Add to Home Screen, then open it from the new icon. On Android, open it in Chrome, tap the menu, then Install app or Add to Home screen. From that icon, tap the gear on Logbook and Turn on notifications. On iPhone, notifications only work from the home-screen icon, not a Safari tab. They still arrive when the app is closed."),
     ],
   },
   {

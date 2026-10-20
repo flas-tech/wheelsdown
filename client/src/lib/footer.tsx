@@ -4,6 +4,7 @@ import { Shield } from "lucide-react";
 import { FeedbackLink } from "@/lib/feedback";
 import { TourLink } from "@/lib/tour";
 import { VersionLine } from "@/lib/version";
+import { openWhatsNew } from "@/lib/whatsNew";
 import { IS_STATIC } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 
@@ -23,7 +24,10 @@ export function SiteFooter({ className }: { className?: string }) {
         <TourLink className="hover:text-foreground" />
         <FeedbackLink className="font-semibold text-foreground hover:text-primary" />
       </nav>
-      <VersionLine className="text-[11px] text-muted-foreground/80" />
+      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground/80">
+        <VersionLine />
+        <button type="button" onClick={() => openWhatsNew()} className="font-semibold text-foreground underline underline-offset-2 hover:text-primary" data-testid="button-footer-whats-new">What's new</button>
+      </p>
     </footer>
   );
 }

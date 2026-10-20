@@ -104,6 +104,53 @@ export function PushHost({ unread }: { unread: number }) {
   return null;
 }
 
+const onAndroid = () => typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
+
+/** Apple and Android steps for the home-screen app and notifications. Current phone is listed first. */
+export function HomeScreenSteps({ compact }: { compact?: boolean }) {
+  const ios = isIOS();
+  const android = onAndroid();
+  const blocks = [
+    { key: "apple", mine: ios, title: "iPhone and iPad", steps: [
+      "Open Wheelsdown in Safari.",
+      "Tap Share, then Add to Home Screen, then Add.",
+      "Open it from the new icon. On iPhone, notifications only work from that icon, not a Safari tab.",
+      "Tap the gear on Logbook, then Turn on notifications, then Allow.",
+    ] },
+    { key: "android", mine: android, title: "Android", steps: [
+      "Open Wheelsdown in Chrome.",
+      "Tap the menu (three dots), then Install app or Add to Home screen.",
+      "Open it from the new icon.",
+      "Tap the gear on Logbook, then Turn on notifications, then Allow.",
+    ] },
+  ].sort((a, b) => Number(b.mine) - Number(a.mine));
+  return (
+    <div className="space-y-2 text-left" data-testid="list-home-screen-steps">
+      {blocks.map((b) => (
+        <div key={b.key} className={cn("rounded-xl border p-2.5", b.mine ? "border-primary/50 bg-primary/10" : "border-border bg-muted/50")}>
+          <p className="text-[11px] font-semibold text-foreground">{b.title}{b.mine ? " · this phone" : ""}</p>
+          <ol className="mt-1 list-decimal space-y-0.5 pl-4 text-[11px] leading-snug text-muted-foreground">
+            {b.steps.map((s) => <li key={s}>{s}</li>)}
+          </ol>
+        </div>
+      ))}
+      {!compact && <p className="text-[11px] text-muted-foreground">Notifications still arrive when the app is closed.</p>}
+    </div>
+  );
+}
+
+/** Shown until push is open to this account, so the signup tour has somewhere to land. */
+function InstallGuide() {
+  return (
+    <section id="notifications" className="scroll-mt-24 space-y-3 rounded-2xl border border-card-border bg-card p-4" data-testid="section-install-guide">
+      <h2 className="text-sm font-semibold">Home screen and notifications</h2>
+      <p className="text-xs text-muted-foreground">Add Wheelsdown to your home screen, then turn notifications on from the gear on your Logbook. Crew requests and Crew Up plans show up even when the app is closed.</p>
+      <HomeScreenSteps compact />
+      <p className="text-[11px] text-muted-foreground">The Turn on button appears on this page when notifications are open for your account.</p>
+    </section>
+  );
+}
+
 const ROWS: { key: keyof NotifyPrefs; title: string; body: string }[] = [
   { key: "crewRequests", title: "Crew requests", body: "Someone wants to add you, or accepts your request." },
   { key: "crewUp", title: "Crew Up plans", body: "Someone in My Crew posts plans at an airport." },
@@ -131,7 +178,8 @@ export function NotificationSettings() {
     onSuccess: (r: { sent: number; failed: number }) => toast({ title: r.sent ? "Test sent" : "Didn't arrive", description: r.sent ? `Sent to ${r.sent} device${r.sent === 1 ? "" : "s"}. It should show up in a few seconds.` : "None of your devices took it. Turn notifications off and on again on this device." }),
     onError: (e) => toast({ title: "Couldn't send a test", description: errText(e), variant: "destructive" }),
   });
-  if (!me || !cfg.data?.available) return null;
+  if (!me || cfg.isLoading) return null;
+  if (!cfg.data?.available) return <InstallGuide />;
   const adminOnly = !!me.isAdmin;
   const turnOn = async () => {
     setBusy(true);
