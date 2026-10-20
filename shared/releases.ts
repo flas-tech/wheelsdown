@@ -2,6 +2,10 @@
 export type Release = { date: string; sha?: string; title: string; notes: string[] };
 
 export const RELEASES: Release[] = [
+  { date: "2026-10-20", title: "Go-live notification prompt, once on the next app open", notes: [
+    "When push_audience flips to members, each signed-in member is asked once the next time they open the app, if that device doesn't already have notifications on. Stored in localStorage wd-push-ask so it doesn't repeat. iPhone Safari gets Add to Home Screen steps; Android and the home-screen app get Turn on notifications from the tap. Skipped during the same visit as the signup tour, and while another dialog is open.",
+    "/api/push/config now includes opened (true only when push_audience is members). Admins don't see the prompt until they open it to members.",
+  ] },
   { date: "2026-10-20", title: "What's new link in the footer, signup tour adds home screen and notifications", notes: [
     "Footer: a labeled What's new link next to the version line. It opens the latest three releases (not only unseen ones), with Earlier releases for the rest. The version number still opens the same notes.",
     "Signup tour: last step is Add it to your home screen, with iPhone/iPad and Android steps, then Turn on notifications (lands on /settings?s=push). New accounts see it. Existing members keep their finished tour; Take the tour replays it. TOUR_VERSION stays 2.",

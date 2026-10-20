@@ -37,7 +37,7 @@ import { tierFor } from "@shared/tiers";
 import { NoticeDot } from "@/lib/notices";
 import NotificationsPage from "@/pages/notifications";
 import SettingsPage from "@/pages/settings";
-import { PushHost } from "@/lib/push";
+import { PushHost, PushPrompt } from "@/lib/push";
 import { useUnreadCount } from "@/lib/notices";
 import { Logo, ThemeProvider, ThemeToggle } from "@/lib/ui";
 import { cn } from "@/lib/utils";
@@ -70,7 +70,7 @@ function Shell() {
     if (!seen && loc === "/" && !deep) go("/start", { replace: true });
   }, [landingReady, landing]); // eslint-disable-line
   // the landing page has no navigation at all
-  if (loc === "/start") return (<><StartPage /><TourHost /><UpdateBar /><WhatsNewHost /><PushHost unread={unread} /></>);
+  if (loc === "/start") return (<><StartPage /><TourHost /><UpdateBar /><WhatsNewHost /><PushHost unread={unread} /><PushPrompt /></>);
   return (
     <div className="min-h-[100dvh] flex flex-col">
       <header className="print:hidden sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur pt-safe-top px-safe">
@@ -145,6 +145,7 @@ function Shell() {
       <TourHost />
       <UpdateBar />
       <PushHost unread={unread} />
+      <PushPrompt />
       <WhatsNewHost />
 
       {/* iOS-style tab bar */}

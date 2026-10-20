@@ -9,6 +9,7 @@ import { apiRequest, queryClient, IS_STATIC } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { Switch } from "@/components/ui/switch";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
 const SW_URL = "/sw.js";
@@ -40,17 +41,20 @@ async function currentSub(): Promise<PushSubscription | null> {
   return (await reg?.pushManager.getSubscription()) || null;
 }
 
-export function useDeviceState(): [DeviceState, () => Promise<void>] {
+export function useDeviceState(): [DeviceState, () => Promise<void>, boolean] {
   const [s, setS] = useState<DeviceState>("off");
+  const [ready, setReady] = useState(false);
   const check = async () => {
-    // iPhone/iPad Safari tab: no notifications until it's opened from the home screen
-    if (isIOS() && !isStandalone()) { setS("install"); return; }
-    if (!supported()) { setS("unsupported"); return; }
-    if (Notification.permission === "denied") { setS("denied"); return; }
-    setS((await currentSub().catch(() => null)) ? "on" : "off");
+    try {
+      // iPhone/iPad Safari tab: no notifications until it's opened from the home screen
+      if (isIOS() && !isStandalone()) { setS("install"); return; }
+      if (!supported()) { setS("unsupported"); return; }
+      if (Notification.permission === "denied") { setS("denied"); return; }
+      setS((await currentSub().catch(() => null)) ? "on" : "off");
+    } finally { setReady(true); }
   };
   useEffect(() => { void check(); }, []);
-  return [s, check];
+  return [s, check, ready];
 }
 
 /** Call straight from a tap. Asks iOS/Android for permission, then signs this device up with the server. */
@@ -275,9 +279,77 @@ function AudienceNote() {
     <div className="space-y-2 border-b border-dashed border-border pb-3" data-testid="row-push-audience">
       <p className="text-[11px] font-semibold uppercase tracking-wider text-primary">{live ? "Open to members" : "Admin preview"}</p>
       <div className="flex items-start justify-between gap-3">
-        <span><span className="block text-xs font-semibold">Open notifications to members</span><span className="block text-[11px] text-muted-foreground">{live ? "On: every member can turn them on here." : "Off: only admins see this and get notifications."} {q.data.members} member{q.data.members === 1 ? "" : "s"} on {q.data.devices} device{q.data.devices === 1 ? "" : "s"}. Last 24 h: {sent} sent{failed ? `, ${failed} failed` : ""}.</span></span>
-        <Switch checked={live} disabled={m.isPending} onCheckedChange={(v) => { if (window.confirm(v ? "Let every member turn on notifications?" : "Turn notifications back to admins only? Members stop getting them; their settings are kept.")) m.mutate(v ? "members" : "admins"); }} aria-label="Open notifications to members" data-testid="switch-push-audience" />
+        <span><span className="block text-xs font-semibold">Open notifications to members</span><span className="block text-[11px] text-muted-foreground">{live ? "On: members are asked once, the next time they open the app." : "Off: only admins see this and get notifications."} {q.data.members} member{q.data.members === 1 ? "" : "s"} on {q.data.devices} device{q.data.devices === 1 ? "" : "s"}. Last 24 h: {sent} sent{failed ? `, ${failed} failed` : ""}.</span></span>
+        <Switch checked={live} disabled={m.isPending} onCheckedChange={(v) => { if (window.confirm(v ? "Let every member turn on notifications? The next time they open the app, they'll be asked once." : "Turn notifications back to admins only? Members stop getting them; their settings are kept.")) m.mutate(v ? "members" : "admins"); }} aria-label="Open notifications to members" data-testid="switch-push-audience" />
       </div>
     </div>
+  );
+}
+
+const ASK_KEY = "wd-push-ask";
+
+/**
+ * Once notifications are open to members, ask once on the next app open if this device doesn't already have them on.
+ * Skipped the same visit as the signup tour (that tour already asks) and while another dialog is up.
+ */
+export function PushPrompt() {
+  const { me } = useAuth();
+  const { toast } = useToast();
+  const cfg = usePushConfig();
+  const [state, recheck, ready] = useDeviceState();
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!ready || !me || !cfg.data?.opened || state === "on" || state === "unsupported") return;
+    try {
+      if (localStorage.getItem(ASK_KEY) || sessionStorage.getItem("wd-tour-this-visit")) return;
+    } catch { return; }
+    let tries = 0;
+    let timer = 0;
+    const tick = () => {
+      if (document.querySelector("[role=dialog]")) {
+        if (tries++ < 8) timer = window.setTimeout(tick, 1500);
+        return;
+      }
+      try { localStorage.setItem(ASK_KEY, "1"); } catch { /* private mode: still show this once */ }
+      setOpen(true);
+    };
+    timer = window.setTimeout(tick, 1600);
+    return () => clearTimeout(timer);
+  }, [ready, me?.id, cfg.data?.opened, state]);
+  if (!me || !cfg.data?.opened) return null;
+  const turnOn = async () => {
+    setBusy(true);
+    try {
+      await enablePush(cfg.data!.publicKey);
+      await recheck();
+      queryClient.invalidateQueries({ queryKey: ["/api/push/config"] });
+      setOpen(false);
+      toast({ title: "Notifications on", description: "Crew requests and Crew Up plans will show up even when the app is closed." });
+    } catch (e) { toast({ title: "Couldn't turn on notifications", description: errText(e), variant: "destructive" }); }
+    finally { setBusy(false); }
+  };
+  const showHow = () => { setOpen(false); window.location.hash = "#/settings?s=push"; };
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent className="max-w-sm" data-testid="dialog-push-ask">
+        <DialogTitle className="flex items-center gap-2 text-lg"><BellRing className="h-5 w-5 text-primary" />Turn on notifications</DialogTitle>
+        <DialogDescription>Crew requests and Crew Up plans can reach you even when the app is closed. You can turn each kind off in Settings.</DialogDescription>
+        {state === "install" && (
+          <ol className="list-decimal space-y-1 pl-4 text-xs text-muted-foreground" data-testid="list-push-ask-ios">
+            <li>In Safari, tap Share, then Add to Home Screen.</li>
+            <li>Open Wheelsdown from the new icon. On iPhone they only work from that icon, not a Safari tab.</li>
+            <li>Tap the gear on Logbook, then Turn on notifications, then Allow.</li>
+          </ol>
+        )}
+        {state === "denied" && <p className="text-xs text-muted-foreground">Notifications are blocked for Wheelsdown. Open your phone's Settings, then Notifications, then Wheelsdown, and turn on Allow Notifications.</p>}
+        {state === "off" && <p className="text-xs text-muted-foreground">Your phone will ask you to allow them. On Android you can also add Wheelsdown to your home screen from the Chrome menu.</p>}
+        <div className="mt-1 grid gap-2">
+          {state === "off" && <button type="button" onClick={turnOn} disabled={busy} className="inline-flex h-11 items-center justify-center gap-1.5 rounded-full taxi-sign text-sm font-semibold hover-elevate disabled:opacity-50" data-testid="button-push-ask-on">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <BellRing className="h-4 w-4" />}Turn on notifications</button>}
+          {state === "install" && <button type="button" onClick={showHow} className="inline-flex h-11 items-center justify-center gap-1.5 rounded-full taxi-sign text-sm font-semibold hover-elevate" data-testid="button-push-ask-how">Show me how</button>}
+          <button type="button" onClick={() => setOpen(false)} className="h-11 rounded-full border border-border text-sm font-medium hover-elevate" data-testid="button-push-ask-later">{state === "denied" ? "Got it" : "Not now"}</button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

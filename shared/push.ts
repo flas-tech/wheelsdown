@@ -21,6 +21,8 @@ export const PREF_FOR: Record<PushKind, keyof NotifyPrefs> = {
 export type PushConfig = {
   /** Push is open to this member (admins-only while testing). */
   available: boolean;
+  /** True once an admin has opened notifications to every member. The go-live prompt uses this, not available. */
+  opened: boolean;
   publicKey: string;
   prefs: NotifyPrefs;
   /** How many of their devices are signed up. */

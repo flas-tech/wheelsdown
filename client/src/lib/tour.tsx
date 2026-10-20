@@ -17,7 +17,11 @@ const TOUR_VERSION = 2;
 const EVENT = "wheelsdown:tour";
 
 /** Open the tour from anywhere (Logbook link, right after sign-up). */
-export function startTour(mode: "full" | "new" = "full") { window.dispatchEvent(new CustomEvent(EVENT, { detail: mode })); }
+export function startTour(mode: "full" | "new" = "full") {
+  // the go-live notification prompt waits for the next visit if the tour already covered it this time
+  try { sessionStorage.setItem("wd-tour-this-visit", "1"); } catch { /* private mode */ }
+  window.dispatchEvent(new CustomEvent(EVENT, { detail: mode }));
+}
 /** Signed-in members who finished an older version of the tour on this device see what's new, once. */
 export function maybeShowWhatsNew() {
   try {

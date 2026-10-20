@@ -154,7 +154,7 @@ export function registerPush(app: Express, o: { userOf: (req: Request) => Promis
     await ensure();
     const u = await me(req);
     const devices = num((await rows(sql`SELECT COUNT(*) AS n FROM push_subs WHERE user_id = ${u.id}`))[0]?.n);
-    const out: PushConfig = { available: await allowed(u.id), publicKey, prefs: await prefsOf(u.id), devices };
+    const out: PushConfig = { available: await allowed(u.id), opened: (await pushAudience()) === "members", publicKey, prefs: await prefsOf(u.id), devices };
     res.set("Cache-Control", "no-store").json(out);
   });
 
