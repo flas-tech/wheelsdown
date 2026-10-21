@@ -3,13 +3,24 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { useSearch } from "@/pages/home";
-import { BedDouble, CalendarDays, ChevronRight, Clock, Compass, Heart, Loader2, PlaneLanding, Plane, RefreshCw, Sparkles, Star, Sunrise, Sunset, Users, Utensils, Wind } from "lucide-react";
+import { BedDouble, CalendarDays, ChevronRight, Clock, Compass, LocateFixed, Heart, Loader2, PlaneLanding, Plane, RefreshCw, Sparkles, Star, Sunrise, Sunset, Users, Utensils, Wind } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { AirportCheckInCard } from "@/lib/checkins";
 import { PreviewBadge, PreviewGate, ago, errMsg } from "@/lib/preview";
 import { cn } from "@/lib/utils";
 import { DirectionsButton } from "@/lib/directions";
 import type { Metar, TodayPick, TodayResp } from "@shared/layover";
+import { getPosition, type NearAirport } from "@/lib/geo";
+import { useTrip } from "@/lib/experience";
+import { useToast } from "@/hooks/use-toast";
+
+/** Four-tab preview: Home opens on the field you're at. Location is used only when this site already has permission, once per visit. */
+const LOCATED = "wd-today-located";
+async function nearestField(): Promise<NearAirport | null> {
+  const pos = await getPosition();
+  const near = (await (await apiRequest("GET", `/api/airports/nearest?lat=${pos.lat}&lon=${pos.lng}`)).json()) as NearAirport[];
+  return near[0] || null;
+}
 
 const CAT_COLOR: Record<string, string> = {
   VFR: "bg-emerald-600 text-white", MVFR: "bg-sky-600 text-white", IFR: "bg-red-600 text-white", LIFR: "bg-fuchsia-700 text-white",
@@ -41,6 +52,27 @@ function Today() {
     queryKey: key, queryFn: async () => (await apiRequest("GET", `/api/preview/today${code ? `?icao=${encodeURIComponent(code)}` : ""}`)).json(), staleTime: 60_000, retry: false,
   });
   const go = (c: string) => { const v = c.trim().toUpperCase(); if (v.length >= 3) { setCode(v); setTyped(""); } };
+  const trip = useTrip();
+  const { toast } = useToast();
+  const [locating, setLocating] = useState(false);
+  const locate = async (auto: boolean) => {
+    setLocating(true);
+    try {
+      const f = await nearestField();
+      sessionStorage.setItem(LOCATED, f?.icao || "-");
+      if (f && (!auto || f.miles <= 25)) { setCode(f.icao); if (!auto) toast({ title: `Nearest field: ${f.icao}`, description: `${f.name} · ${f.miles} mi away` }); }
+      else if (!auto) toast({ title: "No airport found nearby", description: "Type the code instead." });
+    } catch (e) {
+      if (!auto) toast({ title: "Location unavailable", description: String((e as Error).message || e), variant: "destructive" });
+    } finally { setLocating(false); }
+  };
+  // open on the field you're at: unless you typed one or checked in, use location if it's already allowed (no prompt)
+  useEffect(() => {
+    if (!trip || code || !data || data.source === "checkin" || sessionStorage.getItem(LOCATED)) return;
+    const perms = (navigator as any).permissions;
+    if (!perms?.query) return;
+    perms.query({ name: "geolocation" }).then((p: { state: string }) => { if (p.state === "granted") void locate(true); }).catch(() => {});
+  }, [trip, code, data?.source]); // eslint-disable-line
 
   return (
     <div className="space-y-4" data-testid="page-today">
@@ -53,6 +85,12 @@ function Today() {
       <form onSubmit={(e) => { e.preventDefault(); go(typed); }} className="flex gap-2">
         <input value={typed} onChange={(e) => setTyped(e.target.value.toUpperCase())} maxLength={4} placeholder={data?.icao ? `Not at ${data.icao}? Type the airport` : "Airport, e.g. TEB or KTEB"}
           className="h-11 min-w-0 flex-1 rounded-xl border border-input bg-card px-3 font-code text-base uppercase tracking-wider placeholder:font-sans placeholder:normal-case placeholder:tracking-normal placeholder:text-muted-foreground/70" data-testid="input-today-airport" aria-label="Airport" />
+        {trip && (
+          <button type="button" onClick={() => void locate(false)} disabled={locating} aria-label="Use my location" title="Use my location"
+            className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-border bg-card hover-elevate disabled:opacity-60" data-testid="button-today-locate">
+            {locating ? <Loader2 className="h-4 w-4 animate-spin" /> : <LocateFixed className="h-4 w-4" />}
+          </button>
+        )}
         <button type="submit" className="h-11 rounded-xl taxi-sign px-4 text-sm font-semibold hover-elevate disabled:opacity-60" disabled={typed.trim().length < 3} data-testid="button-today-go">Go</button>
       </form>
       {!!data?.recent?.length && (

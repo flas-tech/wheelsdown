@@ -130,16 +130,16 @@ export function registerTrip(app: Express, o: { userOf: (req: Request) => Promis
         });
       });
     }
-    // next: a trip happening now, else the soonest upcoming one, else the newest briefing without a date
-    const now = all.find((s) => s.when === "now");
-    const upcoming = all.filter((s) => s.when === "upcoming").sort((a, z) => (a.arriveDate! + (a.arriveTime || "")).localeCompare(z.arriveDate! + (z.arriveTime || "")))[0];
-    const undated = all.find((s) => s.when === "undated");
-    const next = now || upcoming || undated || null;
+    // Coming up: on now, then dated stops by date, then stops without a date in the order they were planned (oldest brief first, stop order)
+    const rank = (x: TripStop) => (x.when === "now" ? 0 : x.when === "upcoming" ? 1 : 2);
+    const order = new Map(briefs.map((b) => [b.id, b.createdAt]));
+    const coming = all.filter((x) => x.when !== "past").sort((a, z) => rank(a) - rank(z)
+      || (a.arriveDate && z.arriveDate ? a.arriveDate.localeCompare(z.arriveDate) : 0)
+      || num(order.get(a.briefId)) - num(order.get(z.briefId)) || a.stopIndex - z.stopIndex).slice(0, 12);
     // to rate: the most recent finished trip in the last 3 weeks with places you haven't rated
     const cutoff = new Date(Date.now() - 21 * 86400_000).toISOString().slice(0, 10);
     const rate = all.filter((s) => s.when === "past" && s.arriveDate! >= cutoff && s.steps.toRate.length).sort((a, z) => z.arriveDate!.localeCompare(a.arriveDate!))[0] || null;
-    const later = all.filter((s) => s !== next && (s.when === "upcoming" || s.when === "now")).sort((a, z) => (a.arriveDate || "").localeCompare(z.arriveDate || "")).slice(0, 3);
-    res.set("Cache-Control", "no-store").json({ next, rate, later, briefCount: briefs.length });
+    res.set("Cache-Control", "no-store").json({ coming, rate, briefCount: briefs.length });
   });
 
   app.get("/api/admin/trip", o.requireAdmin, async (_req, res) => {

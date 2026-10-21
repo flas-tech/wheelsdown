@@ -48,7 +48,6 @@ export const CREWUP_HOURS: Record<string, number> = { quick: 2, hours: 4, overni
 export function crewUpHref(st: { icao: string; layover: string; arriveDate?: string | null; arriveTime?: string | null }) {
   const q = new URLSearchParams({ icao: st.icao, hours: String(CREWUP_HOURS[st.layover] ?? 12) });
   if (st.arriveDate) q.set("date", st.arriveDate);
-  if (st.arriveDate && st.arriveTime) q.set("time", st.arriveTime);
   return `/meetup?${q.toString()}`;
 }
 /** Read once from the address: what Crew Up should fill in. */
@@ -63,14 +62,10 @@ export type TripStop = {
   layover: string; nights: number | null; when: "upcoming" | "now" | "past" | "undated";
   steps: { picks: number; aiOn: boolean; added: boolean; rated: number; toRate: number[] };
 };
-export type TripResp = { next: TripStop | null; rate: TripStop | null; later: TripStop[]; briefCount: number };
-/** "Thu, Oct 23 · 2:30 PM local" from the stop's local date and time. */
-export function fmtArrive(s: { arriveDate?: string | null; arriveTime?: string | null }) {
+export type TripResp = { coming: TripStop[]; rate: TripStop | null; briefCount: number };
+/** "Thu, Oct 23" from the stop's landing date (local to the airport). */
+export function fmtArrive(s: { arriveDate?: string | null }) {
   if (!s.arriveDate) return "";
   const d = new Date(`${s.arriveDate}T12:00:00Z`);
-  const day = new Intl.DateTimeFormat(undefined, { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" }).format(d);
-  if (!s.arriveTime) return day;
-  const [h, m] = s.arriveTime.split(":").map(Number);
-  const t = new Intl.DateTimeFormat(undefined, { timeZone: "UTC", hour: "numeric", minute: "2-digit" }).format(Date.UTC(2000, 0, 1, h, m));
-  return `${day} · ${t} local`;
+  return new Intl.DateTimeFormat(undefined, { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" }).format(d);
 }

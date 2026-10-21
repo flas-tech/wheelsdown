@@ -44,7 +44,7 @@ function MeetupBoard() {
   }, []);
   const trip = useTrip();
   const { data: trips } = useQuery<TripResp>({ queryKey: ["/api/preview/trip"], enabled: trip, staleTime: 60_000, retry: false });
-  const fromBriefs = trips ? [trips.next, ...trips.later].filter((s): s is TripStop => !!s && s.when !== "past").slice(0, 4) : [];
+  const fromBriefs = (trips?.coming || []).slice(0, 6);
   const pickStop = (s: TripStop) => { const u = new URL(`http://x${crewUpHref(s)}`); setPre({ date: u.searchParams.get("date"), time: u.searchParams.get("time"), hours: Number(u.searchParams.get("hours")) || null }); setCode(s.icao); setMore(true); };
   const { data, isLoading, error } = useQuery<MeetupResp>({
     queryKey: ["/api/preview/meetups", code], queryFn: async () => (await apiRequest("GET", `/api/preview/meetups${code ? `?icao=${encodeURIComponent(code)}` : ""}`)).json(), staleTime: 20_000, refetchInterval: 60_000, retry: false,

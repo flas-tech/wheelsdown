@@ -105,10 +105,10 @@ export const EXPERIENCE_NAV: Record<Experience, NavItem[]> = {
 
 /** The four tabs. Logbook isn't here: it's the points pill in the header, on every page. */
 export const TRIP_NAV: NavItem[] = [
-  { href: "/home", label: "Home", icon: House, active: on("/home", "/today", "/start") },
-  { href: "/brief", label: "Briefs", icon: ClipboardList, active: on("/brief", "/b") },
+  { href: "/today", label: "Home", icon: House, active: on("/today", "/home", "/start") },
+  { href: "/plan", label: "Plan", icon: ClipboardList, active: on("/plan", "/brief", "/b") },
   { href: "/", label: "Spots", icon: MapPin, active: (l) => l === "/" || on("/spot", "/map", "/favorites", "/add", "/rate")(l) },
-  { href: "/meetup", label: "Crew", icon: Users, active: on("/meetup", "/mycrew", "/lounge", "/crew", "/following", "/followers"), dot: "crew" },
+  { href: "/mycrew", label: "Crew", icon: Users, active: on("/meetup", "/mycrew", "/lounge", "/crew", "/following", "/followers"), dot: "crew" },
 ];
 /** Sub-tabs at the top of the Spots and Crew sections (pages that are a step of their own, like a listing or Add, have none). */
 export const SPOTS_SUB: NavItem[] = [
@@ -118,10 +118,10 @@ export const SPOTS_SUB: NavItem[] = [
   { href: "/rate", label: "Rate", icon: Star, active: on("/rate") },
 ];
 export const CREW_SUB: NavItem[] = [
-  { href: "/meetup", label: "Crew Up", icon: Users, active: on("/meetup"), dot: "/meetup" },
   { href: "/mycrew", label: "My Crew", icon: Contact, active: on("/mycrew"), dot: "/mycrew" },
-  { href: "/lounge", label: "Lounge", icon: MessagesSquare, active: on("/lounge") },
+  { href: "/meetup", label: "Crew Up", icon: Users, active: on("/meetup"), dot: "/meetup" },
   { href: "/crew", label: "Ranks", icon: Trophy, active: on("/crew", "/following", "/followers") },
+  { href: "/lounge", label: "Lounge", icon: MessagesSquare, active: on("/lounge") },
 ];
 export function subTabsFor(loc: string): NavItem[] | null {
   if (SPOTS_SUB.some((n) => n.active(loc))) return SPOTS_SUB;

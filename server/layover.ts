@@ -201,7 +201,13 @@ export function registerLayover(app: Express, o: { userOf: (req: Request) => Pro
     const q = String(req.query.icao || "").trim().toUpperCase();
     if (q) { icao = q; source = "query"; }
     else if (recentCk[0] && Date.now() - num(recentCk[0].at) < MEETUP_RULES.checkinWindowHours * HOUR) { icao = String(recentCk[0].icao); source = "checkin"; checkedInAt = num(recentCk[0].at); }
-    else { const s = briefs.flatMap((b) => stopsOf(b.stops))[0]; if (s) { icao = s.icao; source = "briefing"; } }
+    else {
+      // a briefing stop dated today (or yesterday, for an overnight) first, else the newest briefing's first stop
+      const all = briefs.flatMap((b) => stopsOf(b.stops));
+      const d0 = new Date().toISOString().slice(0, 10), d1 = new Date(Date.now() - 86400_000).toISOString().slice(0, 10);
+      const s = all.find((x) => x.arriveDate === d0) || all.find((x) => x.arriveDate === d1 && x.layover !== "quick" && x.layover !== "hours") || all[0];
+      if (s) { icao = s.icao; source = "briefing"; }
+    }
 
     const empty: TodayResp = { icao: null, source: null, checkedInAt: null, airport: null, tz: null, sun: null, metar: null, metarError: false, briefing: null, crewPicks: { eat: [], do: [] }, favorites: [], meetup: { mine: false, others: null }, toRate: 0, recent };
     if (!icao) return res.json(empty);

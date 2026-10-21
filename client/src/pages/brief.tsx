@@ -194,7 +194,7 @@ function RouteForm({ initial, initialTitle, busy, onSubmit, submitLabel }: {
                     {[2, 3, 4, 5, 7].map((n) => <Chip key={n} active={v.nights === n} onClick={() => setL(i, c, { layover: "multi", nights: n })} className="text-xs font-code" testId={`chip-nights-${i}-${n}`}>{n}</Chip>)}
                   </div>
                 )}
-                {trip && <ArriveInputs i={i} date={v.arriveDate || ""} time={v.arriveTime || ""} onChange={(d, t) => setL(i, c, { layover: v.layover, arriveDate: d || null, arriveTime: d ? t || null : null })} />}
+                {trip && <ArriveInputs i={i} date={v.arriveDate || ""} onChange={(d) => setL(i, c, { layover: v.layover, arriveDate: d || null, arriveTime: null })} />}
               </div>
             );
           })}
@@ -213,18 +213,13 @@ function RouteForm({ initial, initialTitle, busy, onSubmit, submitLabel }: {
 }
 
 /** When you land (local time at that airport). Optional: Home uses it for your next trip, Crew Up to plan ahead. */
-function ArriveInputs({ i, date, time, onChange, compact }: { i: number; date: string; time: string; onChange: (date: string, time: string) => void; compact?: boolean }) {
-  const [t, setT] = useState(time);
-  useEffect(() => setT(time), [time]);
+function ArriveInputs({ i, date, onChange, compact }: { i: number; date: string; onChange: (date: string) => void; compact?: boolean }) {
   return (
     <div className={cn("flex items-end gap-2", compact ? "" : "mt-3")} data-testid={`arrive-${i}`}>
-      <label className="min-w-0 flex-1 text-[11px] font-medium text-muted-foreground">Landing date
-        <input type="date" value={date} onChange={(e) => onChange(e.target.value, t)} className="mt-1 block h-10 w-full min-w-0 rounded-xl border border-input bg-background px-2.5 text-base text-foreground" data-testid={`input-arrive-date-${i}`} />
+      <label className="min-w-0 flex-1 text-[11px] font-medium text-muted-foreground">Landing date (optional)
+        <input type="date" value={date} onChange={(e) => onChange(e.target.value)} className="mt-1 block h-10 w-full min-w-0 rounded-xl border border-input bg-background px-2.5 text-base text-foreground" data-testid={`input-arrive-date-${i}`} />
       </label>
-      <label className="min-w-0 flex-1 text-[11px] font-medium text-muted-foreground">Time (local)
-        <input type="time" value={t} disabled={!date} onChange={(e) => setT(e.target.value)} onBlur={() => t !== time && onChange(date, t)} className="mt-1 block h-10 w-full min-w-0 rounded-xl border border-input bg-background px-2.5 text-base text-foreground disabled:opacity-50" data-testid={`input-arrive-time-${i}`} />
-      </label>
-      {date && <button type="button" onClick={() => onChange("", "")} className="h-10 shrink-0 rounded-xl border border-border px-2.5 text-xs hover-elevate" aria-label="Clear the date" data-testid={`button-arrive-clear-${i}`}><X className="h-3.5 w-3.5" /></button>}
+      {date && <button type="button" onClick={() => onChange("")} className="h-10 shrink-0 rounded-xl border border-border px-2.5 text-xs hover-elevate" aria-label="Clear the date" data-testid={`button-arrive-clear-${i}`}><X className="h-3.5 w-3.5" /></button>}
     </div>
   );
 }
@@ -327,7 +322,7 @@ export function BriefEditorPage() {
             onResuggest={() => put((s) => ({ ...s, picks: [], aiHide: [], order: [] }), true)}
             onAi={(on) => put((s) => ({ ...s, ai: on, ...(on ? {} : { aiAdd: [], aiHide: [], order: (s.order || []).filter((x) => x > 0) }) }))}
             onAiAdd={(rowId) => put((s) => ({ ...s, aiAdd: uniq([...(s.aiAdd || []), rowId]).slice(-20), aiHide: (s.aiHide || []).filter((x) => x !== rowId) }))}
-            onArrive={(d, t) => put((s) => ({ ...s, arriveDate: d || null, arriveTime: d ? t || null : null }))} />
+            onArrive={(d) => put((s) => ({ ...s, arriveDate: d || null, arriveTime: null }))} />
         );
       })}
 
@@ -437,7 +432,7 @@ function BriefOverview({ brief }: { brief: BriefFull }) {
 function StopSection({ stop, index, onRemove, onAddPick, onMove, onResuggest, onAi, onAiAdd, onArrive, busy }: {
   stop: BriefStopFull; index: number; busy: boolean;
   onRemove: (spot: SpotWithStats) => void; onAddPick: (id: number) => void; onMove: (keys: number[], id: number, dir: -1 | 1) => void; onResuggest: () => void; onAi: (on: boolean) => void;
-  onAiAdd: (rowId: number) => void; onArrive?: (date: string, time: string) => void;
+  onAiAdd: (rowId: number) => void; onArrive?: (date: string) => void;
 }) {
   const trip = useTrip();
   const { pins, numbered } = useMemo(() => stopPins(stop), [stop]);
@@ -469,7 +464,7 @@ function StopSection({ stop, index, onRemove, onAddPick, onMove, onResuggest, on
       {plan && <p className="text-[11px] text-muted-foreground">{plan.note}</p>}
       {trip && onArrive && (
         <div className="rounded-2xl border border-card-border bg-card p-3" data-testid={`stop-when-${index}`}>
-          <ArriveInputs i={index} compact date={stop.arriveDate || ""} time={stop.arriveTime || ""} onChange={onArrive} />
+          <ArriveInputs i={index} compact date={stop.arriveDate || ""} onChange={onArrive} />
           <Link href={crewUpHref(stop)} className="mt-2.5 flex h-10 w-full items-center justify-center gap-1.5 rounded-full border border-border text-sm font-semibold hover-elevate" data-testid={`link-stop-crewup-${index}`}>
             <Users className="h-4 w-4" />Crew Up at {stop.icao}{stop.arriveDate ? `, ${fmtArrive(stop)}` : ""}
           </Link>

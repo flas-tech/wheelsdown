@@ -2,6 +2,12 @@
 export type Release = { date: string; sha?: string; title: string; notes: string[] };
 
 export const RELEASES: Release[] = [
+  { date: "2026-10-21", title: "Admin preview, round 2 from admin feedback: Home is Layover today, Plan tab, date only, Crew order", notes: [
+    "Tabs are now Home, Plan, Spots, Crew. Home is Layover today (/today): it opens on the field you're at (typed code, then a check-in, then your location if the site already has permission, then a brief stop dated today, then your newest brief). New Use my location button next to the airport box. No brief needed.",
+    "The trip hub with the big Your next layover card and 4-step checklist is gone. Plan (/plan) is the plan-your-layover page: Plan a layover, Coming up (on now, then by landing date, then undated stops in the order you planned them) with a Crew Up button per stop, a trip to rate, and At the field now. /home and /start go to /today.",
+    "Briefing stops take a landing date only (no time). Crew Up from a stop fills in the airport, Later, the date and hours; the time stays 7 PM to edit.",
+    "Crew sub-tabs in order: My Crew, Crew Up, Ranks, Lounge. The Crew tab opens My Crew.",
+  ] },
   { date: "2026-10-21", title: "Admin preview: Home and four tabs, briefing dates, Crew Up from a brief, AI-added listings", notes: [
     "Behind a new switch, app_settings trip_audience (admins until opened from Settings > Home and four tabs). /api/features returns trip. Members see nothing new until it's opened.",
     "One bottom bar on every page: Home, Briefs, Spots, Crew. Switch is renamed Home (/home, the trip hub); /start goes to /home. Logbook is off the bar; its red dot moved to the points pill in the header. Spots has sub-tabs Search, Map, Favorites, Rate and an Add button. Crew has Crew Up, My Crew, Lounge, Ranks; its dot combines crew requests and new Crew Up plans.",
