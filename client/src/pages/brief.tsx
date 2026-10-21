@@ -5,7 +5,7 @@ import {
   ArrowLeft, ChevronRight, ClipboardList, FileDown, Link2, Loader2, MapPin, Plus, RefreshCw, Share2, Trash2, X, Plane, Lightbulb, Heart, Sparkles, Users, ExternalLink,
   ChevronUp, ChevronDown, Utensils, Compass, BedDouble, CheckCircle2, Eye } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
-import { matchesFocus, focusLabel } from "@shared/focus";
+import { matchesFocus, focusLabel, focusCategory } from "@shared/focus";
 import { CUISINES } from "@shared/cuisine";
 import { ACTIVITIES } from "@shared/activities";
 import { LAYOVERS, type LayoverId, type SpotWithStats } from "@shared/schema";
@@ -37,7 +37,7 @@ const appUrl = () => `${window.location.origin}${window.location.pathname}`;
 const toInput = (b: BriefFull): StopInput[] => b.stops.map((s) => ({ icao: s.icao, layover: s.layover as LayoverId, nights: s.nights, picks: s.picks.map((p) => p.id), ...(s.ai != null ? { ai: s.ai } : {}), ...(s.aiAdd?.length ? { aiAdd: s.aiAdd } : {}), ...(s.aiHide?.length ? { aiHide: s.aiHide } : {}), ...(s.order?.length ? { order: s.order } : {}), ...(s.arriveDate ? { arriveDate: s.arriveDate, arriveTime: s.arriveTime || null } : {}) }));
 
 /** Refetch every few seconds while AI picks are still being found for a stop (they take about a minute). */
-const aiPolling = (q: { state: { data?: BriefFull } }) => (q.state.data?.stops.some((s) => s.aiStatus === "pending" || s.aiMoreStatus === "pending") ? 5000 : false);
+const aiPolling = (q: { state: { data?: BriefFull } }) => (q.state.data?.stops.some((s) => s.aiStatus === "pending" || s.aiMoreStatus === "pending") ? 2500 : false);
 
 // ---------------- delete (two taps, no browser pop-up) ----------------
 function useDeleteBriefing(onDone?: () => void) {
@@ -510,6 +510,21 @@ function StopSection({ stop, index, onRemove, onAddPick, onMove, onReorder, onRe
   const others = (stop.candidates || []).filter((c) => !picked.has(c.id));
   const plan = LAYOVER_PLAN[stop.layover as LayoverId];
   const unmapped = numbered.filter((n) => !n.mapped).length;
+  // four-tab preview: an AI search in progress, so new finds can pop in where you asked (and a toast when it's done)
+  const [search, setSearch] = useState<AiSearch | null>(null);
+  const [openReq, setOpenReq] = useState<{ kind: MoreKind; n: number } | null>(null);
+  const { toast } = useToast();
+  const startSearch = (cat: string) => setSearch({ cat, before: new Set((stop.aiMore || []).map((m) => m.id)), t0: Date.now(), done: false });
+  const wasPending = useRef(false);
+  useEffect(() => {
+    const p = stop.aiMoreStatus === "pending";
+    if (wasPending.current && !p && search && !search.done) {
+      const n = newFinds(stop, search).length;
+      setSearch({ ...search, done: true });
+      toast({ title: n ? `AI found ${n} new place${n === 1 ? "" : "s"} at ${stop.icao}` : `Nothing new at ${stop.icao} this time`, description: n ? "They're in the box you asked from. Tap + to add one." : "Try a different type, or add a place you know." });
+    }
+    wasPending.current = p;
+  }, [stop.aiMoreStatus]); // eslint-disable-line
 
   return (
     <section className="space-y-3" data-testid={`section-stop-${index}`}>
@@ -549,7 +564,8 @@ function StopSection({ stop, index, onRemove, onAddPick, onMove, onReorder, onRe
       )}
 
       {numbered.some((x) => looksAi(x.spot)) && <PickLegend />}
-      {trip ? <GroupedPicks numbered={numbered} favs={favs} busy={busy} onRemove={onRemove} onReorder={onReorder} index={index} stop={stop} onAiAdd={onAiAdd} /> : (
+      {trip ? <GroupedPicks numbered={numbered} favs={favs} busy={busy} onRemove={onRemove} onReorder={onReorder} index={index} stop={stop} onAiAdd={onAiAdd}
+        others={others} search={search} onSearch={startSearch} onClearSearch={() => setSearch(null)} onBrowse={(k) => setOpenReq({ kind: k, n: Date.now() })} /> : (
       <ol className="space-y-2">
         {numbered.map(({ n, spot }) => <PickRow key={spot.id} n={n} spot={spot} count={numbered.length}
           favorite={favs.has(spot.id)} onRemove={() => onRemove(spot)} busy={busy}
@@ -557,7 +573,7 @@ function StopSection({ stop, index, onRemove, onAddPick, onMove, onReorder, onRe
       </ol>)}
 
       {/* one way to add anything: crew listings first, then AI picks, by type, with a way to ask AI for more */}
-      <AddPlaces stop={stop} index={index} others={others} onAddCrew={onAddPick} onAddAi={onAiAdd} busy={busy} />
+      <AddPlaces stop={stop} index={index} others={others} onAddCrew={onAddPick} onAddAi={onAiAdd} busy={busy} openReq={openReq} search={search} onSearch={startSearch} />
 
       {trip && !!plans?.length && (
         <div className="space-y-1.5" data-testid={`stop-crewplans-${index}`}>
@@ -586,9 +602,54 @@ function StopSection({ stop, index, onRemove, onAddPick, onMove, onReorder, onRe
   );
 }
 
+/** An AI search the member started on this stop: which box (category, or "any"), what was there before, when. */
+type AiSearch = { cat: string; before: Set<number>; t0: number; done: boolean };
+const newFinds = (stop: BriefStopFull, q: AiSearch) => {
+  const shown = new Set([...(stop.picks || []), ...(stop.aiPicks || [])].map((x) => x.id));
+  return (stop.aiMore || []).filter((m) => !q.before.has(m.id) && !shown.has(m.id) && (q.cat === "any" || m.category === q.cat));
+};
+
+function AiFindRow({ m, busy, onAdd, testId, fresh }: { m: AiPick; busy: boolean; onAdd: () => void; testId?: string; fresh?: boolean }) {
+  const checking = !!(m as any).ai?.draft;
+  return (
+    <div className={cn("flex items-center gap-2", fresh && "wd-pop")} data-testid={testId}>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5"><span className="truncate text-xs font-semibold">{m.name}</span>
+          {fresh && <span className="shrink-0 rounded-full bg-violet-600 px-1.5 text-[9px] font-bold uppercase tracking-wide text-white">{checking ? "Checking" : "New"}</span>}</span>
+        <span className="block truncate text-[11px] text-muted-foreground">{[m.milesFromField != null ? `${m.milesFromField} mi` : "", m.description || ""].filter(Boolean).join(" · ")}</span>
+      </span>
+      <button type="button" onClick={onAdd} disabled={busy} aria-label={`Add ${m.name}`} className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border hover-elevate disabled:opacity-50" data-testid={testId ? `${testId}-add` : undefined}><Plus className="h-4 w-4" /></button>
+    </div>
+  );
+}
+
+/** Live AI search: what it's doing right now, and each place popping in as it's found. */
+function AiSearchLive({ stop, search, label, busy, onAiAdd, onClose, testId }: { stop: BriefStopFull; search: AiSearch; label: string; busy: boolean; onAiAdd: (rowId: number) => void; onClose?: () => void; testId?: string }) {
+  const [, tick] = useState(0);
+  useEffect(() => { if (search.done) return; const t = setInterval(() => tick((n) => n + 1), 1000); return () => clearInterval(t); }, [search.done]);
+  const fresh = newFinds(stop, search);
+  const secs = Math.round((Date.now() - search.t0) / 1000);
+  const step = search.done ? (fresh.length ? `Found ${fresh.length} new ${fresh.length === 1 ? "place" : "places"}. Tap + to add.` : "Nothing new this time. Try another type.")
+    : !fresh.length ? (secs < 8 ? `Looking up ${label.toLowerCase()} on the map near ${stop.icao}…` : `Still looking near ${stop.icao}…`)
+    : `Found ${fresh.length} so far. AI is checking hours and reviews…`;
+  return (
+    <div className="space-y-1.5" data-testid={testId} aria-live="polite">
+      <div className="flex items-center gap-2">
+        {search.done ? <Sparkles className="h-3.5 w-3.5 shrink-0 text-violet-600" /> : <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-violet-600" />}
+        <p className="min-w-0 flex-1 text-[11px] font-semibold text-violet-700 dark:text-violet-300" data-testid={testId ? `${testId}-step` : undefined}>{step}</p>
+        {!search.done && <span className="font-code text-[10px] text-muted-foreground">{secs}s</span>}
+        {search.done && onClose && <button type="button" onClick={onClose} aria-label="Close" className="grid h-6 w-6 place-items-center rounded-full text-muted-foreground hover-elevate"><X className="h-3.5 w-3.5" /></button>}
+      </div>
+      {!search.done && <div className="h-1 overflow-hidden rounded-full bg-violet-100 dark:bg-violet-950"><div className="wd-scan h-full w-1/3 rounded-full bg-violet-500" /></div>}
+      {fresh.map((m) => <AiFindRow key={m.id} m={m} busy={busy} fresh onAdd={() => onAiAdd(-m.id)} testId={testId ? `${testId}-find-${m.id}` : undefined} />)}
+    </div>
+  );
+}
+
 /** Four-tab preview: one box per type (hotels, eat, do, FBO); crew picks first, then AI picks. Up/Down stay inside their box. */
-function GroupedPicks({ numbered, favs, busy, onRemove, onReorder, index, stop, onAiAdd }: {
-  stop: BriefStopFull; onAiAdd: (rowId: number) => void;
+function GroupedPicks({ numbered, favs, busy, onRemove, onReorder, index, stop, onAiAdd, others, search, onSearch, onClearSearch, onBrowse }: {
+  stop: BriefStopFull; onAiAdd: (rowId: number) => void; others: SpotWithStats[];
+  search: AiSearch | null; onSearch: (cat: string) => void; onClearSearch: () => void; onBrowse: (k: MoreKind) => void;
   numbered: ReturnType<typeof stopPins>["numbered"]; favs: Set<number>; busy: boolean; index: number;
   onRemove: (spot: SpotWithStats) => void; onReorder?: (order: number[]) => void;
 }) {
@@ -627,21 +688,22 @@ function GroupedPicks({ numbered, favs, busy, onRemove, onReorder, index, stop, 
             )}
             {!g.items.length && <p className="px-1 text-xs text-muted-foreground">No picks here yet.</p>}
             {aiOn && g.k !== "fbo" && g.k !== "other" && (() => {
-              const extra = more.filter((m) => m.category === g.k).slice(0, 3);
+              const live = search && search.cat === g.k ? search : null;
+              const fresh = live ? newFinds(stop, live) : [];
+              const extra = more.filter((m) => m.category === g.k && !fresh.some((f) => f.id === m.id)).slice(0, live ? 0 : 3);
+              const hiddenN = others.filter((c) => c.category === g.k).length + Math.max(0, more.filter((m) => m.category === g.k).length - extra.length - fresh.length);
               return (
                 <div className="space-y-1.5 rounded-xl border border-dashed border-violet-400/60 bg-card p-2.5" data-testid={`group-${g.k}-askai-${index}`}>
-                  <p className="text-[11px] font-semibold text-muted-foreground">{g.items.length ? "Don't like what you see?" : "Nothing here yet?"}</p>
-                  {extra.map((m) => (
-                    <div key={m.id} className="flex items-center gap-2" data-testid={`group-${g.k}-aimore-${m.id}`}>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-xs font-semibold">{m.name}</span>
-                        <span className="block truncate text-[11px] text-muted-foreground">{[m.milesFromField != null ? `${m.milesFromField} mi` : "", m.description || ""].filter(Boolean).join(" · ")}</span>
-                      </span>
-                      <button type="button" onClick={() => onAiAdd(-m.id)} disabled={busy} aria-label={`Add ${m.name}`} className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border hover-elevate disabled:opacity-50" data-testid={`button-group-aiadd-${m.id}`}><Plus className="h-4 w-4" /></button>
-                    </div>
-                  ))}
-                  {stop.aiMoreStatus === "full" ? <p className="text-[11px] text-muted-foreground">AI has found all it keeps for {stop.icao}. Try Add places below.</p>
-                    : <FindMore icao={stop.icao} pending={stop.aiMoreStatus === "pending"} fixed={g.k} compact testId={`find-more-${g.k}-${index}`} />}
+                  {live ? <AiSearchLive stop={stop} search={live} label={g.label} busy={busy} onAiAdd={onAiAdd} onClose={onClearSearch} testId={`live-${g.k}-${index}`} />
+                    : <p className="text-[11px] font-semibold text-muted-foreground">{g.items.length ? "Don't like what you see?" : "Nothing here yet?"}</p>}
+                  {extra.map((m) => <AiFindRow key={m.id} m={m} busy={busy} onAdd={() => onAiAdd(-m.id)} testId={`group-${g.k}-aimore-${m.id}`} />)}
+                  {stop.aiMoreStatus === "full" ? <p className="text-[11px] text-muted-foreground">AI has found all it keeps for {stop.icao}.</p>
+                    : !(live && !live.done) && <FindMore icao={stop.icao} pending={stop.aiMoreStatus === "pending"} fixed={g.k} compact onDone={() => onSearch(g.k)} testId={`find-more-${g.k}-${index}`} />}
+                  {hiddenN > 0 && (
+                    <button type="button" onClick={() => onBrowse(g.k as MoreKind)} className="flex w-full items-center justify-between gap-2 rounded-lg bg-muted/60 px-2.5 py-2 text-left text-xs font-semibold hover-elevate" data-testid={`button-group-browse-${g.k}-${index}`}>
+                      <span>See {hiddenN} more {g.k === "stay" ? "hotels" : g.k === "eat" ? "places to eat" : "things to do"} at {stop.icao}</span><ChevronRight className="h-4 w-4 shrink-0" />
+                    </button>
+                  )}
                 </div>
               );
             })()}
@@ -836,10 +898,18 @@ const miles = (s: SpotWithStats) => s.milesFromField ?? 99;
  * Add places: one panel for everything. Choose what you're after, then crew listings come first (vetted and best rated
  * on top), then AI picks. Tap + to add either. Ask AI for more of the chosen type at the bottom.
  */
-function AddPlaces({ stop, index, others, onAddCrew, onAddAi, busy }: { stop: BriefStopFull; index: number; others: SpotWithStats[]; onAddCrew: (id: number) => void; onAddAi: (rowId: number) => void; busy: boolean }) {
+function AddPlaces({ stop, index, others, onAddCrew, onAddAi, busy, openReq, search, onSearch }: { stop: BriefStopFull; index: number; others: SpotWithStats[]; onAddCrew: (id: number) => void; onAddAi: (rowId: number) => void; busy: boolean;
+  openReq?: { kind: MoreKind; n: number } | null; search?: AiSearch | null; onSearch?: (cat: string) => void }) {
   const trip = useTrip();
   const [open, setOpen] = useState(false);
   const [kind, setKind] = useState<MoreKind>("");
+  const boxRef = useRef<HTMLDivElement>(null);
+  // "See N more" in a category box opens this on that type
+  useEffect(() => {
+    if (!openReq) return;
+    setOpen(true); setKind(openReq.kind);
+    setTimeout(() => boxRef.current?.scrollIntoView({ block: "start", behavior: "smooth" }), 50);
+  }, [openReq?.n]); // eslint-disable-line
   const [sub, setSub] = useState("");
   const [sort, setSort] = useState<MoreSort>("best");
   const [asMap, setAsMap] = useState(false); // List or Map (crew feedback #56)
@@ -899,10 +969,10 @@ function AddPlaces({ stop, index, others, onAddCrew, onAddAi, busy }: { stop: Br
     <p className={cn("flex items-center gap-1.5 bg-muted/50 px-3.5 py-1.5 text-[11px] font-semibold", tone)} data-testid={testId}><Icon className="h-3.5 w-3.5" />{label}<span className="font-code opacity-70">{n}</span></p>
   );
   return (
-    <div data-testid={`section-pick-more-${index}`}>
+    <div ref={boxRef} className="scroll-mt-20" data-testid={`section-pick-more-${index}`}>
       <button type="button" onClick={() => setOpen(!open)} aria-expanded={open}
         className={cn("inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-full border text-sm font-semibold hover-elevate", open ? "border-foreground/30 bg-muted" : "border-border")} data-testid={`button-pick-more-${index}`}>
-        {open ? <><CheckCircle2 className="h-4 w-4" />Done adding</> : <><Plus className="h-4 w-4" />Add places at {stop.icao}{total ? <span className="ml-1 font-code text-xs text-muted-foreground">· {total}</span> : null}</>}
+        {open ? <><CheckCircle2 className="h-4 w-4" />Done adding</> : trip && total ? <><Plus className="h-4 w-4" />{total} more places at {stop.icao}</> : <><Plus className="h-4 w-4" />Add places at {stop.icao}{total ? <span className="ml-1 font-code text-xs text-muted-foreground">· {total}</span> : null}</>}
       </button>
       {open && (
         <div className="mt-2 rounded-2xl border border-card-border bg-card overflow-hidden">
@@ -983,7 +1053,8 @@ function AddPlaces({ stop, index, others, onAddCrew, onAddAi, busy }: { stop: Br
               <p className="min-w-0 flex-1 basis-40 text-[11px] text-muted-foreground">
                 {pending ? "Finding more places, usually under a minute." : stop.aiMoreStatus === "failed" ? "AI didn't find anything new last time." : stop.aiMoreStatus === "full" ? `That's every place AI keeps for ${stop.icao}.` : focus ? `Want more ${focusLabel(focus).toLowerCase()}?` : "Choose Food, Things to do, Hotels or Surprise me to ask AI for more."}
               </p>
-              {focus && stop.aiMoreStatus !== "full" && <FindMore icao={stop.icao} pending={pending} fixed={focus} testId={`find-more-${index}`} />}
+              {trip && search && search.cat === (focusCategory(focus) || "any") && <AiSearchLive stop={stop} search={search} label="places" busy={busy} onAiAdd={onAddAi} testId={`live-more-${index}`} />}
+              {focus && stop.aiMoreStatus !== "full" && <FindMore icao={stop.icao} pending={pending} fixed={focus} onDone={() => onSearch?.(focusCategory(focus) || "any")} testId={`find-more-${index}`} />}
             </div>
           )}
         </div>

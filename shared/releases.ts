@@ -2,6 +2,11 @@
 export type Release = { date: string; sha?: string; title: string; notes: string[] };
 
 export const RELEASES: Release[] = [
+  { date: "2026-10-21", title: "Admin preview, round 5: AI search you can watch, and the more places aren't hidden", notes: [
+    "Ask AI from a category box (or Add places) and that box shows the search live: a moving bar, what it's doing (looking on the map, then AI checking hours and reviews), a seconds counter, and each place popping in marked Checking, then New, with + to add. A toast says how many it found (or that nothing new turned up). The trip sheet checks every 2.5 s while AI works (was 5 s).",
+    "Each category box has See N more hotels / places to eat / things to do at X, which opens Add places on that type and scrolls to it, and the Add places button says how many more places there are (N more places at X).",
+    "Rollback: redeploy 085be8d.",
+  ] },
   { date: "2026-10-21", title: "Admin preview, round 4: nearest airport, easier delete, Re-pick that changes things, ask AI per type", notes: [
     "Home always opens on the nearest airport: it asks for your location if the phone hasn't decided, waits up to 8 s, and only falls back to your last airport if location is off. Crew plans at that airport (yours and ones crew picked you for, any date) show on Home, and Coming up moved to the bottom of Home, one tile per trip sheet with all its cities; today's stop says Today.",
     "Plan (Trip sheets): Coming up is gone from here. Your trip sheets come right after New trip sheet, each tile lists every stop with airport, city and date, then Crew plans. Delete: tap the trash, the tile becomes Delete / Keep it and waits for you (it used to vanish after 6 s). Deleting also refreshes Home.",

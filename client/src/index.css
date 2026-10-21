@@ -369,3 +369,11 @@ input[type="date"], input[type="time"] {
 }
 input[type="date"]::-webkit-date-and-time-value, input[type="time"]::-webkit-date-and-time-value { text-align: center; margin: 0; }
 input[type="date"]::-webkit-calendar-picker-indicator, input[type="time"]::-webkit-calendar-picker-indicator { margin-left: 0; }
+
+/* AI search: each find pops in, and a bar sweeps while it works (so it never looks stuck) */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes wd-pop { from { opacity: 0; transform: translateY(6px) scale(0.98); } to { opacity: 1; transform: none; } }
+  .wd-pop { animation: wd-pop 320ms ease-out both; }
+  @keyframes wd-scan { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+  .wd-scan { animation: wd-scan 1.4s ease-in-out infinite; }
+}
