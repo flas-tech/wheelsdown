@@ -24,6 +24,12 @@ export default function MeetupPage() { return <PreviewGate><MeetupBoard /></Prev
 const refresh = () => queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith("/api/preview/") });
 
 const SOON = 5 * 60_000;
+/** Airport-local time now, rounded up to the next 15 minutes ("HH:MM"), and the date that lands on. */
+export const nowSlot = (tz: string | null) => {
+  const t = Math.ceil(Date.now() / 900_000) * 900_000;
+  const hm = new Intl.DateTimeFormat("en-GB", { timeZone: tz || undefined, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(t);
+  return { time: hm, date: new Intl.DateTimeFormat("en-CA", { timeZone: tz || undefined, year: "numeric", month: "2-digit", day: "2-digit" }).format(t) };
+};
 const localDate = (tz: string | null, t = Date.now()) => new Intl.DateTimeFormat("en-CA", { timeZone: tz || undefined, year: "numeric", month: "2-digit", day: "2-digit" }).format(t);
 const fmtStart = (m: { startsAt: number; tz: string | null }) => new Intl.DateTimeFormat(undefined, { timeZone: m.tz || undefined, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(m.startsAt);
 const upcoming = (m: Meetup) => m.startsAt > Date.now() + SOON;
@@ -172,9 +178,10 @@ function Compose({ d, pre, onPosted }: { d: MeetupResp; pre?: { date: string | n
   const localHour = Number(new Intl.DateTimeFormat("en-US", { timeZone: d.tz || undefined, hour: "numeric", hourCycle: "h23" }).format(Date.now())) % 24;
   const preDate = pre?.date && pre.date >= today ? pre.date : null; // a stop's arrival date, if it's still ahead
   const [later, setLater] = useState(!!preDate && (preDate > today || !!pre?.time));
-  const [date, setDate] = useState(() => preDate || (localHour >= 18 ? localDate(d.tz, Date.now() + 86400_000) : today));
-  const [time, setTime] = useState(pre?.time && preDate ? pre.time : "19:00");
   const trip = useTrip();
+  // four-tab preview: date and time start at now (airport local), or the stop's date at the current time
+  const [date, setDate] = useState(() => preDate || (trip ? nowSlot(d.tz).date : localHour >= 18 ? localDate(d.tz, Date.now() + 86400_000) : today));
+  const [time, setTime] = useState(pre?.time && preDate ? pre.time : trip ? nowSlot(d.tz).time : "19:00");
   const [pickAll, setPickAll] = useState(!trip); // four-tab preview: always pick who sees it (Select all is there)
   const [picked, setPicked] = useState<number[]>([]);
   const toggle = (id: number) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
@@ -311,6 +318,15 @@ function Compose({ d, pre, onPosted }: { d: MeetupResp; pre?: { date: string | n
 
 function Posted({ mine }: { mine: Meetup }) {
   const { toast } = useToast();
+  const trip = useTrip();
+  const [editing, setEditing] = useState(false);
+  const cur = mine.startsAt > Date.now() ? { date: localDate(mine.tz, mine.startsAt), time: new Intl.DateTimeFormat("en-GB", { timeZone: mine.tz || undefined, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(mine.startsAt) } : nowSlot(mine.tz);
+  const [nd, setNd] = useState(cur.date), [nt, setNt] = useState(cur.time);
+  const move = useMutation({
+    mutationFn: async () => (await apiRequest("PATCH", `/api/preview/meetups/${mine.id}`, { startDate: nd, startTime: nt })).json(),
+    onSuccess: () => { toast({ title: "Plan updated", description: "Crew see the new date and time." }); setEditing(false); void refresh(); },
+    onError: (e) => toast({ title: "Couldn't change it", description: errMsg(e), variant: "destructive" }),
+  });
   const end = useMutation({
     mutationFn: async () => (await apiRequest("DELETE", `/api/preview/meetups/${mine.id}`)).json(),
     onSuccess: () => { toast({ title: "Ended", description: "You're no longer listed there." }); void refresh(); },
@@ -331,6 +347,24 @@ function Posted({ mine }: { mine: Meetup }) {
           <ul className="mt-1.5 space-y-1.5" data-testid="list-meetup-attendees">{mine.attendees.map((p) => <li key={p.id}><Person p={p} /></li>)}</ul>
         ) : <p className="mt-1 text-sm text-muted-foreground">No one yet. Crew who tap I'm in show up here.</p>}
       </div>
+      {trip && editing && (
+        <div className="mt-3 space-y-2 rounded-xl border border-border p-3" data-testid={`edit-meetup-when-${mine.id}`}>
+          <p className="text-xs font-medium text-muted-foreground">New date and time (local at {mine.icao})</p>
+          <div className="grid grid-cols-2 gap-2">
+            <input type="date" value={nd} min={localDate(mine.tz)} max={localDate(mine.tz, Date.now() + MEETUP_RULES.maxDaysAhead * 86400_000)} onChange={(e) => setNd(e.target.value)} className="h-11 w-full min-w-0 rounded-xl border border-input bg-background px-2 text-base" data-testid={`input-meetup-edit-date-${mine.id}`} />
+            <input type="time" value={nt} onChange={(e) => setNt(e.target.value)} className="h-11 w-full min-w-0 rounded-xl border border-input bg-background px-2 text-base" data-testid={`input-meetup-edit-time-${mine.id}`} />
+          </div>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => move.mutate()} disabled={move.isPending || !nd || !nt} className="h-9 flex-1 rounded-full taxi-sign text-xs font-semibold disabled:opacity-50" data-testid={`button-meetup-edit-save-${mine.id}`}>{move.isPending ? "Saving…" : "Save"}</button>
+            <button type="button" onClick={() => setEditing(false)} className="h-9 rounded-full border border-border px-4 text-xs font-semibold">Cancel</button>
+          </div>
+        </div>
+      )}
+      {trip && !editing && (
+        <button type="button" onClick={() => { setNd(cur.date); setNt(cur.time); setEditing(true); }} className="mt-3 mr-2 inline-flex h-9 items-center gap-1.5 rounded-full border border-border px-3.5 text-xs font-semibold hover-elevate" data-testid={`button-meetup-edit-${mine.id}`}>
+          <CalendarClock className="h-3.5 w-3.5" />{mine.startsAt > Date.now() + SOON ? "Change date or time" : "Add a date"}
+        </button>
+      )}
       <button type="button" onClick={() => end.mutate()} disabled={end.isPending} className="mt-3 inline-flex h-9 items-center gap-1.5 rounded-full border border-border px-3.5 text-xs font-semibold hover-elevate" data-testid={`button-meetup-end-${mine.id}`}><LogOut className="h-3.5 w-3.5" />{upcoming(mine) ? "Cancel it" : "End it"}</button>
     </section>
   );

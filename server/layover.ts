@@ -465,6 +465,25 @@ export function registerLayover(app: Express, o: { userOf: (req: Request) => Pro
     const list = myCrew.length ? (await rows(sql`SELECT created_at, viewer_ids FROM meetups WHERE status = 'live' AND expires_at > ${now} AND user_id IN (${sql.join(myCrew.map((i) => sql`${i}`), sql`, `)})`)).filter((r) => meetupVisibleTo(r, u.id)) : [];
     res.set("Cache-Control", "no-store").json({ latest: list.reduce((m, r) => Math.max(m, num(r.created_at)), 0), count: list.length });
   });
+  /** Change when your plan is (or give a Now plan a date). It keeps how long it runs; people who are in stay in. */
+  app.patch("/api/preview/meetups/:id", gate, writeLimit, async (req, res) => {
+    const u = me(req);
+    const p = z.object({ startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), startTime: z.string().regex(/^\d{2}:\d{2}$/) }).safeParse(req.body);
+    if (!p.success) return res.status(400).json({ message: "Pick a date and time." });
+    const now = Date.now();
+    const m = (await rows(sql`SELECT * FROM meetups WHERE id = ${Number(req.params.id)} AND user_id = ${u.id} AND status = 'live' AND expires_at > ${now}`))[0];
+    if (!m) return res.status(404).json({ message: "That plan has ended." });
+    const ap = await storage.resolveCode(String(m.icao)) || (refAirport(String(m.icao)) as any);
+    const tz = (ap && tzOf(ap.lat, ap.lon)) || "UTC";
+    const [y, mo, d] = p.data.startDate.split("-").map(Number), [h, mi] = p.data.startTime.split(":").map(Number);
+    const t = zonedToUtc(tz, y, mo, d, h, mi);
+    if (!Number.isFinite(t)) return res.status(400).json({ message: "Check the date and time." });
+    if (t < now - 30 * 60_000) return res.status(400).json({ message: "That time has already passed. Pick a later one." });
+    if (t > now + MEETUP_RULES.maxDaysAhead * DAY) return res.status(400).json({ message: `Plans can start up to ${MEETUP_RULES.maxDaysAhead} days ahead.` });
+    const start = Math.max(now, t), len = Math.max(HOUR, num(m.expires_at) - meetupStart(m));
+    await db().execute(sql`UPDATE meetups SET starts_at = ${start}, expires_at = ${start + len} WHERE id = ${num(m.id)}`);
+    res.json({ ok: true, startsAt: start });
+  });
   app.delete("/api/preview/meetups/:id", gate, async (req, res) => {
     const u = me(req);
     await db().execute(sql`UPDATE meetups SET status = 'ended' WHERE id = ${Number(req.params.id)} AND user_id = ${u.id}`);

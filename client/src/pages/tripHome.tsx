@@ -5,7 +5,7 @@
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
-import { CalendarPlus, ChevronRight, Loader2, Star, Users } from "lucide-react";
+import { CalendarPlus, ChevronRight, Star, Users } from "lucide-react";
 import type { Meetup } from "@shared/layover";
 import { useTripState } from "@/lib/experience";
 import { fmtArrive, type TripResp } from "@/lib/tripNav";
@@ -47,11 +47,10 @@ export function CrewPlanRows({ plans, onDate, testId }: { plans: Meetup[]; onDat
   );
 }
 
-/** Top of Trip sheets: new trip sheet, Coming up (on now, then by date, then undated in the order you added them), crew plans, a trip to rate. */
+/** Top of Trip sheets: new trip sheet and a trip to rate. Your trip sheets follow, then Crew plans. */
 export function TripSheetTop() {
   const { on, adminOnly } = useTripState();
-  const { data, isLoading } = useQuery<TripResp>({ queryKey: ["/api/preview/trip"], enabled: on, staleTime: 30_000, retry: false });
-  const { data: cp } = useQuery<{ plans: Meetup[] }>({ queryKey: ["/api/preview/crewup-all"], enabled: on, staleTime: 30_000, retry: false });
+  const { data } = useQuery<TripResp>({ queryKey: ["/api/preview/trip"], enabled: on, staleTime: 30_000, retry: false });
   if (!on) return null;
   return (
     <div className="space-y-5" data-testid="page-plan">
@@ -59,36 +58,6 @@ export function TripSheetTop() {
       <Link href="/brief/new" className="flex h-12 w-full items-center justify-center gap-2 rounded-full taxi-sign text-base font-semibold hover-elevate" data-testid="button-plan-new">
         <CalendarPlus className="h-5 w-5" />New trip sheet
       </Link>
-
-      <section className="space-y-2" data-testid="section-plan-coming">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Coming up</h2>
-        {isLoading ? <div className="grid place-items-center py-6 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /></div>
-          : !data?.coming.length ? <p className="rounded-2xl border border-dashed border-border bg-card p-4 text-sm text-muted-foreground" data-testid="text-plan-none">Nothing coming up. Start a trip sheet and its stops show here.</p>
-          : (
-            <ul className="space-y-2">
-              {data.coming.map((s) => (
-                <li key={`${s.briefId}-${s.stopIndex}`}>
-                  <Link href={`/brief/${s.briefId}`} className="flex min-w-0 items-center gap-3 rounded-xl border border-border bg-card px-3 py-2.5 hover-elevate" data-testid={`link-plan-stop-${s.icao}`}>
-                    <span className="font-code text-sm font-bold">{s.icao}</span>
-                    <span className="min-w-0 flex-1">
-                      <span className={cn("block truncate text-xs font-medium", s.when === "now" && "text-primary")}>{s.when === "now" ? "On this trip" : s.arriveDate ? fmtArrive(s) : "No date"}</span>
-                      <span className="block truncate text-[11px] text-muted-foreground">{s.place}{s.title ? ` · ${s.title}` : ""}</span>
-                    </span>
-                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-      </section>
-
-      {!!cp?.plans.length && (
-        <section className="space-y-2" data-testid="section-plan-crewplans">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Crew plans</h2>
-          <CrewPlanRows plans={cp.plans.slice(0, 4)} />
-          {cp.plans.length > 4 && <Link href="/meetup?tab=plans" className="block text-center text-xs font-semibold underline underline-offset-2" data-testid="link-plan-crewplans-all">All {cp.plans.length} plans in Crew Up</Link>}
-        </section>
-      )}
 
       {data?.rate && (
         <Link href="/rate" className="flex items-center gap-3 rounded-2xl border border-primary/50 bg-primary/5 p-4 hover-elevate" data-testid="card-plan-rate">
@@ -101,5 +70,57 @@ export function TripSheetTop() {
         </Link>
       )}
     </div>
+  );
+}
+
+/** Under your trip sheets: Crew Up plans you can see (yours and the ones crew picked you for). */
+export function CrewPlansSection() {
+  const { on } = useTripState();
+  const { data: cp } = useQuery<{ plans: Meetup[] }>({ queryKey: ["/api/preview/crewup-all"], enabled: on, staleTime: 30_000, retry: false });
+  if (!on || !cp?.plans.length) return null;
+  return (
+    <section className="space-y-2" data-testid="section-plan-crewplans">
+      <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Crew plans</h2>
+      <CrewPlanRows plans={cp.plans.slice(0, 4)} />
+      {cp.plans.length > 4 && <Link href="/meetup?tab=plans" className="block text-center text-xs font-semibold underline underline-offset-2" data-testid="link-plan-crewplans-all">All {cp.plans.length} plans in Crew Up</Link>}
+    </section>
+  );
+}
+
+/** Bottom of Home: each trip sheet still ahead, with all its cities. Tapping one opens the trip sheet. */
+export function ComingUpTrips() {
+  const { on } = useTripState();
+  const { data } = useQuery<TripResp>({ queryKey: ["/api/preview/trip"], enabled: on, staleTime: 30_000, retry: false });
+  if (!on || !data?.coming.length) return null;
+  const sheets: { id: number; title: string; stops: TripResp["coming"] }[] = [];
+  for (const s of data.coming) {
+    let g = sheets.find((x) => x.id === s.briefId);
+    if (!g) sheets.push((g = { id: s.briefId, title: s.title, stops: [] }));
+    g.stops.push(s);
+  }
+  for (const g of sheets) g.stops.sort((a, b) => a.stopIndex - b.stopIndex);
+  return (
+    <section className="space-y-2" data-testid="section-home-coming">
+      <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Coming up</h2>
+      <ul className="space-y-2">
+        {sheets.map((g) => (
+          <li key={g.id}>
+            <Link href={`/brief/${g.id}`} className="flex items-center gap-3 rounded-2xl border border-border bg-card px-3.5 py-3 hover-elevate" data-testid={`link-home-coming-${g.id}`}>
+              <span className="min-w-0 flex-1 space-y-1">
+                {g.title && <span className="block truncate text-sm font-semibold">{g.title}</span>}
+                {g.stops.map((s) => (
+                  <span key={s.stopIndex} className="flex min-w-0 items-baseline gap-2 text-xs">
+                    <span className="font-code font-bold">{s.icao}</span>
+                    <span className="min-w-0 flex-1 truncate text-muted-foreground">{s.place}</span>
+                    <span className={cn("shrink-0", s.when === "now" ? "font-semibold text-primary" : "text-muted-foreground")}>{s.when === "now" ? "Today" : s.arriveDate ? fmtArrive(s) : "No date"}</span>
+                  </span>
+                ))}
+              </span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

@@ -2,6 +2,13 @@
 export type Release = { date: string; sha?: string; title: string; notes: string[] };
 
 export const RELEASES: Release[] = [
+  { date: "2026-10-21", title: "Admin preview, round 4: nearest airport, easier delete, Re-pick that changes things, ask AI per type", notes: [
+    "Home always opens on the nearest airport: it asks for your location if the phone hasn't decided, waits up to 8 s, and only falls back to your last airport if location is off. Crew plans at that airport (yours and ones crew picked you for, any date) show on Home, and Coming up moved to the bottom of Home, one tile per trip sheet with all its cities; today's stop says Today.",
+    "Plan (Trip sheets): Coming up is gone from here. Your trip sheets come right after New trip sheet, each tile lists every stop with airport, city and date, then Crew plans. Delete: tap the trash, the tile becomes Delete / Keep it and waits for you (it used to vanish after 6 s). Deleting also refreshes Home.",
+    "Trip sheet: every Eat and Do box (and Hotels on overnights) has Don't like what you see? with up to 3 AI finds you can add and Ask AI for more of that type. Re-pick now swaps in other crew-rated places (POST /api/briefings/suggest takes avoid) and says so, or tells you there's nothing else yet.",
+    "Crew Up: your plans have Change date or time (Add a date for a Now plan); PATCH /api/preview/meetups/:id keeps how long it runs and who's in. Later starts at the current time (airport local, next 15 min).",
+    "Rollback: redeploy e51bc37.",
+  ] },
   { date: "2026-10-21", title: "Admin preview, round 3 from admin feedback: trip sheets, Crew Up tabs and places, Home favorites", notes: [
     "Tabs in order Home, Spots, Plan, Crew. Plan your layover and Trip briefings are one page now, Trip sheets (/brief; /plan forwards there): New trip sheet, Coming up, Crew plans you can see (GET /api/preview/crewup-all), a trip to rate, then your saved trip sheets. In the preview it's called a trip sheet everywhere; members still see briefing.",
     "Trip sheet: picks sit in a box per type, Hotels, Do, Eat, then FBO, with crew picks first and AI picks under them; the map, PDF and numbers follow that order and Up/Down moves within a box. Crew Up and Re-pick moved to the bottom of each stop, the landing date box has no Crew Up button, and PDF / Share link / Preview sit at the bottom next to Finalize. Add places has List / Map.",

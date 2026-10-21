@@ -9,6 +9,7 @@ import { AirportCheckInCard } from "@/lib/checkins";
 import { PreviewBadge, PreviewGate, ago, errMsg } from "@/lib/preview";
 import { cn } from "@/lib/utils";
 import { DirectionsButton } from "@/lib/directions";
+import { ComingUpTrips } from "./tripHome";
 import type { Meetup, Metar, TodayPick, TodayResp } from "@shared/layover";
 import { getPosition, type NearAirport } from "@/lib/geo";
 import { useTrip } from "@/lib/experience";
@@ -55,7 +56,11 @@ function Today() {
   const [favs, setFavs] = useState(() => readList(FAVS));
   const [typed, setTyped] = useState("");
   const key = ["/api/preview/today", code];
-  const { data, isLoading, error, isFetching, refetch } = useQuery<TodayResp>({
+  // four-tab preview: Home always opens on the nearest airport. It waits (up to ~8 s) for your location before
+  // showing anything; if location is off or fails, it falls back to the last airport you picked
+  const [geoDone, setGeoDone] = useState(() => !!urlCode);
+  const { data, isLoading: loadingData, error, isFetching, refetch } = useQuery<TodayResp>({
+    enabled: !trip || geoDone,
     queryKey: key, queryFn: async () => (await apiRequest("GET", `/api/preview/today${code ? `?icao=${encodeURIComponent(code)}` : ""}`)).json(), staleTime: 60_000, retry: false,
   });
   const go = (c: string) => { const v = c.trim().toUpperCase(); if (v.length >= 3) { setCode(v); setTyped(""); } };
@@ -83,10 +88,22 @@ function Today() {
   // already allowed (never prompts) and you're within 25 mi of a field; otherwise the last airport you picked stays
   useEffect(() => {
     if (!trip || urlCode) return;
-    const perms = (navigator as any).permissions;
-    if (!perms?.query) return;
-    perms.query({ name: "geolocation" }).then((p: { state: string }) => { if (p.state === "granted") void locate(true); }).catch(() => {});
+    let live = true;
+    const finish = () => { if (live) setGeoDone(true); };
+    const timer = setTimeout(finish, 8000);
+    (async () => {
+      try {
+        const perms = (navigator as any).permissions;
+        const st = perms?.query ? await perms.query({ name: "geolocation" }).then((p: { state: string }) => p.state).catch(() => "") : "";
+        if (st === "denied") return;
+        const f = await nearestField(); // asks for location if the phone hasn't decided yet
+        if (f && live) setCode(f.icao);
+      } catch { /* location off or no fix: keep the last airport */ }
+      finally { clearTimeout(timer); finish(); }
+    })();
+    return () => { live = false; clearTimeout(timer); };
   }, [trip]); // eslint-disable-line
+  const isLoading = loadingData || (trip && !geoDone);
   const recent = (data?.recent || []).filter((c) => !hidden.includes(c) && !favs.includes(c));
 
   return (
@@ -134,10 +151,11 @@ function Today() {
       )
       )}
 
-      {isLoading ? <div className="grid place-items-center py-16 text-muted-foreground"><Loader2 className="h-6 w-6 animate-spin" /></div>
+      {isLoading ? <div className="grid place-items-center gap-2 py-16 text-muted-foreground"><Loader2 className="h-6 w-6 animate-spin" />{trip && !geoDone && <span className="text-xs" data-testid="text-today-locating">Finding the nearest airport…</span>}</div>
         : error ? <p className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground" data-testid="text-today-error">{errMsg(error)}</p>
         : !data?.airport ? <NoAirport />
         : <Board d={data} fav={favs.includes(data.icao || "")} onFav={trip ? () => toggleFav(data.icao!) : undefined} refreshing={isFetching} onRefresh={() => { void queryClient.invalidateQueries({ queryKey: key }); void refetch(); }} />}
+      {trip && !isLoading && <ComingUpTrips />}
     </div>
   );
 }
@@ -202,7 +220,7 @@ function Board({ d, refreshing, onRefresh, fav, onFav }: { d: TodayResp; refresh
         <ChevronRight className="h-5 w-5 shrink-0" />
       </Link>
 
-      {trip && !!d.crewUpToday?.length && <CrewUpToday list={d.crewUpToday} icao={ap.icao} />}
+      {trip && <CrewPlansHere icao={ap.icao} tz={d.tz} />}
 
       <Weather m={d.metar} failed={d.metarError} tz={d.tz} refreshing={refreshing} onRefresh={onRefresh} />
 
@@ -250,19 +268,32 @@ function Board({ d, refreshing, onRefresh, fav, onFav }: { d: TodayResp; refresh
 }
 
 /** Four-tab preview: Crew Up plans here today, and who's in. Names of who's in show to the host only. */
-function CrewUpToday({ list, icao }: { list: Meetup[]; icao: string }) {
+/** Four-tab preview: every live Crew Up plan at this airport you can see (yours, and ones crew picked you for). */
+function CrewPlansHere({ icao, tz }: { icao: string; tz: string | null }) {
+  const { data } = useQuery<{ byIcao: Record<string, Meetup[]> }>({ queryKey: [`/api/preview/crewup-at?icaos=${icao}`], staleTime: 30_000, retry: false });
+  const list = data?.byIcao[icao] || [];
+  if (!list.length) return null;
+  return <CrewUpToday list={list} icao={icao} tz={tz} />;
+}
+
+function CrewUpToday({ list, icao, tz }: { list: Meetup[]; icao: string; tz: string | null }) {
+  const day = (t: number) => new Intl.DateTimeFormat("en-CA", { timeZone: tz || undefined, year: "numeric", month: "2-digit", day: "2-digit" }).format(t);
+  const today = day(Date.now());
   return (
-    <Section title={`Crew Up today at ${icao}`} icon={<Users className="h-4 w-4" />} testid="card-today-crewup"
+    <Section title={`Crew plans at ${icao}`} icon={<Users className="h-4 w-4" />} testid="card-today-crewup"
       action={<Link href={`/meetup?icao=${icao}`} className="text-xs font-semibold text-foreground underline underline-offset-2" data-testid="link-today-crewup-all">Open</Link>}>
       <ul className="divide-y divide-border border-t border-border">
         {list.map((m) => {
-          const when = m.startsAt > Date.now() ? new Intl.DateTimeFormat("en-US", { timeZone: m.tz || undefined, hour: "numeric", minute: "2-digit" }).format(m.startsAt) : "Now";
+          const soon = m.startsAt <= Date.now();
+          const time = new Intl.DateTimeFormat("en-US", { timeZone: m.tz || undefined, hour: "numeric", minute: "2-digit" }).format(m.startsAt);
+          const date = day(m.startsAt) === today ? "Today" : new Intl.DateTimeFormat("en-US", { timeZone: m.tz || undefined, weekday: "short", month: "short", day: "numeric" }).format(m.startsAt);
+          const when = soon ? "Now" : `${date} ${time}`;
           const where = m.spot?.name || m.place;
           const inList = m.mine ? (m.attendees.length ? m.attendees.map((p) => p.name).join(", ") : "Nobody yet") : `${m.host.name}${m.joins ? ` + ${m.joins}` : ""}${m.joined ? " · you're in" : ""}`;
           return (
             <li key={m.id}>
               <Link href={`/meetup?icao=${m.icao}&plan=${m.id}`} className="flex items-center gap-3 px-4 py-2.5 hover-elevate" data-testid={`row-today-crewup-${m.id}`}>
-                <span className="w-14 shrink-0 font-code text-xs font-bold">{when}</span>
+                <span className="w-20 shrink-0 font-code text-xs font-bold leading-tight">{when}</span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium">{m.mine ? "Your plan" : `${m.host.name}'s plan`}{where ? ` · ${where}` : ""}</span>
                   <span className="block truncate text-xs text-muted-foreground">{m.mine ? "In: " : ""}{inList}</span>

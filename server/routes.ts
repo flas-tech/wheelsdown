@@ -602,17 +602,33 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const stops = [];
     const favs = new Set(await storage.favoriteIds((req as any).user.id));
     const ai = { ai: await aiSpotsForUser((req as any).user.id) };
-    for (const st of p.data.stops) {
+    // Re-pick: `avoid` (one list per stop) are the picks it had, so it swaps in other places where there are any;
+    // a type with nothing else to offer keeps what it had
+    const avoidAll: unknown[] = Array.isArray(req.body?.avoid) ? req.body.avoid : [];
+    for (let k = 0; k < p.data.stops.length; k++) {
+      const st = p.data.stops[k];
       const airport = (await storage.resolveCode(st.icao)) || (refAirport(st.icao) as any) || null;
       if (!airport) return res.status(400).json({ message: `Unknown airport ${st.icao.toUpperCase()}. Check the code (KOPF, OPF, X51 and 06FA all work).` });
       const all = await storage.searchSpots([airport.icao], false, "", ai);
-      stops.push({ ...st, icao: airport.icao, picks: suggestPicks(all, st.layover, st.nights).filter((i) => !favs.has(i)) });
+      const avoid = new Set((Array.isArray(avoidAll[k]) ? (avoidAll[k] as unknown[]) : []).map(Number).filter(Number.isFinite));
+      let picks = suggestPicks(all, st.layover, st.nights).filter((i) => !favs.has(i));
+      if (avoid.size) {
+        const fresh = suggestPicks(all.filter((s) => !avoid.has(s.id)), st.layover, st.nights).filter((i) => !favs.has(i));
+        const catOf = new Map(all.map((s) => [s.id, s.category]));
+        const had = Array.from(avoid).filter((i) => catOf.has(i) && !favs.has(i));
+        const freshCats = new Set(fresh.map((i) => catOf.get(i)));
+        picks = [...fresh, ...had.filter((i) => !freshCats.has(catOf.get(i)))];
+      }
+      stops.push({ ...st, icao: airport.icao, picks });
     }
     res.json({ title: p.data.title, stops });
   });
   app.get("/api/briefings", requireUser, async (req, res) => {
     const list = await storage.listBriefings((req as any).user.id);
-    res.json(list.map((b) => ({ id: b.id, title: b.title, stops: (JSON.parse(b.stops) as BriefingStop[]).map((s) => ({ icao: s.icao, layover: s.layover })), updatedAt: b.updatedAt })));
+    res.json(list.map((b) => ({ id: b.id, title: b.title, stops: (JSON.parse(b.stops) as BriefingStop[]).map((s) => {
+      const ap = refAirport(s.icao) as any;
+      return { icao: s.icao, layover: s.layover, place: ap ? `${ap.city || ap.name}${ap.region ? `, ${ap.region}` : ""}` : "", arriveDate: s.arriveDate || null };
+    }), updatedAt: b.updatedAt })));
   });
   app.get("/api/briefings/:id", requireUser, async (req, res) => {
     const b = await storage.getBriefing(id(req));

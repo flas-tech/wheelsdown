@@ -25,13 +25,13 @@ import { errText } from "./add";
 import { PickTag, AiAddedTag, FindMore, aiAddHref } from "@/lib/aiPicks";
 import { useTrip } from "@/lib/experience";
 import { crewUpHref, fmtArrive, sheetWords } from "@/lib/tripNav";
-import { TripSheetTop, CrewPlanRows } from "./tripHome";
+import { TripSheetTop, CrewPlanRows, CrewPlansSection } from "./tripHome";
 import type { Meetup } from "@shared/layover";
 import { noteVisit } from "@/lib/visits";
 
 type StopInput = { icao: string; layover: LayoverId; nights?: number; picks: number[]; ai?: boolean; aiAdd?: number[]; aiHide?: number[]; order?: number[]; arriveDate?: string | null; arriveTime?: string | null };
 const uniq = (a: number[]) => Array.from(new Set(a));
-type BriefSummary = { id: number; title: string; stops: { icao: string; layover: LayoverId }[]; updatedAt: number };
+type BriefSummary = { id: number; title: string; stops: { icao: string; layover: LayoverId; place?: string; arriveDate?: string | null }[]; updatedAt: number };
 const parseCodes = (r: string) => r.toUpperCase().split(/[^A-Z0-9]+/).filter((c) => c.length === 3 || c.length === 4).slice(0, 12);
 const appUrl = () => `${window.location.origin}${window.location.pathname}`;
 const toInput = (b: BriefFull): StopInput[] => b.stops.map((s) => ({ icao: s.icao, layover: s.layover as LayoverId, nights: s.nights, picks: s.picks.map((p) => p.id), ...(s.ai != null ? { ai: s.ai } : {}), ...(s.aiAdd?.length ? { aiAdd: s.aiAdd } : {}), ...(s.aiHide?.length ? { aiHide: s.aiHide } : {}), ...(s.order?.length ? { order: s.order } : {}), ...(s.arriveDate ? { arriveDate: s.arriveDate, arriveTime: s.arriveTime || null } : {}) }));
@@ -49,6 +49,7 @@ function useDeleteBriefing(onDone?: () => void) {
       queryClient.setQueryData<BriefSummary[]>(["/api/briefings"], (old) => old?.filter((b) => b.id !== bid));
       queryClient.removeQueries({ queryKey: ["/api/briefings", String(bid)] });
       queryClient.invalidateQueries({ queryKey: ["/api/briefings"], exact: true });
+      queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith("/api/preview/") });
       toast({ title: w("Briefing deleted"), description: "Its shared link no longer works." });
       onDone?.();
     },
@@ -56,11 +57,51 @@ function useDeleteBriefing(onDone?: () => void) {
   });
 }
 
+/** Four-tab preview: a trip sheet tile with every stop (airport, city, date) and an easy delete:
+ *  tap the trash, the tile turns into a plain Delete / Keep choice that stays until you answer. */
+function TripTile({ b }: { b: BriefSummary }) {
+  const [ask, setAsk] = useState(false);
+  const del = useDeleteBriefing();
+  const name = b.title || routeText(b);
+  if (ask) return (
+    <div className="rounded-2xl border border-destructive/50 bg-destructive/5 p-4 space-y-3" data-testid={`row-brief-${b.id}`}>
+      <p className="text-sm">Delete <span className="font-semibold">{name}</span>? This can't be undone.</p>
+      <div className="grid grid-cols-2 gap-2">
+        <button type="button" onClick={() => del.mutate(b.id)} disabled={del.isPending} className="flex h-11 items-center justify-center gap-1.5 rounded-full bg-destructive text-sm font-semibold text-destructive-foreground disabled:opacity-60" data-testid={`button-brief-delete-confirm-${b.id}`}>
+          {del.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}Delete
+        </button>
+        <button type="button" onClick={() => setAsk(false)} disabled={del.isPending} className="h-11 rounded-full border border-border text-sm font-semibold hover-elevate" data-testid={`button-brief-delete-cancel-${b.id}`}>Keep it</button>
+      </div>
+    </div>
+  );
+  const today = new Date().toLocaleDateString("en-CA");
+  return (
+    <div className="flex items-stretch rounded-2xl border border-card-border bg-card" data-testid={`row-brief-${b.id}`}>
+      <Link href={`/brief/${b.id}`} className="min-w-0 flex-1 space-y-1.5 rounded-l-2xl p-4 hover-elevate" data-testid={`link-brief-${b.id}`}>
+        <p className="truncate text-sm font-semibold">{name}</p>
+        <ul className="space-y-1">
+          {b.stops.map((s, i) => (
+            <li key={i} className="flex min-w-0 items-baseline gap-2 text-xs">
+              <span className="font-code font-bold">{s.icao}</span>
+              <span className="min-w-0 flex-1 truncate text-muted-foreground">{s.place || ""}</span>
+              <span className={cn("shrink-0", s.arriveDate === today ? "font-semibold text-primary" : "text-muted-foreground")}>{s.arriveDate === today ? "Today" : s.arriveDate ? fmtArrive({ arriveDate: s.arriveDate }) : "No date"}</span>
+            </li>
+          ))}
+        </ul>
+      </Link>
+      <button type="button" onClick={() => setAsk(true)} aria-label={`Delete ${name}`} className="grid w-12 shrink-0 place-items-center rounded-r-2xl border-l border-border text-muted-foreground hover:text-destructive hover-elevate" data-testid={`button-brief-delete-${b.id}`}>
+        <Trash2 className="h-4 w-4" />
+      </button>
+    </div>
+  );
+}
+
 function DeleteBriefing({ id, onDone, compact }: { id: number; onDone?: () => void; compact?: boolean }) {
   const [ask, setAsk] = useState(false);
   const del = useDeleteBriefing(onDone);
-  const w = sheetWords(useTrip());
-  useEffect(() => { if (!ask) return; const t = setTimeout(() => setAsk(false), 6000); return () => clearTimeout(t); }, [ask]);
+  const trip = useTrip(); const w = sheetWords(trip);
+  // the confirm used to vanish after 6 s, which read as "delete doesn't work"; in the preview it waits for you
+  useEffect(() => { if (!ask || trip) return; const t = setTimeout(() => setAsk(false), 6000); return () => clearTimeout(t); }, [ask, trip]);
   if (compact && !ask) {
     return (
       <button type="button" onClick={() => setAsk(true)} aria-label={w("Delete briefing")} data-testid={`button-brief-delete-${id}`}
@@ -117,7 +158,7 @@ export function BriefListPage() {
             <h2 className={trip ? "text-xs font-semibold uppercase tracking-wider text-muted-foreground" : "text-sm font-semibold"}>{trip ? "Your trip sheets" : "Saved"}</h2>
             {isLoading && <Skeleton className="h-16 rounded-2xl" />}
             {data && data.length === 0 && <p className="text-sm text-muted-foreground">{w("No briefings yet.")}</p>}
-            {data?.map((b) => (
+            {trip ? data?.map((b) => <TripTile key={b.id} b={b} />) : data?.map((b) => (
               <div key={b.id} className="flex items-center gap-1 rounded-2xl border border-card-border bg-card pr-2" data-testid={`row-brief-${b.id}`}>
                 <Link href={`/brief/${b.id}`} className="flex min-w-0 flex-1 items-center justify-between gap-3 rounded-2xl p-4 hover-elevate" data-testid={`link-brief-${b.id}`}>
                   <div className="min-w-0">
@@ -131,6 +172,7 @@ export function BriefListPage() {
               </div>
             ))}
           </section>
+          {trip && <CrewPlansSection />}
         </>
       )}
     </div>
@@ -247,12 +289,13 @@ export function BriefEditorPage() {
   const { data: crewAt } = useQuery<{ byIcao: Record<string, Meetup[]> }>({ queryKey: [`/api/preview/crewup-at?icaos=${icaos}`], enabled: trip && !!icaos, staleTime: 30_000, retry: false });
 
   const save = useMutation({
-    mutationFn: async (p: { title: string; stops: StopInput[]; suggest?: boolean }) => {
+    mutationFn: async (p: { title: string; stops: StopInput[]; suggest?: boolean; avoid?: Record<number, number[]> }) => {
       let stops = p.stops;
       if (p.suggest) {
         const need = stops.filter((s) => !s.picks.length);
         if (need.length) {
-          const sug = (await (await apiRequest("POST", "/api/briefings/suggest", { title: p.title, stops: need })).json()) as { stops: StopInput[] };
+          const avoid = stops.map((s, i) => (!s.picks.length ? p.avoid?.[i] || [] : null)).filter((x) => x !== null);
+          const sug = (await (await apiRequest("POST", "/api/briefings/suggest", { title: p.title, stops: need, avoid })).json()) as { stops: StopInput[] };
           let k = 0;
           stops = stops.map((s) => (s.picks.length ? s : { ...s, icao: sug.stops[k].icao, picks: sug.stops[k++].picks }));
         }
@@ -333,7 +376,17 @@ export function BriefEditorPage() {
               return { ...s, order: a, picks: [...crew, ...s.picks.filter((p) => !crew.includes(p))] };
             })}
             onAddPick={(sid) => put((s) => ({ ...s, picks: [...s.picks, sid] }))}
-            onResuggest={() => put((s) => ({ ...s, picks: [], aiHide: [], order: [] }), true)}
+            onResuggest={() => {
+              const was = input[i].picks;
+              save.mutate({ title: brief.title, stops: input.map((s, k) => (k === i ? { ...s, picks: [], aiHide: [], order: [] } : s)), suggest: true, avoid: { [i]: was } }, {
+                onSuccess: (b) => {
+                  const fv = new Set(b.stops[i]?.favoriteIds || []);
+                  const now = (b.stops[i]?.picks || []).map((x) => x.id).filter((x) => x > 0 && !fv.has(x));
+                  const same = now.every((x) => was.includes(x));
+                  toast({ title: same ? `No other crew picks at ${st.icao} yet` : `New picks at ${st.icao}`, description: same ? "These are the only crew-rated places that fit. Add places, or ask AI for more." : "Swapped in other crew-rated places. Your favorites stay." });
+                },
+              });
+            }}
             onAi={(on) => put((s) => ({ ...s, ai: on, ...(on ? {} : { aiAdd: [], aiHide: [], order: (s.order || []).filter((x) => x > 0) }) }))}
             onAiAdd={(rowId) => put((s) => ({ ...s, aiAdd: uniq([...(s.aiAdd || []), rowId]).slice(-20), aiHide: (s.aiHide || []).filter((x) => x !== rowId) }))}
             onArrive={(d) => put((s) => ({ ...s, arriveDate: d || null, arriveTime: null }))} />
@@ -496,7 +549,7 @@ function StopSection({ stop, index, onRemove, onAddPick, onMove, onReorder, onRe
       )}
 
       {numbered.some((x) => looksAi(x.spot)) && <PickLegend />}
-      {trip ? <GroupedPicks numbered={numbered} favs={favs} busy={busy} onRemove={onRemove} onReorder={onReorder} index={index} /> : (
+      {trip ? <GroupedPicks numbered={numbered} favs={favs} busy={busy} onRemove={onRemove} onReorder={onReorder} index={index} stop={stop} onAiAdd={onAiAdd} /> : (
       <ol className="space-y-2">
         {numbered.map(({ n, spot }) => <PickRow key={spot.id} n={n} spot={spot} count={numbered.length}
           favorite={favs.has(spot.id)} onRemove={() => onRemove(spot)} busy={busy}
@@ -534,14 +587,20 @@ function StopSection({ stop, index, onRemove, onAddPick, onMove, onReorder, onRe
 }
 
 /** Four-tab preview: one box per type (hotels, eat, do, FBO); crew picks first, then AI picks. Up/Down stay inside their box. */
-function GroupedPicks({ numbered, favs, busy, onRemove, onReorder, index }: {
+function GroupedPicks({ numbered, favs, busy, onRemove, onReorder, index, stop, onAiAdd }: {
+  stop: BriefStopFull; onAiAdd: (rowId: number) => void;
   numbered: ReturnType<typeof stopPins>["numbered"]; favs: Set<number>; busy: boolean; index: number;
   onRemove: (spot: SpotWithStats) => void; onReorder?: (order: number[]) => void;
 }) {
   const ids = numbered.map((x) => x.spot.id);
   const groups = [...PICK_GROUPS.map(([k, label]) => ({ k: k as string, label: label as string })), { k: "other", label: "Other" }]
     .map((g) => ({ ...g, items: numbered.filter((x) => (g.k === "other" ? !PICK_GROUPS.some(([k]) => k === x.spot.category) : x.spot.category === g.k)) }))
-    .filter((g) => g.items.length);
+    // eat and do always get a box (so you can ask AI even when it's empty); hotels on overnights
+    .filter((g) => g.items.length || g.k === "eat" || g.k === "do" || (g.k === "stay" && (stop.layover === "overnight" || stop.layover === "multi")));
+  const { data: cfg } = useQuery<{ ai?: boolean }>({ queryKey: ["/api/config"] });
+  const aiOn = cfg?.ai !== false;
+  const shown = new Set(numbered.map((x) => x.spot.id));
+  const more = (stop.aiMore || []).filter((m) => !shown.has(m.id));
   const swap = (a: number, b: number) => { const o = [...ids]; const i = o.indexOf(a), j = o.indexOf(b); [o[i], o[j]] = [o[j], o[i]]; onReorder?.(o); };
   const rows = (list: typeof numbered) => (
     <ol className="space-y-2">
@@ -553,6 +612,7 @@ function GroupedPicks({ numbered, favs, busy, onRemove, onReorder, index }: {
   return (
     <div className="space-y-3">
       {groups.map((g) => {
+        if (!g.items.length && !aiOn) return null;
         const crew = g.items.filter((x) => !looksAi(x.spot)), ai = g.items.filter((x) => looksAi(x.spot));
         const M = CAT_META[g.k as keyof typeof CAT_META];
         return (
@@ -565,6 +625,26 @@ function GroupedPicks({ numbered, favs, busy, onRemove, onReorder, index }: {
                 {rows(ai)}
               </div>
             )}
+            {!g.items.length && <p className="px-1 text-xs text-muted-foreground">No picks here yet.</p>}
+            {aiOn && g.k !== "fbo" && g.k !== "other" && (() => {
+              const extra = more.filter((m) => m.category === g.k).slice(0, 3);
+              return (
+                <div className="space-y-1.5 rounded-xl border border-dashed border-violet-400/60 bg-card p-2.5" data-testid={`group-${g.k}-askai-${index}`}>
+                  <p className="text-[11px] font-semibold text-muted-foreground">{g.items.length ? "Don't like what you see?" : "Nothing here yet?"}</p>
+                  {extra.map((m) => (
+                    <div key={m.id} className="flex items-center gap-2" data-testid={`group-${g.k}-aimore-${m.id}`}>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-xs font-semibold">{m.name}</span>
+                        <span className="block truncate text-[11px] text-muted-foreground">{[m.milesFromField != null ? `${m.milesFromField} mi` : "", m.description || ""].filter(Boolean).join(" · ")}</span>
+                      </span>
+                      <button type="button" onClick={() => onAiAdd(-m.id)} disabled={busy} aria-label={`Add ${m.name}`} className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border hover-elevate disabled:opacity-50" data-testid={`button-group-aiadd-${m.id}`}><Plus className="h-4 w-4" /></button>
+                    </div>
+                  ))}
+                  {stop.aiMoreStatus === "full" ? <p className="text-[11px] text-muted-foreground">AI has found all it keeps for {stop.icao}. Try Add places below.</p>
+                    : <FindMore icao={stop.icao} pending={stop.aiMoreStatus === "pending"} fixed={g.k} compact testId={`find-more-${g.k}-${index}`} />}
+                </div>
+              );
+            })()}
           </div>
         );
       })}
