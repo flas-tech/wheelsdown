@@ -20,11 +20,13 @@ import { cn } from "@/lib/utils";
 import { DirectionsButton } from "@/lib/directions";
 import { PdfPreviewDialog } from "@/lib/pdfPreview";
 import { drawStaticMap, PIN_COLORS } from "@/lib/staticMap";
-import { buildBriefPdf, shareOrDownload, stopPins, layoverText, routeText, CAT_NAMES, isAi, isAiAdded, looksAi, aiReason, type AiPick, type BriefFull, type BriefStopFull } from "@/lib/briefPdf";
+import { buildBriefPdf, shareOrDownload, stopPins, groupPins, PICK_GROUPS, layoverText, routeText, CAT_NAMES, isAi, isAiAdded, looksAi, aiReason, type AiPick, type BriefFull, type BriefStopFull } from "@/lib/briefPdf";
 import { errText } from "./add";
 import { PickTag, AiAddedTag, FindMore, aiAddHref } from "@/lib/aiPicks";
 import { useTrip } from "@/lib/experience";
-import { crewUpHref, fmtArrive } from "@/lib/tripNav";
+import { crewUpHref, fmtArrive, sheetWords } from "@/lib/tripNav";
+import { TripSheetTop, CrewPlanRows } from "./tripHome";
+import type { Meetup } from "@shared/layover";
 import { noteVisit } from "@/lib/visits";
 
 type StopInput = { icao: string; layover: LayoverId; nights?: number; picks: number[]; ai?: boolean; aiAdd?: number[]; aiHide?: number[]; order?: number[]; arriveDate?: string | null; arriveTime?: string | null };
@@ -40,26 +42,28 @@ const aiPolling = (q: { state: { data?: BriefFull } }) => (q.state.data?.stops.s
 // ---------------- delete (two taps, no browser pop-up) ----------------
 function useDeleteBriefing(onDone?: () => void) {
   const { toast } = useToast();
+  const w = sheetWords(useTrip());
   return useMutation({
     mutationFn: async (bid: number) => (await apiRequest("DELETE", `/api/briefings/${bid}`)).json(),
     onSuccess: (_r, bid) => {
       queryClient.setQueryData<BriefSummary[]>(["/api/briefings"], (old) => old?.filter((b) => b.id !== bid));
       queryClient.removeQueries({ queryKey: ["/api/briefings", String(bid)] });
       queryClient.invalidateQueries({ queryKey: ["/api/briefings"], exact: true });
-      toast({ title: "Briefing deleted", description: "Its shared link no longer works." });
+      toast({ title: w("Briefing deleted"), description: "Its shared link no longer works." });
       onDone?.();
     },
-    onError: (e: Error) => toast({ title: "Couldn't delete the briefing", description: errText(e), variant: "destructive" }),
+    onError: (e: Error) => toast({ title: w("Couldn't delete the briefing"), description: errText(e), variant: "destructive" }),
   });
 }
 
 function DeleteBriefing({ id, onDone, compact }: { id: number; onDone?: () => void; compact?: boolean }) {
   const [ask, setAsk] = useState(false);
   const del = useDeleteBriefing(onDone);
+  const w = sheetWords(useTrip());
   useEffect(() => { if (!ask) return; const t = setTimeout(() => setAsk(false), 6000); return () => clearTimeout(t); }, [ask]);
   if (compact && !ask) {
     return (
-      <button type="button" onClick={() => setAsk(true)} aria-label="Delete briefing" data-testid={`button-brief-delete-${id}`}
+      <button type="button" onClick={() => setAsk(true)} aria-label={w("Delete briefing")} data-testid={`button-brief-delete-${id}`}
         className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-muted-foreground hover-elevate">
         <Trash2 className="h-4 w-4" />
       </button>
@@ -68,7 +72,7 @@ function DeleteBriefing({ id, onDone, compact }: { id: number; onDone?: () => vo
   if (!ask) {
     return (
       <button type="button" onClick={() => setAsk(true)} className="w-full h-10 rounded-full border border-border text-sm text-muted-foreground hover-elevate inline-flex items-center justify-center gap-1.5" data-testid="button-brief-delete">
-        <Trash2 className="h-4 w-4" /> Delete briefing
+        <Trash2 className="h-4 w-4" /> {w("Delete briefing")}
       </button>
     );
   }
@@ -88,30 +92,31 @@ function DeleteBriefing({ id, onDone, compact }: { id: number; onDone?: () => vo
 export function BriefListPage() {
   const { me, openAuth, loading } = useAuth();
   const { data, isLoading } = useQuery<BriefSummary[]>({ queryKey: ["/api/briefings"], enabled: !!me });
+  const trip = useTrip(); const w = sheetWords(trip);
 
   return (
     <div className="space-y-5">
       <header>
-        <h1 className="text-xl font-semibold">Trip briefings</h1>
-        <p className="text-sm text-muted-foreground mt-1">Enter the routing and how long you're on the ground at each stop. Wheelsdown builds a layover plan from crew picks, with a map and a PDF for the PIC to send the crew.</p>
+        <h1 className="text-xl font-semibold">{w("Trip briefings")}</h1>
+        {trip ? <p className="text-sm text-muted-foreground mt-1">Plan your layover: enter the airports and the app picks crew-rated places for each stop, with a map and a PDF to share.</p> : <p className="text-sm text-muted-foreground mt-1">Enter the routing and how long you're on the ground at each stop. Wheelsdown builds a layover plan from crew picks, with a map and a PDF for the PIC to send the crew.</p>}
       </header>
       {!loading && !me ? (
         <div className="rounded-2xl border border-card-border bg-card p-5 text-center space-y-3" data-testid="panel-brief-signin">
           <ClipboardList className="mx-auto h-6 w-6 text-primary" />
-          <p className="text-sm font-semibold">Sign in to build briefings</p>
-          <p className="text-xs text-muted-foreground">Briefings are saved to your Logbook so you can update them and resend.</p>
+          <p className="text-sm font-semibold">{w("Sign in to build briefings")}</p>
+          <p className="text-xs text-muted-foreground">{trip ? "Trip sheets" : "Briefings"} are saved to your Logbook so you can update them and resend.</p>
           <button onClick={() => openAuth()} className="h-10 rounded-full taxi-sign px-5 text-sm font-semibold hover-elevate" data-testid="button-brief-signin">Sign in</button>
         </div>
       ) : (
         <>
-          <Link href="/brief/new" data-testid="link-brief-new" className="flex items-center justify-between gap-3 rounded-2xl taxi-sign p-4 hover-elevate">
+          {trip ? <TripSheetTop /> : <Link href="/brief/new" data-testid="link-brief-new" className="flex items-center justify-between gap-3 rounded-2xl taxi-sign p-4 hover-elevate">
             <span className="flex items-center gap-3"><Plus className="h-5 w-5" /><span><span className="block text-sm font-semibold">New trip briefing</span><span className="block text-xs opacity-80">Routing, layovers, map, PDF</span></span></span>
             <ChevronRight className="h-5 w-5" />
-          </Link>
+          </Link>}
           <section className="space-y-2">
-            <h2 className="text-sm font-semibold">Saved</h2>
+            <h2 className={trip ? "text-xs font-semibold uppercase tracking-wider text-muted-foreground" : "text-sm font-semibold"}>{trip ? "Your trip sheets" : "Saved"}</h2>
             {isLoading && <Skeleton className="h-16 rounded-2xl" />}
-            {data && data.length === 0 && <p className="text-sm text-muted-foreground">No briefings yet.</p>}
+            {data && data.length === 0 && <p className="text-sm text-muted-foreground">{w("No briefings yet.")}</p>}
             {data?.map((b) => (
               <div key={b.id} className="flex items-center gap-1 rounded-2xl border border-card-border bg-card pr-2" data-testid={`row-brief-${b.id}`}>
                 <Link href={`/brief/${b.id}`} className="flex min-w-0 flex-1 items-center justify-between gap-3 rounded-2xl p-4 hover-elevate" data-testid={`link-brief-${b.id}`}>
@@ -233,8 +238,13 @@ export function BriefEditorPage() {
   const { toast } = useToast();
   const { me, requireAuth, loading } = useAuth();
   const [editRoute, setEditRoute] = useState(false);
+  const trip = useTrip(); const w = sheetWords(trip);
+  groupPins(trip);
 
   const { data: brief, isLoading } = useQuery<BriefFull>({ queryKey: ["/api/briefings", String(id)], enabled: !!me && !!id, refetchInterval: aiPolling });
+  // four-tab preview: Crew Up plans at each stop (yours, and ones crew picked you for) show on the trip sheet
+  const icaos = brief ? Array.from(new Set(brief.stops.map((x) => x.icao))).join(",") : "";
+  const { data: crewAt } = useQuery<{ byIcao: Record<string, Meetup[]> }>({ queryKey: [`/api/preview/crewup-at?icaos=${icaos}`], enabled: trip && !!icaos, staleTime: 30_000, retry: false });
 
   const save = useMutation({
     mutationFn: async (p: { title: string; stops: StopInput[]; suggest?: boolean }) => {
@@ -255,7 +265,7 @@ export function BriefEditorPage() {
       setEditRoute(false);
       if (isNew) navigate(`/brief/${b.id}`);
     },
-    onError: (e: Error) => toast({ title: "Couldn't save the briefing", description: errText(e), variant: "destructive" }),
+    onError: (e: Error) => toast({ title: w("Couldn't save the briefing"), description: errText(e), variant: "destructive" }),
   });
 
 
@@ -265,12 +275,12 @@ export function BriefEditorPage() {
   if (isNew) {
     return (
       <div className="space-y-5">
-        <Link href="/brief" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground" data-testid="link-back-briefs"><ArrowLeft className="h-4 w-4" /> Briefings</Link>
+        <Link href="/brief" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground" data-testid="link-back-briefs"><ArrowLeft className="h-4 w-4" /> {w("Briefings")}</Link>
         <header>
-          <h1 className="text-xl font-semibold">New trip briefing</h1>
+          <h1 className="text-xl font-semibold">{w("New trip briefing")}</h1>
           <p className="text-sm text-muted-foreground mt-1">We'll pick crew-rated spots that fit the time at each stop. You can swap anything before you send it.</p>
         </header>
-        <RouteForm busy={save.isPending} submitLabel="Build briefing" onSubmit={(title, stops) => requireAuth(() => save.mutate({ title, stops, suggest: true }), "Sign in to build briefings.")} />
+        <RouteForm busy={save.isPending} submitLabel={w("Build briefing")} onSubmit={(title, stops) => requireAuth(() => save.mutate({ title, stops, suggest: true }), w("Sign in to build briefings."))} />
       </div>
     );
   }
@@ -282,9 +292,9 @@ export function BriefEditorPage() {
 
   return (
     <div className="space-y-5">
-      <Link href="/brief" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground" data-testid="link-back-briefs"><ArrowLeft className="h-4 w-4" /> Briefings</Link>
+      <Link href="/brief" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground" data-testid="link-back-briefs"><ArrowLeft className="h-4 w-4" /> {w("Briefings")}</Link>
       <header className="space-y-1">
-        <h1 className="text-xl font-semibold leading-tight" data-testid="text-brief-title">{brief.title || "Trip briefing"}</h1>
+        <h1 className="text-xl font-semibold leading-tight" data-testid="text-brief-title">{brief.title || w("Trip briefing")}</h1>
         <p className="font-code text-sm font-bold tracking-wide" data-testid="text-brief-route">{routeText(brief)}</p>
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
           <button onClick={() => setEditRoute(!editRoute)} className="text-primary font-medium" data-testid="button-brief-edit-route">{editRoute ? "Close" : "Change routing or layovers"}</button>
@@ -294,11 +304,11 @@ export function BriefEditorPage() {
 
       {editRoute && (
         <div className="rounded-2xl border border-primary/40 p-4">
-          <RouteForm initial={input} initialTitle={brief.title} busy={save.isPending} submitLabel="Update briefing" onSubmit={(title, stops) => save.mutate({ title, stops, suggest: true })} />
+          <RouteForm initial={input} initialTitle={brief.title} busy={save.isPending} submitLabel={w("Update briefing")} onSubmit={(title, stops) => save.mutate({ title, stops, suggest: true })} />
         </div>
       )}
 
-      <ExportBar brief={brief} preparedBy={me.displayName} />
+      {!trip && <ExportBar brief={brief} preparedBy={me.displayName} />}
 
       <BriefOverview brief={brief} />
 
@@ -306,7 +316,11 @@ export function BriefEditorPage() {
         const put = (f: (s: StopInput) => StopInput, suggest = false) => update(input.map((s, k) => (k === i ? f(s) : s)), suggest);
         const dropOrder = (s: StopInput, id: number) => (s.order || []).filter((x) => x !== id);
         return (
-          <StopSection key={`${i}-${st.icao}`} stop={st} index={i} busy={save.isPending}
+          <StopSection key={`${i}-${st.icao}`} stop={st} index={i} busy={save.isPending} plans={crewAt?.byIcao[st.icao]}
+            onReorder={(a) => put((s) => {
+              const crew = a.filter((x) => x > 0 && s.picks.includes(x));
+              return { ...s, order: a, picks: [...crew, ...s.picks.filter((p) => !crew.includes(p))] };
+            })}
             // crew listings leave the plan; AI picks added from More places are dropped; automatic AI picks stay removed
             onRemove={(spot) => put((s) => !isAi(spot) ? { ...s, picks: s.picks.filter((p) => p !== spot.id), order: dropOrder(s, spot.id) }
               : (spot as AiPick).ai.extra ? { ...s, aiAdd: (s.aiAdd || []).filter((x) => x !== -spot.id), order: dropOrder(s, spot.id) }
@@ -326,6 +340,7 @@ export function BriefEditorPage() {
         );
       })}
 
+      {trip && <ExportBar brief={brief} preparedBy={me.displayName} />}
       <FinalizeBar brief={brief} preparedBy={me.displayName} />
 
       <DeleteBriefing id={Number(id)} onDone={() => navigate("/brief")} />
@@ -336,6 +351,7 @@ export function BriefEditorPage() {
 // ---------------- export / share ----------------
 function ExportBar({ brief, preparedBy, onShared }: { brief: BriefFull; preparedBy?: string; onShared?: () => void }) {
   const { toast } = useToast();
+  const w = sheetWords(useTrip());
   const [, navigate] = useLocation();
   const [pdf, setPdf] = useState<{ blob: Blob; fileName: string; key: number } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -357,16 +373,16 @@ function ExportBar({ brief, preparedBy, onShared }: { brief: BriefFull; prepared
   }
   async function send() {
     if (!pdf) return;
-    const r = await shareOrDownload(pdf.blob, pdf.fileName, brief.title || "Trip briefing");
+    const r = await shareOrDownload(pdf.blob, pdf.fileName, brief.title || w("Trip briefing"));
     if (r === "downloaded") toast({ title: "PDF downloaded", description: pdf.fileName });
     if (r !== "cancelled") onShared?.();
   }
   async function copyLink() {
     const nav = navigator as Navigator & { share?: (d: ShareData) => Promise<void> };
     if (nav.share && /iPhone|iPad|Android/i.test(navigator.userAgent)) {
-      try { await nav.share({ url: shareUrl, title: brief.title || "Trip briefing" }); onShared?.(); return; } catch (e) { if ((e as Error).name === "AbortError") return; }
+      try { await nav.share({ url: shareUrl, title: brief.title || w("Trip briefing") }); onShared?.(); return; } catch (e) { if ((e as Error).name === "AbortError") return; }
     }
-    try { await navigator.clipboard.writeText(shareUrl); toast({ title: "Link copied", description: "Anyone with the link can view this briefing." }); }
+    try { await navigator.clipboard.writeText(shareUrl); toast({ title: "Link copied", description: w("Anyone with the link can view this briefing.") }); }
     catch { toast({ title: "Share link", description: shareUrl }); }
     onShared?.();
   }
@@ -391,7 +407,7 @@ function ExportBar({ brief, preparedBy, onShared }: { brief: BriefFull; prepared
         className="h-10 w-full rounded-full border border-border text-sm font-medium inline-flex items-center justify-center gap-1.5 hover-elevate disabled:opacity-60" data-testid="button-brief-preview-pdf">
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />} Preview PDF
       </button>
-      <PdfPreviewDialog blob={fresh ? pdf!.blob : null} open={previewing && !!fresh} onOpenChange={setPreviewing} onSend={send} onExit={() => navigate("/brief")} title={brief.title || "Trip briefing"} />
+      <PdfPreviewDialog blob={fresh ? pdf!.blob : null} open={previewing && !!fresh} onOpenChange={setPreviewing} onSend={send} onExit={() => navigate("/brief")} title={brief.title || w("Trip briefing")} />
       <p className="text-[11px] text-muted-foreground">
         {fresh ? "Ready. Preview it first, or Share PDF to open Messages, Mail and AirDrop on iPhone." : "The PDF has a cover with the routing, then one page per stop with the map and picks."}
         {IS_STATIC ? " Demo: shared links only open in this browser." : ""}
@@ -429,13 +445,13 @@ function BriefOverview({ brief }: { brief: BriefFull }) {
   return <MapCanvas pins={pins} height={190} route testId="map-brief-overview" />;
 }
 
-function StopSection({ stop, index, onRemove, onAddPick, onMove, onResuggest, onAi, onAiAdd, onArrive, busy }: {
-  stop: BriefStopFull; index: number; busy: boolean;
+function StopSection({ stop, index, onRemove, onAddPick, onMove, onReorder, onResuggest, onAi, onAiAdd, onArrive, busy, plans }: {
+  stop: BriefStopFull; index: number; busy: boolean; plans?: Meetup[]; onReorder?: (order: number[]) => void;
   onRemove: (spot: SpotWithStats) => void; onAddPick: (id: number) => void; onMove: (keys: number[], id: number, dir: -1 | 1) => void; onResuggest: () => void; onAi: (on: boolean) => void;
   onAiAdd: (rowId: number) => void; onArrive?: (date: string) => void;
 }) {
   const trip = useTrip();
-  const { pins, numbered } = useMemo(() => stopPins(stop), [stop]);
+  const { pins, numbered } = useMemo(() => stopPins(stop), [stop, trip]);
   const picked = new Set(stop.picks.map((p) => p.id));
   const favs = new Set(stop.favoriteIds || []);
   const others = (stop.candidates || []).filter((c) => !picked.has(c.id));
@@ -456,18 +472,15 @@ function StopSection({ stop, index, onRemove, onAddPick, onMove, onResuggest, on
           <Link href={`/add/${stop.icao}`} className="h-8 rounded-full border border-border px-2.5 text-xs inline-flex items-center gap-1 font-semibold hover-elevate" data-testid={`link-stop-add-${index}`}>
             <Plus className="h-3.5 w-3.5" /> Add spot
           </Link>
-          <button onClick={onResuggest} disabled={busy} className="h-8 rounded-full border border-border px-2.5 text-xs inline-flex items-center gap-1 hover-elevate disabled:opacity-50" data-testid={`button-resuggest-${index}`}>
+          {!trip && <button onClick={onResuggest} disabled={busy} className="h-8 rounded-full border border-border px-2.5 text-xs inline-flex items-center gap-1 hover-elevate disabled:opacity-50" data-testid={`button-resuggest-${index}`}>
             <RefreshCw className="h-3.5 w-3.5" /> Re-pick
-          </button>
+          </button>}
         </span>
       </div>
       {plan && <p className="text-[11px] text-muted-foreground">{plan.note}</p>}
       {trip && onArrive && (
         <div className="rounded-2xl border border-card-border bg-card p-3" data-testid={`stop-when-${index}`}>
           <ArriveInputs i={index} compact date={stop.arriveDate || ""} onChange={onArrive} />
-          <Link href={crewUpHref(stop)} className="mt-2.5 flex h-10 w-full items-center justify-center gap-1.5 rounded-full border border-border text-sm font-semibold hover-elevate" data-testid={`link-stop-crewup-${index}`}>
-            <Users className="h-4 w-4" />Crew Up at {stop.icao}{stop.arriveDate ? `, ${fmtArrive(stop)}` : ""}
-          </Link>
         </div>
       )}
 
@@ -483,14 +496,32 @@ function StopSection({ stop, index, onRemove, onAddPick, onMove, onResuggest, on
       )}
 
       {numbered.some((x) => looksAi(x.spot)) && <PickLegend />}
+      {trip ? <GroupedPicks numbered={numbered} favs={favs} busy={busy} onRemove={onRemove} onReorder={onReorder} index={index} /> : (
       <ol className="space-y-2">
         {numbered.map(({ n, spot }) => <PickRow key={spot.id} n={n} spot={spot} count={numbered.length}
           favorite={favs.has(spot.id)} onRemove={() => onRemove(spot)} busy={busy}
           onUp={() => onMove(numbered.map((x) => x.spot.id), spot.id, -1)} onDown={() => onMove(numbered.map((x) => x.spot.id), spot.id, 1)} />)}
-      </ol>
+      </ol>)}
 
       {/* one way to add anything: crew listings first, then AI picks, by type, with a way to ask AI for more */}
       <AddPlaces stop={stop} index={index} others={others} onAddCrew={onAddPick} onAddAi={onAiAdd} busy={busy} />
+
+      {trip && !!plans?.length && (
+        <div className="space-y-1.5" data-testid={`stop-crewplans-${index}`}>
+          <p className="text-xs font-semibold">Crew plans at <span className="font-code">{stop.icao}</span></p>
+          <CrewPlanRows plans={plans} onDate={stop.arriveDate} />
+        </div>
+      )}
+      {trip && (
+        <div className="grid grid-cols-2 gap-2" data-testid={`stop-actions-${index}`}>
+          <Link href={crewUpHref(stop)} className="flex h-10 items-center justify-center gap-1.5 rounded-full border border-border text-sm font-semibold hover-elevate" data-testid={`link-stop-crewup-${index}`}>
+            <Users className="h-4 w-4" />Crew Up
+          </Link>
+          <button onClick={onResuggest} disabled={busy} className="flex h-10 items-center justify-center gap-1.5 rounded-full border border-border text-sm hover-elevate disabled:opacity-50" data-testid={`button-resuggest-${index}`}>
+            <RefreshCw className="h-4 w-4" />Re-pick
+          </button>
+        </div>
+      )}
 
       {stop.sponsor && (
         <a href={stop.sponsor.url || "#"} target="_blank" rel="noopener noreferrer sponsored" className="block rounded-xl bg-muted/60 px-3 py-2 text-xs hover-elevate" data-testid={`sponsor-${index}`}>
@@ -502,7 +533,47 @@ function StopSection({ stop, index, onRemove, onAddPick, onMove, onResuggest, on
   );
 }
 
-function PickRow({ n, spot, count, onRemove, onUp, onDown, busy, readOnly, favorite }: {
+/** Four-tab preview: one box per type (hotels, eat, do, FBO); crew picks first, then AI picks. Up/Down stay inside their box. */
+function GroupedPicks({ numbered, favs, busy, onRemove, onReorder, index }: {
+  numbered: ReturnType<typeof stopPins>["numbered"]; favs: Set<number>; busy: boolean; index: number;
+  onRemove: (spot: SpotWithStats) => void; onReorder?: (order: number[]) => void;
+}) {
+  const ids = numbered.map((x) => x.spot.id);
+  const groups = [...PICK_GROUPS.map(([k, label]) => ({ k: k as string, label: label as string })), { k: "other", label: "Other" }]
+    .map((g) => ({ ...g, items: numbered.filter((x) => (g.k === "other" ? !PICK_GROUPS.some(([k]) => k === x.spot.category) : x.spot.category === g.k)) }))
+    .filter((g) => g.items.length);
+  const swap = (a: number, b: number) => { const o = [...ids]; const i = o.indexOf(a), j = o.indexOf(b); [o[i], o[j]] = [o[j], o[i]]; onReorder?.(o); };
+  const rows = (list: typeof numbered) => (
+    <ol className="space-y-2">
+      {list.map(({ n, spot }, k) => <PickRow key={spot.id} n={n} spot={spot} count={numbered.length} first={k === 0} last={k === list.length - 1}
+        favorite={favs.has(spot.id)} onRemove={() => onRemove(spot)} busy={busy}
+        onUp={() => k > 0 && swap(spot.id, list[k - 1].spot.id)} onDown={() => k < list.length - 1 && swap(spot.id, list[k + 1].spot.id)} />)}
+    </ol>
+  );
+  return (
+    <div className="space-y-3">
+      {groups.map((g) => {
+        const crew = g.items.filter((x) => !looksAi(x.spot)), ai = g.items.filter((x) => looksAi(x.spot));
+        const M = CAT_META[g.k as keyof typeof CAT_META];
+        return (
+          <div key={g.k} className="rounded-2xl border border-border bg-muted/30 p-2.5 space-y-2" data-testid={`group-${g.k}-${index}`}>
+            <p className="flex items-center gap-1.5 px-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">{M && <M.icon className="h-3.5 w-3.5" />}{g.label} <span className="font-normal normal-case tracking-normal">· {g.items.length}</span></p>
+            {crew.length > 0 && rows(crew)}
+            {ai.length > 0 && (
+              <div className="space-y-2" data-testid={`group-${g.k}-ai-${index}`}>
+                <p className="flex items-center gap-1 px-1 pt-1 text-[11px] font-semibold text-violet-700 dark:text-violet-300"><Sparkles className="h-3 w-3" />AI picks</p>
+                {rows(ai)}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function PickRow({ n, spot, count, onRemove, onUp, onDown, busy, readOnly, favorite, first, last }: {
+  first?: boolean; last?: boolean;
   n: number; spot: SpotWithStats; count: number; onRemove?: () => void; onUp?: () => void; onDown?: () => void; busy?: boolean; readOnly?: boolean; favorite?: boolean;
 }) {
   const M = CAT_META[spot.category as keyof typeof CAT_META];
@@ -553,8 +624,8 @@ function PickRow({ n, spot, count, onRemove, onUp, onDown, busy, readOnly, favor
       )}
       {!readOnly && (
         <div className="mt-2.5 flex items-center justify-end gap-1">
-          <button onClick={onUp} disabled={busy || n === 1} className="h-7 px-2 rounded-full text-[11px] border border-border hover-elevate disabled:opacity-30 inline-flex items-center gap-0.5" aria-label="Move up" data-testid={`button-pick-up-${spot.id}`}><ChevronUp className="h-3 w-3" />Up</button>
-          <button onClick={onDown} disabled={busy || n === count} className="h-7 px-2 rounded-full text-[11px] border border-border hover-elevate disabled:opacity-30 inline-flex items-center gap-0.5" aria-label="Move down" data-testid={`button-pick-down-${spot.id}`}><ChevronDown className="h-3 w-3" />Down</button>
+          <button onClick={onUp} disabled={busy || (first ?? n === 1)} className="h-7 px-2 rounded-full text-[11px] border border-border hover-elevate disabled:opacity-30 inline-flex items-center gap-0.5" aria-label="Move up" data-testid={`button-pick-up-${spot.id}`}><ChevronUp className="h-3 w-3" />Up</button>
+          <button onClick={onDown} disabled={busy || (last ?? n === count)} className="h-7 px-2 rounded-full text-[11px] border border-border hover-elevate disabled:opacity-30 inline-flex items-center gap-0.5" aria-label="Move down" data-testid={`button-pick-down-${spot.id}`}><ChevronDown className="h-3 w-3" />Down</button>
           {!favorite && <button onClick={onRemove} disabled={busy} className="h-7 px-2 rounded-full text-[11px] border border-border hover-elevate disabled:opacity-30 inline-flex items-center gap-1" data-testid={`button-pick-remove-${spot.id}`}><X className="h-3 w-3" />Remove</button>}
         </div>
       )}
@@ -566,13 +637,15 @@ function PickRow({ n, spot, count, onRemove, onUp, onDown, busy, readOnly, favor
 export function SharedBriefPage() {
   const [, params] = useRoute("/b/:token");
   const { data: brief, isLoading, isError, error } = useQuery<BriefFull>({ queryKey: ["/api/shared/briefings", params?.token], retry: false, refetchInterval: aiPolling });
+  const trip = useTrip(); const w = sheetWords(trip);
+  groupPins(trip);
   if (isLoading) return <div className="space-y-4"><Skeleton className="h-8 w-40" /><Skeleton className="h-64 rounded-2xl" /></div>;
   if (isError || !brief) return <p className="text-sm text-muted-foreground">{errText(error) || "This briefing isn't available."} <Link href="/" className="text-primary underline">Go to Wheelsdown</Link></p>;
   return (
     <div className="space-y-5">
       <header className="space-y-1">
-        <p className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"><Plane className="h-3.5 w-3.5" />Crew trip briefing</p>
-        <h1 className="text-xl font-semibold leading-tight" data-testid="text-brief-title">{brief.title || "Trip briefing"}</h1>
+        <p className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"><Plane className="h-3.5 w-3.5" />{w("Crew trip briefing")}</p>
+        <h1 className="text-xl font-semibold leading-tight" data-testid="text-brief-title">{brief.title || w("Trip briefing")}</h1>
         <p className="font-code text-sm font-bold tracking-wide">{routeText(brief)}</p>
       </header>
       <ExportBar brief={brief} />
@@ -684,10 +757,12 @@ const miles = (s: SpotWithStats) => s.milesFromField ?? 99;
  * on top), then AI picks. Tap + to add either. Ask AI for more of the chosen type at the bottom.
  */
 function AddPlaces({ stop, index, others, onAddCrew, onAddAi, busy }: { stop: BriefStopFull; index: number; others: SpotWithStats[]; onAddCrew: (id: number) => void; onAddAi: (rowId: number) => void; busy: boolean }) {
+  const trip = useTrip();
   const [open, setOpen] = useState(false);
   const [kind, setKind] = useState<MoreKind>("");
   const [sub, setSub] = useState("");
   const [sort, setSort] = useState<MoreSort>("best");
+  const [asMap, setAsMap] = useState(false); // List or Map (crew feedback #56)
   const { data: cfg } = useQuery<{ ai?: boolean }>({ queryKey: ["/api/config"] });
   useEffect(() => setSub(""), [kind]);
   const focus = kind === "local" ? "local" : kind === "eat" ? sub || "eat" : kind === "do" ? (sub ? `act:${sub}` : "do") : kind;
@@ -712,7 +787,7 @@ function AddPlaces({ stop, index, others, onAddCrew, onAddAi, busy }: { stop: Br
       <div key={s.id} className={cn(open && "bg-muted/40")}>
         <div className="flex items-center justify-between gap-2 pr-3">
           <button type="button" onClick={() => setPeek(open ? null : s.id)} aria-expanded={open} className="min-w-0 flex-1 px-3.5 py-2.5 text-left hover-elevate" data-testid={testId ? `${testId}-peek` : undefined}>
-            <span className="flex items-center gap-1.5"><span className="truncate text-sm font-medium">{s.name}</span>{badge}<ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} /></span>
+            <span className="flex items-center gap-1.5"><span className="truncate text-sm font-medium">{tag(s)}{s.name}</span>{badge}<ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} /></span>
             <span className={cn("block text-[11px] text-muted-foreground", open ? "whitespace-normal" : "truncate")}>{meta}</span>
           </button>
           <button type="button" onClick={onClick} disabled={busy} className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border text-foreground hover-elevate disabled:opacity-50" aria-label={`Add ${s.name} to briefing`} data-testid={testId}><Plus className="h-4 w-4" /></button>
@@ -732,6 +807,14 @@ function AddPlaces({ stop, index, others, onAddCrew, onAddAi, busy }: { stop: Br
       </div>
     );
   };
+  // map numbers follow the list: crew listings first, then AI picks
+  const listed = [...crew, ...ai];
+  const numOf = new Map(listed.map((s, k) => [s.id, k + 1]));
+  const morePins = [
+    ...listed.filter((s) => s.lat != null && s.lng != null).map((s) => ({ lat: s.lat!, lng: s.lng!, label: String(numOf.get(s.id)), kind: s.category as "eat" | "do" | "stay" | "fbo", ai: isAi(s) })),
+    ...(stop.airport?.lat != null && stop.airport?.lon != null ? [{ lat: stop.airport.lat, lng: stop.airport.lon, label: stop.icao, kind: "airport" as const }] : []),
+  ];
+  const tag = (s: SpotWithStats) => (asMap ? `${numOf.get(s.id)}. ` : "");
   const head = (Icon: typeof Users, label: string, n: number, tone: string, testId: string) => (
     <p className={cn("flex items-center gap-1.5 bg-muted/50 px-3.5 py-1.5 text-[11px] font-semibold", tone)} data-testid={testId}><Icon className="h-3.5 w-3.5" />{label}<span className="font-code opacity-70">{n}</span></p>
   );
@@ -745,7 +828,15 @@ function AddPlaces({ stop, index, others, onAddCrew, onAddAi, busy }: { stop: Br
         <div className="mt-2 rounded-2xl border border-card-border bg-card overflow-hidden">
           <div className="space-y-2 px-3 pt-3">
             <div className="flex items-center justify-between gap-2">
-              <p className="text-[11px] font-semibold text-muted-foreground">What are you looking for?</p>
+              {!trip && <p className="text-[11px] font-semibold text-muted-foreground">What are you looking for?</p>}
+              {trip && (
+                <div className="inline-flex rounded-full border border-border p-0.5" role="group" aria-label="List or map">
+                  {([["list", "List"], ["map", "Map"]] as const).map(([k, l]) => (
+                    <button key={k} type="button" onClick={() => setAsMap(k === "map")} aria-pressed={asMap === (k === "map")} data-testid={`toggle-more-${k}-${index}`}
+                      className={cn("h-6 rounded-full px-2.5 text-[11px] font-semibold", asMap === (k === "map") ? "bg-foreground text-background" : "text-muted-foreground")}>{l}</button>
+                  ))}
+                </div>
+              )}
               <label className="flex items-center gap-1 text-[11px] text-muted-foreground">Sort
                 <select value={sort} onChange={(e) => setSort(e.target.value as MoreSort)} className="h-7 rounded-full border border-border bg-background px-2 text-[11px] font-medium text-foreground" data-testid={`select-more-sort-${index}`}>
                   <option value="best">Crew-rated first</option><option value="near">Closest</option>
@@ -772,6 +863,12 @@ function AddPlaces({ stop, index, others, onAddCrew, onAddAi, busy }: { stop: Br
               </div>
             )}
           </div>
+          {trip && asMap && (
+            <div className="mt-2 px-3" data-testid={`map-more-${index}`}>
+              {morePins.length > 1 ? <MapCanvas pins={morePins} height={220} /> : <p className="text-[11px] text-muted-foreground">None of these have a saved location to map yet.</p>}
+              {listed.length > 0 && morePins.length - 1 < listed.length && <p className="mt-1 text-[11px] text-muted-foreground">{listed.length - (morePins.length - 1) === 1 ? "1 place has no saved location, so it's in the list only." : `${listed.length - (morePins.length - 1)} places have no saved location, so they're in the list only.`}</p>}
+            </div>
+          )}
           <div className="mt-2 border-t border-border">
             {crew.length > 0 && <>
               {head(Users, "Crew listings", crew.length, "text-emerald-700 dark:text-emerald-300", `head-more-crew-${index}`)}
@@ -817,6 +914,7 @@ function AddPlaces({ stop, index, others, onAddCrew, onAddAi, busy }: { stop: Br
 
 /** End of the briefing: preview everything in one place, then share it, without scrolling back up. */
 function FinalizeBar({ brief, preparedBy }: { brief: BriefFull; preparedBy?: string }) {
+  const w = sheetWords(useTrip());
   const [open, setOpen] = useState(false);
   const [shared, setShared] = useState(false);
   const [, navigate] = useLocation();
@@ -827,12 +925,12 @@ function FinalizeBar({ brief, preparedBy }: { brief: BriefFull; preparedBy?: str
       <p className="text-sm font-semibold">Done planning?</p>
       <p className="mt-0.5 text-xs text-muted-foreground">{brief.stops.length} stop{brief.stops.length > 1 ? "s" : ""} · {total} place{total === 1 ? "" : "s"}. Preview it, then send the PDF or a link to the crew.</p>
       <button type="button" onClick={() => setOpen(true)} className="mt-3 inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-full taxi-sign text-sm font-semibold hover-elevate" data-testid="button-finalize">
-        <Eye className="h-4 w-4" />Finalize briefing
+        <Eye className="h-4 w-4" />{w("Finalize briefing")}
       </button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[88vh] max-w-lg overflow-y-auto rounded-2xl p-0" data-testid="dialog-finalize">
           <div className="sticky top-0 z-10 border-b border-border bg-background px-5 pb-3 pt-5">
-            <DialogTitle className="text-base font-semibold leading-snug">{brief.title || "Trip briefing"}</DialogTitle>
+            <DialogTitle className="text-base font-semibold leading-snug">{brief.title || w("Trip briefing")}</DialogTitle>
             <DialogDescription className="font-code text-xs font-bold tracking-wide text-foreground">{routeText(brief)}</DialogDescription>
           </div>
           <div className="space-y-4 px-5 py-4">

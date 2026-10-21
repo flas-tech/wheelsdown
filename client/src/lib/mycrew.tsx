@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { Link } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Check, Copy, Loader2, MessageSquareText, Share2, UserCheck, UserMinus, UserPlus, X } from "lucide-react";
+import { Check, Copy, Loader2, MessageSquareText, Share2, UserCheck, UserMinus, UserPlus, Users, X } from "lucide-react";
 import type { CrewRelation, MemberMessage, MyCrewResp, CrewRequest } from "@shared/mycrew";
 import type { PublicUser } from "@shared/tiers";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -126,7 +126,7 @@ export function MessageList({ items, fresh }: { items: MemberMessage[]; fresh: S
           const body = (
             <span className="flex items-start gap-3">
               <span className="relative mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary/15">
-                {m.kind === "crew_accepted" ? <UserCheck className="h-4 w-4" /> : <MessageSquareText className="h-4 w-4" />}
+                {m.kind === "crew_accepted" ? <UserCheck className="h-4 w-4" /> : m.kind === "crewup" ? <Users className="h-4 w-4" /> : <MessageSquareText className="h-4 w-4" />}
                 {fresh?.has(m.id) && <span className="absolute -left-0.5 top-0 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-card" aria-label="New" />}
               </span>
               <span className="min-w-0">

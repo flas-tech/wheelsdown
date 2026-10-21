@@ -1,7 +1,7 @@
 // Crew Up (was "Crew meetup"): layover plans at the airport level, seen only by people in each other's My Crew.
 // No strangers: you see a plan only when the host is in your crew. Posts end by themselves.
-import { useEffect, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
+import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { BadgeCheck, CalendarClock, Clock, Eye, Flag, Loader2, LogOut, MapPin, Plus, ShieldCheck, UserCheck, UserPlus, Users } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { findTailNumbers } from "@shared/tailNumber";
 import { MEETUP_PRIVACY, MEETUP_RULES, meetupNoteProblem, type Meetup, type MeetupPerson, type MeetupResp } from "@shared/layover";
 import type { SpotWithStats } from "@shared/schema";
+import { stopPins, type BriefFull } from "@/lib/briefPdf";
 
 export default function MeetupPage() { return <PreviewGate><MeetupBoard /></PreviewGate>; }
 
@@ -55,6 +56,14 @@ function MeetupBoard() {
   const [more, setMore] = useState(() => !!crewUpPrefill().hours);
   useEffect(() => { if (!pre.date && !pre.hours) setMore(false); }, [data?.icao]); // eslint-disable-line
   const mineHere = data?.icao ? data.mine.filter((m) => m.icao === data.icao) : [];
+  // four-tab preview: New plan / Your plans tabs; a notification opens the plan it's about (?plan=ID)
+  const qs = new URLSearchParams(window.location.hash.split("?")[1] || window.location.search.slice(1));
+  const planId = Number(qs.get("plan")) || null;
+  const [tab, setTab] = useState<"new" | "plans">(planId || qs.get("tab") === "plans" ? "plans" : "new");
+  const { data: all } = useQuery<{ plans: Meetup[] }>({ queryKey: ["/api/preview/crewup-all"], enabled: trip, staleTime: 20_000, refetchInterval: 60_000, retry: false });
+  const plans = all?.plans || [];
+  // red dot while anything is planned: every plan listed is live until it ends (its date and time plus how long it runs)
+  const dot = plans.some((m) => m.expiresAt > Date.now());
   const full = (data?.mine.length || 0) >= MEETUP_RULES.maxPlans;
 
   return (
@@ -65,6 +74,19 @@ function MeetupBoard() {
         <p className="text-sm text-muted-foreground">Make layover plans with your crew, tonight or for a trip coming up. Only people in your <Link href="/mycrew" className="font-medium text-foreground underline underline-offset-2">My Crew</Link> see them, or just the ones you pick. Airport level only, and they end by themselves.</p>
       </header>
 
+      {trip && (
+        <div className="grid grid-cols-2 gap-1 rounded-full border border-border bg-card p-1" role="tablist" data-testid="tabs-crewup">
+          {([["new", "New plan"], ["plans", "Your plans"]] as const).map(([k, l]) => (
+            <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)} data-testid={`tab-crewup-${k}`}
+              className={cn("relative h-9 rounded-full text-sm font-semibold", tab === k ? "bg-foreground text-background" : "text-muted-foreground hover-elevate")}>
+              {l}{k === "plans" && plans.length > 0 && <span className="ml-1 font-code text-xs opacity-70">{plans.length}</span>}
+              {k === "plans" && dot && <span className="absolute right-3 top-1.5 h-2 w-2 rounded-full bg-red-500" aria-label="Plans coming up" data-testid="dot-crewup-plans" />}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {trip && tab === "plans" ? <YourPlans plans={plans} loading={!all} focus={planId} onNew={() => setTab("new")} /> : <>
       <form onSubmit={(e) => { e.preventDefault(); go(typed); }} className="flex gap-2">
         <input value={typed} onChange={(e) => setTyped(e.target.value.toUpperCase())} maxLength={4} placeholder={data?.icao ? `Not at ${data.icao}? Type the airport` : "Which airport? e.g. TEB"}
           className="h-11 min-w-0 flex-1 rounded-xl border border-input bg-card px-3 font-code text-base uppercase tracking-wider placeholder:font-sans placeholder:normal-case placeholder:tracking-normal placeholder:text-muted-foreground/70" data-testid="input-meetup-airport" aria-label="Airport" />
@@ -73,7 +95,7 @@ function MeetupBoard() {
 
       {fromBriefs.length > 0 && (
         <section className="space-y-1.5" data-testid="section-meetup-briefs">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">From your briefs</h2>
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{trip ? "From your trip sheets" : "From your briefs"}</h2>
           <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 no-scrollbar">
             {fromBriefs.map((s) => (
               <button key={`${s.briefId}-${s.stopIndex}`} type="button" onClick={() => pickStop(s)} data-testid={`chip-meetup-brief-${s.icao}`}
@@ -90,7 +112,7 @@ function MeetupBoard() {
         : error ? <p className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground" data-testid="text-meetup-error">{errMsg(error)}</p>
         : !data ? null : <>
           {data.crewCount === 0 && <p className="rounded-2xl border border-primary/50 bg-primary/5 p-4 text-sm" data-testid="text-meetup-nocrew"><span className="font-semibold">Add your crew first.</span> <span className="text-muted-foreground">Crew Up plans are only seen by people in your crew, so nobody sees yours until you've added someone and they've accepted.</span></p>}
-          {data.mine.length > 0 && (
+          {!trip && data.mine.length > 0 && (
             <section className="space-y-2" data-testid="section-meetup-mine">
               <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Your plans</h2>
               <ul className="space-y-2">{data.mine.map((m) => <li key={m.id}><Posted mine={m} /></li>)}</ul>
@@ -104,9 +126,9 @@ function MeetupBoard() {
                     <Plus className="h-4 w-4" />Make another plan at <span className="font-code">{data.icao}</span>
                   </button>
                 ) : <Compose key={`${data.icao}-${pre.date}-${pre.time}-${pre.hours}`} d={data} pre={pre} onPosted={() => { setMore(false); setPre({ date: null, time: null, hours: null }); }} />}
-              <CrewHere d={data} />
+              {!trip && <CrewHere d={data} />}
             </>}
-          {data.crewElsewhere.length > 0 && (
+          {!trip && data.crewElsewhere.length > 0 && (
             <section className="space-y-2" data-testid="section-crew-elsewhere">
               <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Your crew at other airports</h2>
               <ul className="space-y-2">{data.crewElsewhere.map((m) => <li key={m.id}><Other m={m} showIcao /></li>)}</ul>
@@ -114,7 +136,29 @@ function MeetupBoard() {
           )}
           <InviteCrewCard compact crewUp />
         </>}
+      </>}
     </div>
+  );
+}
+
+/** Four-tab preview: every live plan you can see, yours and your crew's, soonest first. */
+function YourPlans({ plans, loading, focus, onNew }: { plans: Meetup[]; loading: boolean; focus: number | null; onNew: () => void }) {
+  const ref = useRef<HTMLLIElement>(null);
+  useEffect(() => { if (focus && ref.current) ref.current.scrollIntoView({ block: "center", behavior: "smooth" }); }, [focus, plans.length]);
+  if (loading) return <div className="grid place-items-center py-16 text-muted-foreground"><Loader2 className="h-6 w-6 animate-spin" /></div>;
+  if (!plans.length) return (
+    <div className="rounded-2xl border border-dashed border-border bg-card p-4 text-sm text-muted-foreground" data-testid="text-crewup-noplans">
+      No plans yet. <button type="button" onClick={onNew} className="font-semibold text-foreground underline underline-offset-2">Make a new plan</button> and your crew sees it here.
+    </div>
+  );
+  return (
+    <ul className="space-y-2" data-testid="list-crewup-plans">
+      {plans.map((m) => (
+        <li key={m.id} ref={m.id === focus ? ref : undefined} className={cn("rounded-2xl", m.id === focus && "ring-2 ring-primary ring-offset-2 ring-offset-background")} data-testid={`plan-${m.id}`}>
+          {m.mine ? <Posted mine={m} /> : <Other m={m} showIcao />}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -130,25 +174,35 @@ function Compose({ d, pre, onPosted }: { d: MeetupResp; pre?: { date: string | n
   const [later, setLater] = useState(!!preDate && (preDate > today || !!pre?.time));
   const [date, setDate] = useState(() => preDate || (localHour >= 18 ? localDate(d.tz, Date.now() + 86400_000) : today));
   const [time, setTime] = useState(pre?.time && preDate ? pre.time : "19:00");
-  const [pickAll, setPickAll] = useState(true);
+  const trip = useTrip();
+  const [pickAll, setPickAll] = useState(!trip); // four-tab preview: always pick who sees it (Select all is there)
   const [picked, setPicked] = useState<number[]>([]);
   const toggle = (id: number) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
   const [note, setNote] = useState("");
   const [hours, setHours] = useState<number>(() => ((MEETUP_RULES.hours as readonly number[]).includes(pre?.hours || 0) ? pre!.hours! : MEETUP_RULES.defaultHours));
   const [spotId, setSpotId] = useState<number | null>(null);
+  const [place, setPlace] = useState(""); // typed place, when it isn't a listing
+  // places already on your trip sheets at this airport go first in the list (hotels aren't meeting places)
+  const { data: sheets } = useQuery<{ id: number; stops: { icao: string }[] }[]>({ queryKey: ["/api/briefings"], enabled: trip, staleTime: 60_000 });
+  const sheetIds = (sheets || []).filter((b) => b.stops.some((x) => x.icao === icao)).map((b) => b.id).slice(0, 6);
+  const full = useQueries({ queries: sheetIds.map((bid) => ({ queryKey: ["/api/briefings", String(bid)], staleTime: 60_000 })) }).map((q) => q.data as BriefFull | undefined);
+  const onSheet: SpotWithStats[] = [];
+  for (const b of full) for (const st of b?.stops || []) if (st.icao === icao) for (const n of stopPins(st).numbered)
+    if (n.spot.category !== "stay" && !onSheet.some((x) => x.id === n.spot.id || x.name === n.spot.name)) onSheet.push(n.spot);
   const { data: places } = useQuery<{ spots: SpotWithStats[] }>({ queryKey: ["/api/search", icao], queryFn: async () => (await apiRequest("GET", `/api/search?route=${icao}`)).json(), staleTime: 300_000 });
   const options = (places?.spots || []).filter((s) => s.icao === icao && (s.category === "eat" || s.category === "do" || s.category === "fbo")).sort((a, b) => (b.avgRating ?? 0) - (a.avgRating ?? 0)).slice(0, 25);
   const tails = findTailNumbers(note).length > 0;
   const priv = meetupNoteProblem(note);
   const post = useMutation({
-    mutationFn: async () => (await apiRequest("POST", "/api/preview/meetups", { icao, note: note.trim(), hours, spotId, ...(later ? { startDate: date, startTime: time } : {}), viewers: pickAll ? null : picked })).json(),
+    mutationFn: async () => (await apiRequest("POST", "/api/preview/meetups", { icao, note: note.trim(), hours, spotId, ...(spotId ? {} : { place: place.trim() }), ...(later ? { startDate: date, startTime: time } : {}), viewers: pickAll ? null : picked })).json(),
     onSuccess: () => {
       toast({ title: pickAll ? `Posted to your crew at ${icao}` : `Shared with ${picked.length} of your crew at ${icao}`, description: later ? `Starts ${date} at ${time} local, for ${hours} hours.` : `Ends in ${hours} hours, or when you end it.` });
-      setNote(""); setLater(false); onPosted?.(); void refresh();
+      setNote(""); setPlace(""); setLater(false); onPosted?.(); void refresh();
     },
     onError: (e) => toast({ title: "Couldn't post", description: errMsg(e), variant: "destructive" }),
   });
-  const blocked = tails || !!priv || note.length > MEETUP_RULES.noteMax || (d.requireCheckin && !d.verifiedHere && !later) || (!pickAll && !picked.length) || (later && (!date || !time));
+  const placeBad = !!place && (findTailNumbers(place).length > 0 || !!meetupNoteProblem(place));
+  const blocked = placeBad || tails || !!priv || note.length > MEETUP_RULES.noteMax || (d.requireCheckin && !d.verifiedHere && !later) || (!pickAll && !picked.length) || (later && (!date || !time));
   const maxDate = localDate(d.tz, Date.now() + MEETUP_RULES.maxDaysAhead * 86400_000);
   const chip = (on: boolean) => cn("h-9 rounded-full border px-3.5 text-sm font-medium", on ? "border-primary bg-primary text-primary-foreground" : "border-border hover-elevate");
   return (
@@ -157,7 +211,7 @@ function Compose({ d, pre, onPosted }: { d: MeetupResp; pre?: { date: string | n
         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary/15"><Users className="h-5 w-5" /></span>
         <div>
           <h2 className="text-base font-semibold">Plans at <span className="font-code">{icao}</span></h2>
-          <p className="text-xs text-muted-foreground">Tonight or a trip coming up. Your crew sees them, or only the people you pick. Nobody outside your crew does.</p>
+          <p className="text-xs text-muted-foreground">{trip ? "Tonight or a trip coming up. Only the crew you pick see them." : "Tonight or a trip coming up. Your crew sees them, or only the people you pick. Nobody outside your crew does."}</p>
         </div>
       </div>
       <div>
@@ -188,6 +242,27 @@ function Compose({ d, pre, onPosted }: { d: MeetupResp; pre?: { date: string | n
           ))}
         </div>
       </div>
+      {trip ? (
+        <div data-testid="meetup-place">
+          <span className="text-xs font-medium text-muted-foreground">Meet at (optional, public places only)</span>
+          <select value={spotId ?? (place && onSheet.some((x) => x.id < 0 && x.name === place) ? `p:${place}` : "")} onChange={(e) => {
+            const v = e.target.value;
+            if (!v) { setSpotId(null); return; }
+            if (v.startsWith("p:")) { setSpotId(null); setPlace(v.slice(2)); } else { setSpotId(Number(v)); setPlace(""); }
+          }} className="mt-1 h-11 w-full rounded-xl border border-input bg-background px-3 text-base" data-testid="select-meetup-spot">
+            <option value="">{place ? "Typed below" : "Pick a spot, or type one below"}</option>
+            {onSheet.length > 0 && <optgroup label="On your trip sheet">
+              {onSheet.map((s) => <option key={`t${s.id}`} value={s.id > 0 ? s.id : `p:${s.name}`}>{s.name}</option>)}
+            </optgroup>}
+            <optgroup label={onSheet.length ? `More at ${icao}` : `Spots at ${icao}`}>
+              {options.filter((s) => !onSheet.some((x) => x.id === s.id)).map((s) => <option key={s.id} value={s.id}>{s.name}{s.avgRating != null ? ` · ${s.avgRating.toFixed(1)}★` : ""}</option>)}
+            </optgroup>
+          </select>
+          <input value={place} onChange={(e) => { setPlace(e.target.value); if (e.target.value) setSpotId(null); }} maxLength={80} placeholder="Or type a place, e.g. the bar at Cafe Nove"
+            className="mt-2 h-11 w-full rounded-xl border border-input bg-background px-3 text-base" data-testid="input-meetup-place" />
+          {placeBad && <p className="mt-1 text-[11px] text-destructive">{findTailNumbers(place).length ? "Tail numbers aren't allowed." : meetupNoteProblem(place)}</p>}
+        </div>
+      ) : (
       <label className="block">
         <span className="text-xs font-medium text-muted-foreground">Meet at (optional, public places only)</span>
         <select value={spotId ?? ""} onChange={(e) => setSpotId(e.target.value ? Number(e.target.value) : null)} className="mt-1 h-11 w-full rounded-xl border border-input bg-background px-3 text-base" data-testid="select-meetup-spot">
@@ -195,13 +270,14 @@ function Compose({ d, pre, onPosted }: { d: MeetupResp; pre?: { date: string | n
           {options.map((s) => <option key={s.id} value={s.id}>{s.name}{s.avgRating != null ? ` · ${s.avgRating.toFixed(1)}★` : ""}</option>)}
         </select>
       </label>
+      )}
       {crew.length > 0 && (
         <div data-testid="meetup-audience">
           <p className="text-xs font-medium text-muted-foreground">Who sees it</p>
-          <div className="mt-1 flex flex-wrap gap-1.5">
+          {!trip && <div className="mt-1 flex flex-wrap gap-1.5">
             <button type="button" onClick={() => setPickAll(true)} className={chip(pickAll)} data-testid="chip-meetup-all">All my crew ({crew.length})</button>
             <button type="button" onClick={() => setPickAll(false)} className={chip(!pickAll)} data-testid="chip-meetup-pick">Pick crew</button>
-          </div>
+          </div>}
           {!pickAll && (
             <div className="mt-2 rounded-xl border border-border bg-background">
               <div className="flex items-center justify-between border-b border-border px-3 py-2 text-xs">
@@ -227,7 +303,7 @@ function Compose({ d, pre, onPosted }: { d: MeetupResp; pre?: { date: string | n
       {d.requireCheckin && !d.verifiedHere && !later && <p className="text-xs text-destructive">Check in at {icao} first, so crews know you're really here.</p>}
       <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground"><ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />Your crew sees {me?.displayName || "your display name"}, your role and aircraft icon. No location beyond the airport is shared.</p>
       <button type="button" onClick={() => post.mutate()} disabled={post.isPending || blocked} className="h-11 w-full rounded-full taxi-sign text-sm font-semibold hover-elevate disabled:opacity-60" data-testid="button-meetup-post">
-        {post.isPending ? "Posting…" : pickAll ? `Post to my crew at ${icao}` : `Post to ${picked.length || "picked"} crew at ${icao}`}
+        {post.isPending ? "Posting…" : trip && !picked.length ? "Pick who sees it" : pickAll ? `Post to my crew at ${icao}` : `Post to ${picked.length || "picked"} crew at ${icao}`}
       </button>
     </section>
   );
@@ -247,7 +323,7 @@ function Posted({ mine }: { mine: Meetup }) {
         <When m={mine} />
       </div>
       {mine.note && <p className="mt-1.5 text-sm" data-testid="text-meetup-mynote">{mine.note}</p>}
-      {mine.spot && <PlaceLine s={mine.spot} />}
+      {mine.spot ? <PlaceLine s={mine.spot} /> : mine.place ? <PlaceText t={mine.place} /> : null}
       <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground" data-testid={`text-meetup-viewers-${mine.id}`}><Eye className="h-3.5 w-3.5 shrink-0" /><span className="truncate">Seen by {who}</span></p>
       <div className="mt-3">
         <p className="text-xs font-medium text-muted-foreground">Who's in</p>
@@ -291,7 +367,7 @@ function Other({ m, showIcao }: { m: Meetup; showIcao?: boolean }) {
       </div>
       {upcoming(m) && <p className="mt-2"><When m={m} /></p>}
       {m.note && <p className="mt-2 text-sm">{m.note}</p>}
-      {m.spot && <PlaceLine s={m.spot} />}
+      {m.spot ? <PlaceLine s={m.spot} /> : m.place ? <PlaceText t={m.place} /> : null}
       <div className="mt-3 flex items-center justify-between gap-2">
         <button type="button" onClick={() => join.mutate()} disabled={join.isPending}
           className={cn("inline-flex h-9 items-center gap-1.5 rounded-full px-3.5 text-xs font-semibold hover-elevate", m.joined ? "border border-primary bg-primary/15" : "taxi-sign")} data-testid={`button-meetup-join-${m.id}`}>
@@ -318,4 +394,8 @@ function Person({ p }: { p: MeetupPerson }) {
 
 function PlaceLine({ s }: { s: { id: number; name: string } }) {
   return <Link href={`/spot/${s.id}`} className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-foreground underline underline-offset-2" data-testid={`link-meetup-spot-${s.id}`}><MapPin className="h-3.5 w-3.5" />{s.name}</Link>;
+}
+
+function PlaceText({ t }: { t: string }) {
+  return <p className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold" data-testid="text-meetup-place"><MapPin className="h-3.5 w-3.5" />{t}</p>;
 }

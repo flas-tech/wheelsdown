@@ -27,7 +27,7 @@ export type CrewShared = {
 };
 
 /** Messages from the Wheelsdown team or the app (feedback replies, "accepted your crew request"). Shown in Notifications. */
-export type MemberMessage = { id: number; kind: "feedback_reply" | "crew_accepted" | "team"; title: string; body: string; link: string; createdAt: number; unread: boolean };
+export type MemberMessage = { id: number; kind: "feedback_reply" | "crew_accepted" | "team" | "crewup"; title: string; body: string; link: string; createdAt: number; unread: boolean };
 
 /** Invite link that also asks the new member to join your crew after they sign up. */
 export const crewInviteUrl = (origin: string, userId: number) => `${origin.replace(/\/$/, "")}/?ref=${userId}&crew=1`;

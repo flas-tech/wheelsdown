@@ -77,6 +77,10 @@ export async function addMessage(userId: number, m: { kind: MemberMessage["kind"
   notify(userId, m.kind === "crew_accepted" ? "crew_accepted" : "team", { title: m.title, body: m.body, link: m.link || "/notifications", tag: `msg-${num(r?.id)}` });
   return num(r?.id);
 }
+/** Log an entry in someone's Notifications without a push (the caller already sent its own). */
+export async function logMessage(userId: number, m: { kind: MemberMessage["kind"]; title: string; body?: string; link?: string }) {
+  await rows(sql`INSERT INTO member_messages (user_id, kind, title, body, link, created_at) VALUES (${userId}, ${m.kind}, ${m.title.slice(0, 160)}, ${(m.body || "").slice(0, 2000)}, ${(m.link || "").slice(0, 200)}, ${Date.now()}) RETURNING id`).catch(() => []);
+}
 /** A pending crew request from the inviter, made when someone signs up through a crew invite link. They still have to accept. */
 export async function requestFromInvite(inviterId: number, newUserId: number) {
   if (!inviterId || !newUserId || inviterId === newUserId) return;

@@ -356,3 +356,16 @@
 .wd-map .leaflet-bar a { width: 40px; height: 40px; line-height: 40px; background: hsl(var(--card)); color: hsl(var(--foreground)); border-bottom-color: hsl(var(--border)); }
 .wd-map .leaflet-bar a:hover { background: hsl(var(--muted)); }
 .wd-pin, .wd-apt, .wd-cluster { background: transparent; border: 0; }
+
+/* Date and time boxes: iOS Safari draws them with its own padding and left-aligned text that can spill
+   past the box on narrow phones. Same look as other inputs, text centered, never wider than the box. */
+input[type="date"], input[type="time"] {
+  -webkit-appearance: none;
+  appearance: none;
+  min-width: 0;
+  max-width: 100%;
+  text-align: center;
+  line-height: normal;
+}
+input[type="date"]::-webkit-date-and-time-value, input[type="time"]::-webkit-date-and-time-value { text-align: center; margin: 0; }
+input[type="date"]::-webkit-calendar-picker-indicator, input[type="time"]::-webkit-calendar-picker-indicator { margin-left: 0; }

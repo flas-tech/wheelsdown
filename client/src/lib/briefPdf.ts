@@ -46,12 +46,18 @@ export const layoverText = (s: { layover: string; nights?: number }) => {
 export const routeText = (b: { stops: { icao: string }[] }) => b.stops.map((s) => s.icao).join(" > ");
 
 /** Pins for a stop: airport plus numbered picks that have coordinates. */
+/** Four-tab preview: picks sorted by type (hotels, eat, do, FBO), crew picks before AI picks in each, then your order. */
+let GROUPED = false;
+export const groupPins = (on: boolean) => { GROUPED = on; };
+export const PICK_GROUPS = [["stay", "Hotels"], ["do", "Do"], ["eat", "Eat"], ["fbo", "FBO"]] as const;
+const groupOf = (c: string) => { const i = PICK_GROUPS.findIndex(([k]) => k === c); return i < 0 ? 9 : i; };
 export function stopPins(st: BriefStopFull): { pins: MapPin[]; numbered: { n: number; spot: SpotWithStats; mapped: boolean; ai: boolean }[] } {
   const pins: MapPin[] = [];
   // the owner's order first; anything new since (a favorite, an added pick) follows in its natural place
   const natural = [...st.picks, ...(st.aiPicks || [])];
   const pos = new Map((st.order || []).map((id, k) => [id, k]));
-  const items = pos.size ? natural.map((s, k) => ({ s, k })).sort((a, b) => (pos.get(a.s.id) ?? 1000 + a.k) - (pos.get(b.s.id) ?? 1000 + b.k)).map((x) => x.s) : natural;
+  let items = pos.size ? natural.map((s, k) => ({ s, k })).sort((a, b) => (pos.get(a.s.id) ?? 1000 + a.k) - (pos.get(b.s.id) ?? 1000 + b.k)).map((x) => x.s) : natural;
+  if (GROUPED) items = items.map((s, k) => ({ s, k })).sort((a, b) => groupOf(a.s.category) - groupOf(b.s.category) || Number(looksAi(a.s)) - Number(looksAi(b.s)) || a.k - b.k).map((x) => x.s);
   const numbered = items.map((spot, i) => {
     const mapped = spot.lat != null && spot.lng != null;
     if (mapped) pins.push({ lat: spot.lat!, lng: spot.lng!, label: String(i + 1), kind: spot.category as MapPin["kind"], ai: looksAi(spot) });

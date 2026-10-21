@@ -69,3 +69,12 @@ export function fmtArrive(s: { arriveDate?: string | null }) {
   const d = new Date(`${s.arriveDate}T12:00:00Z`);
   return new Intl.DateTimeFormat(undefined, { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" }).format(d);
 }
+
+/** One name for it in the four-tab preview: "trip sheet" (members keep "briefing" until it opens). */
+export function sheetWords(on: boolean) {
+  return (s: string) => !on ? s : s
+    .replace(/Trip briefings/g, "Trip sheets").replace(/trip briefings/g, "trip sheets")
+    .replace(/Trip briefing/g, "Trip sheet").replace(/trip briefing/g, "trip sheet")
+    .replace(/Briefings/g, "Trip sheets").replace(/briefings/g, "trip sheets")
+    .replace(/Briefing/g, "Trip sheet").replace(/briefing/g, "trip sheet");
+}

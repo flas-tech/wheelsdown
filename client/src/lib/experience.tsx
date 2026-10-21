@@ -106,8 +106,8 @@ export const EXPERIENCE_NAV: Record<Experience, NavItem[]> = {
 /** The four tabs. Logbook isn't here: it's the points pill in the header, on every page. */
 export const TRIP_NAV: NavItem[] = [
   { href: "/today", label: "Home", icon: House, active: on("/today", "/home", "/start") },
-  { href: "/plan", label: "Plan", icon: ClipboardList, active: on("/plan", "/brief", "/b") },
   { href: "/", label: "Spots", icon: MapPin, active: (l) => l === "/" || on("/spot", "/map", "/favorites", "/add", "/rate")(l) },
+  { href: "/brief", label: "Plan", icon: ClipboardList, active: on("/plan", "/brief", "/b") },
   { href: "/mycrew", label: "Crew", icon: Users, active: on("/meetup", "/mycrew", "/lounge", "/crew", "/following", "/followers"), dot: "crew" },
 ];
 /** Sub-tabs at the top of the Spots and Crew sections (pages that are a step of their own, like a listing or Add, have none). */

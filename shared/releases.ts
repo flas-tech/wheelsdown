@@ -2,6 +2,16 @@
 export type Release = { date: string; sha?: string; title: string; notes: string[] };
 
 export const RELEASES: Release[] = [
+  { date: "2026-10-21", title: "Admin preview, round 3 from admin feedback: trip sheets, Crew Up tabs and places, Home favorites", notes: [
+    "Tabs in order Home, Spots, Plan, Crew. Plan your layover and Trip briefings are one page now, Trip sheets (/brief; /plan forwards there): New trip sheet, Coming up, Crew plans you can see (GET /api/preview/crewup-all), a trip to rate, then your saved trip sheets. In the preview it's called a trip sheet everywhere; members still see briefing.",
+    "Trip sheet: picks sit in a box per type, Hotels, Do, Eat, then FBO, with crew picks first and AI picks under them; the map, PDF and numbers follow that order and Up/Down moves within a box. Crew Up and Re-pick moved to the bottom of each stop, the landing date box has no Crew Up button, and PDF / Share link / Preview sit at the bottom next to Finalize. Add places has List / Map.",
+    "Crew plans on trip sheets: each stop lists live Crew Up plans at that airport that you posted or were picked for (GET /api/preview/crewup-at), the ones on the stop's date highlighted. Tapping one opens it in Crew Up.",
+    "Crew Up has New plan and Your plans tabs; Your plans has a red dot while any plan you can see hasn't ended. Meet at: pick a spot (ones on your trip sheet first) or type a place (new column meetups.place, public places only, same tail-number and privacy checks, no hotels). Who sees it: pick crew with Select all; All my crew is gone and Post waits until someone is picked.",
+    "Notifications: when crew post a plan for you or join yours, it's logged in Notifications (member_messages kind crewup, preview audience only) with the red dots on the header pill and the Notifications tab; tapping it opens that plan (/meetup?icao=X&plan=ID).",
+    "Home (Layover today): opens on your location if it's allowed and you're within 25 mi of a field, else the last airport you picked (this device). Recent airports have an x to remove them; star an airport to keep it as a favorite chip. Crew Up today shows plans here today and who's in (names to the host).",
+    "Date and time boxes are centered and stay inside their box on phones.",
+    "Rollback: redeploy d5b1a8e. It ignores meetups.place (plans typed with only a place show no place) and Crew Up notification rows show with the default icon.",
+  ] },
   { date: "2026-10-21", title: "Admin preview, round 2 from admin feedback: Home is Layover today, Plan tab, date only, Crew order", notes: [
     "Tabs are now Home, Plan, Spots, Crew. Home is Layover today (/today): it opens on the field you're at (typed code, then a check-in, then your location if the site already has permission, then a brief stop dated today, then your newest brief). New Use my location button next to the airport box. No brief needed.",
     "The trip hub with the big Your next layover card and 4-step checklist is gone. Plan (/plan) is the plan-your-layover page: Plan a layover, Coming up (on now, then by landing date, then undated stops in the order you planned them) with a Crew Up button per stop, a trip to rate, and At the field now. /home and /start go to /today.",

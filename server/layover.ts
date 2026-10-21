@@ -8,7 +8,7 @@ import { rateLimit } from "express-rate-limit";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import tzlookup from "tz-lookup";
-import { aiSpotsForUser } from "./trip";
+import { aiSpotsForUser, tripOpenFor } from "./trip";
 import { db } from "./db";
 import { notify } from "./push";
 import { storage } from "./storage";
@@ -17,7 +17,7 @@ import { logChange } from "./ops";
 import { flagShortText } from "./ai";
 import { findTailNumbers } from "@shared/tailNumber";
 import { pickable, pickScore } from "@shared/briefing";
-import { crewIds, areCrew } from "./mycrew";
+import { crewIds, areCrew, logMessage } from "./mycrew";
 import { fillStop, aiPrefOf, programsOf } from "./aiPicks";
 import { MEETUP_RULES, meetupNoteProblem, meetupViewers, meetupVisibleTo, meetupStart, type Metar, type Meetup, type MeetupPerson, type MeetupResp, type RateItem, type TodayPick, type TodayResp, type FlightCat } from "@shared/layover";
 import type { SpotWithStats, User, BriefingStop } from "@shared/schema";
@@ -45,6 +45,7 @@ export async function ensureLayoverTables() {
   // future plans (#49) and picked viewers (#57): additive, so the release before still runs on the same table
   await db().execute(sql`ALTER TABLE meetups ADD COLUMN IF NOT EXISTS starts_at bigint NOT NULL DEFAULT 0`);
   await db().execute(sql`ALTER TABLE meetups ADD COLUMN IF NOT EXISTS viewer_ids text`);
+  await db().execute(sql`ALTER TABLE meetups ADD COLUMN IF NOT EXISTS place text NOT NULL DEFAULT ''`);
   await db().execute(sql`CREATE TABLE IF NOT EXISTS meetup_joins (meetup_id integer NOT NULL, user_id integer NOT NULL, created_at bigint NOT NULL DEFAULT 0, PRIMARY KEY (meetup_id, user_id))`);
   await db().execute(sql`INSERT INTO app_settings (key, value) VALUES ('layover_audience', 'admins') ON CONFLICT (key) DO NOTHING`);
 }
@@ -259,6 +260,13 @@ export function registerLayover(app: Express, o: { userOf: (req: Request) => Pro
       favorites: spots.filter((s) => favIds.has(s.id)).map((s) => pick(s, rated)),
       meetup: { mine: !!mineM, others }, toRate: queue.filter((x) => x.icao === icao).length, recent,
     };
+    // four-tab preview: who's in for Crew Up here today (airport local day), yours and your crew's that you can see
+    if (await tripOpenFor(u)) {
+      const day = (t: number) => new Intl.DateTimeFormat("en-CA", { timeZone: tz || "UTC" }).format(t);
+      const today = day(now);
+      const here = (await crewUpRows(u.id, [icao])).filter((r) => meetupStart(r) <= now || day(meetupStart(r)) === today); // on now, or starting later today
+      out.crewUpToday = await shape(here, u.id, icao);
+    }
     res.json(out);
   });
 
@@ -294,7 +302,7 @@ export function registerLayover(app: Express, o: { userOf: (req: Request) => Pro
       const mine = num(r.user_id) === viewer;
       const js = joins.filter((j) => num(j.meetup_id) === num(r.id));
       return {
-        id: num(r.id), icao: String(r.icao), note: String(r.note || ""), spot: r.spot_id != null ? spotBy.get(num(r.spot_id)) || null : null,
+        id: num(r.id), icao: String(r.icao), note: String(r.note || ""), place: String(r.place || ""), spot: r.spot_id != null ? spotBy.get(num(r.spot_id)) || null : null,
         createdAt: num(r.created_at), expiresAt: num(r.expires_at), host: ppl.get(num(r.user_id)) || { id: 0, name: "Former member", crewRole: "Crew", aircraft: "", tierId: "", verified: false },
         mine, joined: js.some((j) => num(j.user_id) === viewer), joins: js.length,
         // the host sees who's in; everyone else sees a count, plus themselves
@@ -304,6 +312,38 @@ export function registerLayover(app: Express, o: { userOf: (req: Request) => Pro
       };
     }).filter((m) => m.host.id);
   }
+
+  /** Live Crew Up plans at these airports: yours, plus your crew's that they shared with you. */
+  async function crewUpRows(uid: number, icaos: string[] | null) {
+    if (icaos && !icaos.length) return [];
+    const now = Date.now();
+    const myCrew = Array.from(await crewIds(uid));
+    const who = [uid, ...myCrew];
+    const at = icaos ? sql`AND icao IN (${sql.join(icaos.map((i) => sql`${i}`), sql`, `)})` : sql``;
+    const list = await rows(sql`SELECT * FROM meetups WHERE status = 'live' AND expires_at > ${now} ${at} AND user_id IN (${sql.join(who.map((i) => sql`${i}`), sql`, `)}) ORDER BY created_at DESC LIMIT 200`);
+    return list.filter((r) => num(r.user_id) === uid || meetupVisibleTo(r, uid)).sort((a, z) => meetupStart(a) - meetupStart(z));
+  }
+  /** Four-tab preview: Crew Up plans at each stop of a trip sheet, so a plan you were picked for shows on your trip sheet. */
+  app.get("/api/preview/crewup-at", gate, async (req, res) => {
+    const u = me(req);
+    if (!(await tripOpenFor(u))) return res.json({ byIcao: {} });
+    const icaos = Array.from(new Set(String(req.query.icaos || "").toUpperCase().split(",").map((x) => x.trim()).filter((x) => /^[A-Z0-9]{3,4}$/.test(x)))).slice(0, 12);
+    const list = await crewUpRows(u.id, icaos);
+    const byIcao: Record<string, Meetup[]> = {};
+    for (const c of icaos) { const l = list.filter((r) => r.icao === c); if (l.length) byIcao[c] = await shape(l, u.id, c); }
+    res.set("Cache-Control", "no-store").json({ byIcao });
+  });
+
+  /** Four-tab preview: every live Crew Up plan you can see (yours and the ones crew shared with you), for Trip sheets. */
+  app.get("/api/preview/crewup-all", gate, async (req, res) => {
+    const u = me(req);
+    if (!(await tripOpenFor(u))) return res.json({ plans: [] });
+    const list = (await crewUpRows(u.id, null)).slice(0, 30);
+    const plans: Meetup[] = [];
+    for (const c of Array.from(new Set(list.map((r) => String(r.icao))))) plans.push(...(await shape(list.filter((r) => r.icao === c), u.id, c)));
+    plans.sort((a, z) => a.startsAt - z.startsAt);
+    res.set("Cache-Control", "no-store").json({ plans });
+  });
 
   app.get("/api/preview/meetups", gate, async (req, res) => {
     const u = me(req), now = Date.now();
@@ -343,6 +383,8 @@ export function registerLayover(app: Express, o: { userOf: (req: Request) => Pro
     startTime: z.string().regex(/^\d{2}:\d{2}$/).optional().nullable(),
     // who sees it (#57): crew member ids; missing or null = all of your crew
     viewers: z.array(z.coerce.number().int().positive()).max(500).nullable().optional(),
+    // free-text meeting place (#trip preview), public places only; a picked listing wins if both are sent
+    place: z.string().trim().max(80, "Keep the place under 80 characters").default(""),
   });
   app.post("/api/preview/meetups", gate, writeLimit, async (req, res) => {
     const u = me(req);
@@ -355,6 +397,13 @@ export function registerLayover(app: Express, o: { userOf: (req: Request) => Pro
     const priv = meetupNoteProblem(note);
     if (priv) return res.status(400).json({ message: priv });
     if (note && await flagShortText(note)) return res.status(400).json({ message: "That note can't be posted. Keep it friendly and about meeting up." });
+    let place = p.data.spotId ? "" : p.data.place;
+    if (place) {
+      if (findTailNumbers(place).length) return res.status(400).json({ message: "Tail numbers aren't allowed in the place." });
+      const pp = meetupNoteProblem(place); if (pp) return res.status(400).json({ message: pp });
+      if (/\b(hotel|inn|suites?|marriott|hilton|hyatt|sheraton|westin|hampton|holiday inn|courtyard|residence inn)\b/i.test(place)) return res.status(400).json({ message: "Pick a public place to meet, not a hotel." });
+      if (await flagShortText(place)) return res.status(400).json({ message: "That place can't be posted. Use the name of a public place." });
+    }
     if (MEETUP_RULES.requireCheckin && !(await hasCheckin(u.id, ap.icao))) return res.status(400).json({ message: `Check in at ${ap.icao} first, so crews know you're really here.` });
     let spotId: number | null = null;
     if (p.data.spotId) {
@@ -388,8 +437,8 @@ export function registerLayover(app: Express, o: { userOf: (req: Request) => Pro
     const overlap = mineLive.filter((m) => m.icao === ap.icao && meetupStart(m) < end && num(m.expires_at) > start).map((m) => num(m.id));
     if (mineLive.length - overlap.length >= MEETUP_RULES.maxPlans) return res.status(400).json({ message: `You have ${MEETUP_RULES.maxPlans} plans posted. End one first.` });
     if (overlap.length) await db().execute(sql`UPDATE meetups SET status = 'ended' WHERE user_id = ${u.id} AND id IN (${sql.join(overlap.map((i) => sql`${i}`), sql`, `)})`);
-    const r = (await rows(sql`INSERT INTO meetups (user_id, icao, note, spot_id, status, created_at, starts_at, expires_at, viewer_ids)
-      VALUES (${u.id}, ${ap.icao}, ${note}, ${spotId}, 'live', ${now}, ${start}, ${end}, ${viewers ? viewers.join(",") : null}) RETURNING id`))[0];
+    const r = (await rows(sql`INSERT INTO meetups (user_id, icao, note, spot_id, status, created_at, starts_at, expires_at, viewer_ids, place)
+      VALUES (${u.id}, ${ap.icao}, ${note}, ${spotId}, 'live', ${now}, ${start}, ${end}, ${viewers ? viewers.join(",") : null}, ${place}) RETURNING id`))[0];
     await db().execute(sql`DELETE FROM meetup_joins WHERE meetup_id IN (SELECT id FROM meetups WHERE status <> 'live' OR expires_at < ${now - 7 * DAY})`);
     await db().execute(sql`DELETE FROM meetups WHERE expires_at < ${now - 7 * DAY}`);
     res.status(201).json({ ok: true, id: num(r.id), startsAt: start });
@@ -399,9 +448,14 @@ export function registerLayover(app: Express, o: { userOf: (req: Request) => Pro
     const key = `${u.id}:${ap.icao}:${new Date(start).toISOString().slice(0, 10)}`;
     if (now - (crewUpSent.get(key) || 0) > 90 * 60_000) {
       crewUpSent.set(key, now);
-      const where = spotId ? (await storage.getSpot(spotId))?.name : "";
+      const where = spotId ? (await storage.getSpot(spotId))?.name : place;
       const body = [whenTxt ? `${whenTxt} local` : "", note, where ? `Meet at ${where}` : "", `Around for ${p.data.hours} h`].filter(Boolean).join(" · ");
-      for (const id of viewers || Array.from(crew)) notify(id, "crewup_posted", { title: `${u.displayName} posted Crew Up at ${ap.icao}`, body, link: `/meetup?icao=${ap.icao}`, tag: `crewup-${u.id}` });
+      const link = `/meetup?icao=${ap.icao}&plan=${num(r.id)}`;
+      for (const id of viewers || Array.from(crew)) {
+        notify(id, "crewup_posted", { title: `${u.displayName} posted Crew Up at ${ap.icao}`, body, link, tag: `crewup-${u.id}` });
+        // four-tab preview: the same thing in their Notifications, which opens the plan
+        if (await tripOpenFor({ id } as User)) await logMessage(id, { kind: "crewup", title: `${u.displayName} posted Crew Up at ${ap.icao}`, body, link });
+      }
     }
   });
   /** Red dot on the Crew Up tab (#51): when the newest crew plan you can see was posted. The client compares it with your last visit. */
@@ -427,7 +481,9 @@ export function registerLayover(app: Express, o: { userOf: (req: Request) => Pro
     const jk = `${id}:${u.id}`;
     if ((j.rows as any[]).length && !joinSent.has(jk)) {
       joinSent.add(jk);
-      notify(num(m.user_id), "crewup_joined", { title: `${u.displayName} is in for your Crew Up`, body: `At ${m.icao}. Tap to see who's coming.`, link: `/meetup?icao=${m.icao}`, tag: `join-${id}` });
+      const link = `/meetup?icao=${m.icao}&plan=${id}`;
+      notify(num(m.user_id), "crewup_joined", { title: `${u.displayName} is in for your Crew Up`, body: `At ${m.icao}. Tap to see who's coming.`, link, tag: `join-${id}` });
+      if (await tripOpenFor({ id: num(m.user_id) } as User)) await logMessage(num(m.user_id), { kind: "crewup", title: `${u.displayName} is in for your Crew Up at ${m.icao}`, body: "Tap to see who's coming.", link });
     }
   });
   app.delete("/api/preview/meetups/:id/join", gate, async (req, res) => {

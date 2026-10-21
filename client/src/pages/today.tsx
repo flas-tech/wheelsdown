@@ -3,19 +3,22 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { useSearch } from "@/pages/home";
-import { BedDouble, CalendarDays, ChevronRight, Clock, Compass, LocateFixed, Heart, Loader2, PlaneLanding, Plane, RefreshCw, Sparkles, Star, Sunrise, Sunset, Users, Utensils, Wind } from "lucide-react";
+import { BedDouble, CalendarDays, ChevronRight, Clock, Compass, LocateFixed, Heart, X, Loader2, PlaneLanding, Plane, RefreshCw, Sparkles, Star, Sunrise, Sunset, Users, Utensils, Wind } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { AirportCheckInCard } from "@/lib/checkins";
 import { PreviewBadge, PreviewGate, ago, errMsg } from "@/lib/preview";
 import { cn } from "@/lib/utils";
 import { DirectionsButton } from "@/lib/directions";
-import type { Metar, TodayPick, TodayResp } from "@shared/layover";
+import type { Meetup, Metar, TodayPick, TodayResp } from "@shared/layover";
 import { getPosition, type NearAirport } from "@/lib/geo";
 import { useTrip } from "@/lib/experience";
 import { useToast } from "@/hooks/use-toast";
 
-/** Four-tab preview: Home opens on the field you're at. Location is used only when this site already has permission, once per visit. */
-const LOCATED = "wd-today-located";
+/** Four-tab preview: Home opens on the field you're at (location, only when this site already has permission),
+ *  else the last airport you picked. Recent airports can be hidden and favorites starred, on this device. */
+const LAST = "wd-today-last", HIDDEN = "wd-today-hidden", FAVS = "wd-today-favs";
+const readList = (k: string): string[] => { try { const v = JSON.parse(localStorage.getItem(k) || "[]"); return Array.isArray(v) ? v.filter((x) => typeof x === "string").slice(0, 30) : []; } catch { return []; } };
+const writeList = (k: string, v: string[]) => { try { localStorage.setItem(k, JSON.stringify(v.slice(0, 30))); } catch { /* private mode */ } };
 async function nearestField(): Promise<NearAirport | null> {
   const pos = await getPosition();
   const near = (await (await apiRequest("GET", `/api/airports/nearest?lat=${pos.lat}&lon=${pos.lng}`)).json()) as NearAirport[];
@@ -45,34 +48,46 @@ export default function TodayPage() { return <PreviewGate><Today /></PreviewGate
 
 function Today() {
   useClock();
-  const [code, setCode] = useState<string>(() => new URLSearchParams(window.location.hash.split("?")[1] || window.location.search.slice(1)).get("icao")?.toUpperCase() || "");
+  const trip = useTrip();
+  const urlCode = new URLSearchParams(window.location.hash.split("?")[1] || window.location.search.slice(1)).get("icao")?.toUpperCase() || "";
+  const [code, setCode] = useState<string>(() => urlCode || (trip ? localStorage.getItem(LAST) || "" : ""));
+  const [hidden, setHidden] = useState(() => readList(HIDDEN));
+  const [favs, setFavs] = useState(() => readList(FAVS));
   const [typed, setTyped] = useState("");
   const key = ["/api/preview/today", code];
   const { data, isLoading, error, isFetching, refetch } = useQuery<TodayResp>({
     queryKey: key, queryFn: async () => (await apiRequest("GET", `/api/preview/today${code ? `?icao=${encodeURIComponent(code)}` : ""}`)).json(), staleTime: 60_000, retry: false,
   });
   const go = (c: string) => { const v = c.trim().toUpperCase(); if (v.length >= 3) { setCode(v); setTyped(""); } };
-  const trip = useTrip();
+  // remember the field on screen, so Home opens on it next time (when location doesn't say otherwise)
+  useEffect(() => { if (trip && data?.icao) try { localStorage.setItem(LAST, data.icao); } catch { /* */ } }, [trip, data?.icao]);
+  const hide = (c: string) => { const v = [...hidden.filter((x) => x !== c), c]; setHidden(v); writeList(HIDDEN, v); };
+  const toggleFav = (c: string) => {
+    const v = favs.includes(c) ? favs.filter((x) => x !== c) : [c, ...favs];
+    setFavs(v); writeList(FAVS, v);
+    if (!favs.includes(c) && hidden.includes(c)) { const h = hidden.filter((x) => x !== c); setHidden(h); writeList(HIDDEN, h); }
+  };
   const { toast } = useToast();
   const [locating, setLocating] = useState(false);
   const locate = async (auto: boolean) => {
     setLocating(true);
     try {
       const f = await nearestField();
-      sessionStorage.setItem(LOCATED, f?.icao || "-");
       if (f && (!auto || f.miles <= 25)) { setCode(f.icao); if (!auto) toast({ title: `Nearest field: ${f.icao}`, description: `${f.name} · ${f.miles} mi away` }); }
       else if (!auto) toast({ title: "No airport found nearby", description: "Type the code instead." });
     } catch (e) {
       if (!auto) toast({ title: "Location unavailable", description: String((e as Error).message || e), variant: "destructive" });
     } finally { setLocating(false); }
   };
-  // open on the field you're at: unless you typed one or checked in, use location if it's already allowed (no prompt)
+  // open on the field you're at: every time Home opens (unless a link named the airport), use location if it's
+  // already allowed (never prompts) and you're within 25 mi of a field; otherwise the last airport you picked stays
   useEffect(() => {
-    if (!trip || code || !data || data.source === "checkin" || sessionStorage.getItem(LOCATED)) return;
+    if (!trip || urlCode) return;
     const perms = (navigator as any).permissions;
     if (!perms?.query) return;
     perms.query({ name: "geolocation" }).then((p: { state: string }) => { if (p.state === "granted") void locate(true); }).catch(() => {});
-  }, [trip, code, data?.source]); // eslint-disable-line
+  }, [trip]); // eslint-disable-line
+  const recent = (data?.recent || []).filter((c) => !hidden.includes(c) && !favs.includes(c));
 
   return (
     <div className="space-y-4" data-testid="page-today">
@@ -93,18 +108,36 @@ function Today() {
         )}
         <button type="submit" className="h-11 rounded-xl taxi-sign px-4 text-sm font-semibold hover-elevate disabled:opacity-60" disabled={typed.trim().length < 3} data-testid="button-today-go">Go</button>
       </form>
-      {!!data?.recent?.length && (
+      {trip ? (
+        (favs.length > 0 || recent.length > 0) && (
+          <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 no-scrollbar" data-testid="list-today-recent">
+            {favs.map((c) => (
+              <button key={`f${c}`} type="button" onClick={() => go(c)} className={cn("inline-flex h-8 shrink-0 items-center gap-1 rounded-full border px-3 font-code text-xs font-semibold", c === data?.icao ? "border-primary bg-primary/15" : "border-border hover-elevate")} data-testid={`chip-today-fav-${c}`}>
+                <Star className="h-3 w-3 fill-primary text-primary" />{c}
+              </button>
+            ))}
+            {recent.map((c) => (
+              <span key={c} className={cn("inline-flex h-8 shrink-0 items-center rounded-full border font-code text-xs font-semibold", c === data?.icao ? "border-primary bg-primary/15" : "border-border")}>
+                <button type="button" onClick={() => go(c)} className="h-full rounded-l-full pl-3 pr-1.5 hover-elevate" data-testid={`chip-today-recent-${c}`}>{c}</button>
+                <button type="button" onClick={() => hide(c)} aria-label={`Remove ${c} from recent`} className="grid h-full w-7 place-items-center rounded-r-full text-muted-foreground hover-elevate" data-testid={`button-today-hide-${c}`}><X className="h-3 w-3" /></button>
+              </span>
+            ))}
+          </div>
+        )
+      ) : (
+      !!data?.recent?.length && (
         <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1" data-testid="list-today-recent">
           {data.recent.map((c) => (
             <button key={c} type="button" onClick={() => go(c)} className={cn("h-8 shrink-0 rounded-full border px-3 font-code text-xs font-semibold", c === data.icao ? "border-primary bg-primary/15" : "border-border hover-elevate")} data-testid={`chip-today-${c}`}>{c}</button>
           ))}
         </div>
+      )
       )}
 
       {isLoading ? <div className="grid place-items-center py-16 text-muted-foreground"><Loader2 className="h-6 w-6 animate-spin" /></div>
         : error ? <p className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground" data-testid="text-today-error">{errMsg(error)}</p>
         : !data?.airport ? <NoAirport />
-        : <Board d={data} refreshing={isFetching} onRefresh={() => { void queryClient.invalidateQueries({ queryKey: key }); void refetch(); }} />}
+        : <Board d={data} fav={favs.includes(data.icao || "")} onFav={trip ? () => toggleFav(data.icao!) : undefined} refreshing={isFetching} onRefresh={() => { void queryClient.invalidateQueries({ queryKey: key }); void refetch(); }} />}
     </div>
   );
 }
@@ -118,7 +151,8 @@ function NoAirport() {
   );
 }
 
-function Board({ d, refreshing, onRefresh }: { d: TodayResp; refreshing: boolean; onRefresh: () => void }) {
+function Board({ d, refreshing, onRefresh, fav, onFav }: { d: TodayResp; refreshing: boolean; onRefresh: () => void; fav?: boolean; onFav?: () => void }) {
+  const trip = useTrip();
   const ap = d.airport!;
   const off = useMemo(() => offsetFromYou(d.tz), [d.tz]);
   const now = Date.now();
@@ -131,7 +165,10 @@ function Board({ d, refreshing, onRefresh }: { d: TodayResp; refreshing: boolean
           <div className="absolute inset-0 opacity-[0.07]" style={{ backgroundImage: "radial-gradient(circle at 1px 1px, #fff 1px, transparent 0)", backgroundSize: "18px 18px" }} aria-hidden />
           <div className="relative flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="font-code text-3xl font-bold tracking-wider text-primary" data-testid="text-today-icao">{ap.icao}</p>
+              <p className="flex items-center gap-2"><span className="font-code text-3xl font-bold tracking-wider text-primary" data-testid="text-today-icao">{ap.icao}</span>
+                {onFav && <button type="button" onClick={onFav} aria-pressed={!!fav} aria-label={fav ? `Remove ${ap.icao} from favorite airports` : `Add ${ap.icao} to favorite airports`} title={fav ? "Favorite airport" : "Add to favorite airports"}
+                  className="grid h-8 w-8 place-items-center rounded-full text-primary hover:bg-white/10" data-testid="button-today-fav"><Star className={cn("h-5 w-5", fav && "fill-primary")} /></button>}
+              </p>
               <p className="mt-0.5 truncate text-sm font-semibold">{ap.name}</p>
               <p className="text-xs text-white/60">{[ap.city, ap.region, ap.country !== "US" ? ap.country : ""].filter(Boolean).join(", ")}</p>
             </div>
@@ -142,7 +179,7 @@ function Board({ d, refreshing, onRefresh }: { d: TodayResp; refreshing: boolean
           </div>
           <p className="relative mt-3 text-xs text-white/70" data-testid="text-today-source">
             {d.checkedInAt ? <><PlaneLanding className="mr-1 inline h-3.5 w-3.5 text-primary" />Checked in {ago(d.checkedInAt)}</>
-              : d.source === "briefing" ? <><Plane className="mr-1 inline h-3.5 w-3.5 text-primary" />From your latest briefing</>
+              : d.source === "briefing" ? <><Plane className="mr-1 inline h-3.5 w-3.5 text-primary" />{trip ? "From your latest trip sheet" : "From your latest briefing"}</>
               : <>Not checked in here</>}
           </p>
         </div>
@@ -165,12 +202,14 @@ function Board({ d, refreshing, onRefresh }: { d: TodayResp; refreshing: boolean
         <ChevronRight className="h-5 w-5 shrink-0" />
       </Link>
 
+      {trip && !!d.crewUpToday?.length && <CrewUpToday list={d.crewUpToday} icao={ap.icao} />}
+
       <Weather m={d.metar} failed={d.metarError} tz={d.tz} refreshing={refreshing} onRefresh={onRefresh} />
 
       {!d.checkedInAt && <AirportCheckInCard />}
 
       {d.briefing && (
-        <Section title="Your briefing here" icon={<Plane className="h-4 w-4" />} action={<Link href={`/brief/${d.briefing.id}`} className="text-xs font-semibold text-foreground underline underline-offset-2" data-testid="link-today-brief">Open</Link>} testid="card-today-brief">
+        <Section title={trip ? "Your trip sheet here" : "Your briefing here"} icon={<Plane className="h-4 w-4" />} action={<Link href={`/brief/${d.briefing.id}`} className="text-xs font-semibold text-foreground underline underline-offset-2" data-testid="link-today-brief">Open</Link>} testid="card-today-brief">
           <p className="px-4 pb-1 text-xs text-muted-foreground">{d.briefing.title || "Briefing"} · {layoverLabel(d.briefing.layover, d.briefing.nights)}</p>
           {d.briefing.picks.length ? <Picks list={d.briefing.picks} /> : <p className="px-4 pb-3 text-sm text-muted-foreground">No picks at this stop yet.</p>}
         </Section>
@@ -207,6 +246,34 @@ function Board({ d, refreshing, onRefresh }: { d: TodayResp; refreshing: boolean
         </Link>
       </div>
     </div>
+  );
+}
+
+/** Four-tab preview: Crew Up plans here today, and who's in. Names of who's in show to the host only. */
+function CrewUpToday({ list, icao }: { list: Meetup[]; icao: string }) {
+  return (
+    <Section title={`Crew Up today at ${icao}`} icon={<Users className="h-4 w-4" />} testid="card-today-crewup"
+      action={<Link href={`/meetup?icao=${icao}`} className="text-xs font-semibold text-foreground underline underline-offset-2" data-testid="link-today-crewup-all">Open</Link>}>
+      <ul className="divide-y divide-border border-t border-border">
+        {list.map((m) => {
+          const when = m.startsAt > Date.now() ? new Intl.DateTimeFormat("en-US", { timeZone: m.tz || undefined, hour: "numeric", minute: "2-digit" }).format(m.startsAt) : "Now";
+          const where = m.spot?.name || m.place;
+          const inList = m.mine ? (m.attendees.length ? m.attendees.map((p) => p.name).join(", ") : "Nobody yet") : `${m.host.name}${m.joins ? ` + ${m.joins}` : ""}${m.joined ? " · you're in" : ""}`;
+          return (
+            <li key={m.id}>
+              <Link href={`/meetup?icao=${m.icao}&plan=${m.id}`} className="flex items-center gap-3 px-4 py-2.5 hover-elevate" data-testid={`row-today-crewup-${m.id}`}>
+                <span className="w-14 shrink-0 font-code text-xs font-bold">{when}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium">{m.mine ? "Your plan" : `${m.host.name}'s plan`}{where ? ` · ${where}` : ""}</span>
+                  <span className="block truncate text-xs text-muted-foreground">{m.mine ? "In: " : ""}{inList}</span>
+                </span>
+                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </Section>
   );
 }
 

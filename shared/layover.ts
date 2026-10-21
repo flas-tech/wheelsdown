@@ -53,6 +53,8 @@ export type TodayResp = {
   crewPicks: { eat: TodayPick[]; do: TodayPick[] };
   favorites: TodayPick[];
   meetup: { mine: boolean; others: number | null };
+  /** four-tab preview: Crew Up plans here today (yours and your crew's you can see), with who's in */
+  crewUpToday?: Meetup[];
   toRate: number;
   recent: string[]; // airports from recent check-ins and briefings, for quick switching
 };
@@ -60,6 +62,8 @@ export type TodayResp = {
 export type MeetupPerson = { id: number; name: string; crewRole: string; aircraft: string; tierId: string; verified: boolean };
 export type Meetup = {
   id: number; icao: string; note: string; spot: { id: number; name: string; category: string } | null;
+  /** free-text meeting place (public places only), when the host typed one instead of picking a listing */
+  place: string;
   createdAt: number; expiresAt: number; host: MeetupPerson; mine: boolean; joined: boolean; joins: number; attendees: MeetupPerson[];
   /** when the plan starts (now-plans: when posted); times show in the airport's zone */
   startsAt: number; tz: string | null;
