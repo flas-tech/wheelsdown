@@ -65,18 +65,18 @@ function Shell() {
   const nav = useNav(loc).map((n) => ({ ...n, active: n.active(loc) }));
   // four-tab layout (trip preview): Home is the hub, the logo and app start go there, Logbook is the header pill
   const { on: trip, ready: tripReady } = useTripState();
-  const homeHref = trip ? "/today" : landing ? "/start" : "/";
+  const homeHref = trip ? "/" : landing ? "/start" : "/";
   // the new landing page: once per visit, a signed-in member opening the app at home starts on /start
   const [, go] = useLocation();
   useEffect(() => {
-    if (!landingReady || !tripReady || !(landing || trip)) return;
+    if (!landingReady || !tripReady || !landing || trip) return; // the trip preview opens on Home (Spots search) itself
     let seen = false;
     try { seen = sessionStorage.getItem("wheelsdown-landed") === "1"; sessionStorage.setItem("wheelsdown-landed", "1"); } catch { /* private mode */ }
     const deep = window.location.search.length > 1 || (window.location.hash.split("?")[1] || "").length > 0;
     if (!seen && loc === "/" && !deep) go(trip ? "/today" : "/start", { replace: true });
   }, [landingReady, landing, tripReady, trip]); // eslint-disable-line
   // the landing page has no navigation at all
-  if ((loc === "/start" || loc === "/home") && trip) return <Redirect to="/today" replace />;
+  if ((loc === "/start" || loc === "/home") && trip) return <Redirect to="/" replace />;
   if (loc === "/start") return (<><StartPage /><TourHost /><UpdateBar /><WhatsNewHost /><PushHost unread={unread} /><PushPrompt /></>);
   return (
     <div className="min-h-[100dvh] flex flex-col">

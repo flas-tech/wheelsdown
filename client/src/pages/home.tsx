@@ -14,6 +14,8 @@ import { COST_LABELS, PACES, costOptions, costRange, costText, paceLabel, paceOf
 import { CostChoice } from "@/lib/costChip";
 import { PROGRAMS, programOf, type ProgramId } from "@shared/loyalty";
 import { VisitReminder } from "@/lib/visits";
+import { useTrip } from "@/lib/experience";
+import { TodayCard } from "./todayCard";
 import { AiAddedTag, AiPicksPanel, MoreAiPlaces, ProgramChip, useMyPrograms } from "@/lib/aiPicks";
 import { getPosition, type NearAirport } from "@/lib/geo";
 import { useToast } from "@/hooks/use-toast";
@@ -80,9 +82,11 @@ function Prompt({ onPick }: { onPick: (c: Category) => void }) {
   const { data: hl } = useQuery<Highlights>({ queryKey: ["/api/highlights"] });
   const count = hl?.totals.spots ?? 0;
   const fields = hl?.totals.fields ?? 0;
+  const trip = useTrip();
   return (
     <div className="space-y-6">
       <VisitReminder />
+      {trip && <TodayCard />}
       <section className="pt-2">
         <p className="font-code text-xs text-primary tracking-[0.2em] uppercase">Crew-sourced layover intel</p>
         <h1 className="mt-3 text-xl font-semibold leading-tight sm:text-[1.75rem] sm:leading-[1.15]">

@@ -103,10 +103,10 @@ export const EXPERIENCE_NAV: Record<Experience, NavItem[]> = {
   ],
 };
 
-/** The four tabs. Logbook isn't here: it's the points pill in the header, on every page. */
+/** The tabs. Home is the Spots search with a card for the field you're at (Layover today opens from it).
+ *  Logbook isn't here: it's the points pill in the header, on every page. */
 export const TRIP_NAV: NavItem[] = [
-  { href: "/today", label: "Home", icon: House, active: on("/today", "/home", "/start") },
-  { href: "/", label: "Spots", icon: MapPin, active: (l) => l === "/" || on("/spot", "/map", "/favorites", "/add", "/rate")(l) },
+  { href: "/", label: "Home", icon: House, active: (l) => l === "/" || on("/today", "/home", "/start", "/spot", "/map", "/favorites", "/add", "/rate")(l) },
   { href: "/brief", label: "Plan", icon: ClipboardList, active: on("/plan", "/brief", "/b") },
   { href: "/mycrew", label: "Crew", icon: Users, active: on("/meetup", "/mycrew", "/lounge", "/crew", "/following", "/followers"), dot: "crew" },
 ];

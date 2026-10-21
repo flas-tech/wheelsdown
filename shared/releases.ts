@@ -2,6 +2,11 @@
 export type Release = { date: string; sha?: string; title: string; notes: string[] };
 
 export const RELEASES: Release[] = [
+  { date: "2026-10-21", title: "Admin preview, round 6: Home is Spots search with an At the field now card", notes: [
+    "Tabs are now Home, Plan, Crew. Home (/) opens on Spots search (sub-tabs Search, Map, Favorites, Rate stay) with a card at the top: the nearest airport (your location, else the last airport you picked), local time, flight category, temperature and how many crew plans are there. Tapping it opens Layover today for that airport. The logo goes to Home; /home and /start go there too.",
+    "The separate Spots tab is gone because it was the same page as Home. Members see no change.",
+    "Rollback: redeploy d06cfdb.",
+  ] },
   { date: "2026-10-21", title: "Admin preview, round 5: AI search you can watch, and the more places aren't hidden", notes: [
     "Ask AI from a category box (or Add places) and that box shows the search live: a moving bar, what it's doing (looking on the map, then AI checking hours and reviews), a seconds counter, and each place popping in marked Checking, then New, with + to add. A toast says how many it found (or that nothing new turned up). The trip sheet checks every 2.5 s while AI works (was 5 s).",
     "Each category box has See N more hotels / places to eat / things to do at X, which opens Add places on that type and scrolls to it, and the Add places button says how many more places there are (N more places at X).",
