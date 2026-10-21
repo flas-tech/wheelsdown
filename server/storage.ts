@@ -12,7 +12,7 @@ import { loungeHelpfulForPoints } from "./lounge";
 import { computePoints, recentActivity, publicName, tierFor, SEED_USERS, SEED_PASSWORD, type PublicUser, type Me } from "@shared/tiers";
 import { computeVet, seedVotesFor, shouldAutoHold } from "@shared/vetting";
 import { seedAirports, seedSpots, seedReviews, seedAds } from "@shared/seed";
-import { eq, inArray, desc, sql, and, lt, or, isNull } from "drizzle-orm";
+import { eq, inArray, desc, sql, and, lt, or, isNull, ne } from "drizzle-orm";
 import { randomBytes, scrypt as _scrypt, timingSafeEqual, createHash } from "node:crypto";
 import { promisify } from "node:util";
 import { db, initDb } from "./db";
@@ -191,9 +191,11 @@ export class DatabaseStorage {
   }
 
   // ---- spots ----
-  async searchSpots(icaos: string[], includeAll = false, voter = "") {
-    const where = icaos.length ? (includeAll ? inArray(spots.icao, icaos) : and(inArray(spots.icao, icaos), eq(spots.status, "live")))
+  /** ai: include AI-added listings (source = 'ai'). Off by default, so members don't see them until the trip preview opens. */
+  async searchSpots(icaos: string[], includeAll = false, voter = "", opts: { ai?: boolean } = {}) {
+    const base = icaos.length ? (includeAll ? inArray(spots.icao, icaos) : and(inArray(spots.icao, icaos), eq(spots.status, "live")))
       : includeAll ? undefined : eq(spots.status, "live");
+    const where = includeAll || opts.ai ? base : base ? and(base, ne(spots.source, "ai")) : ne(spots.source, "ai");
     const rows = await db().select().from(spots).where(where).orderBy(desc(spots.createdAt));
     return withStats(rows, voter);
   }
@@ -206,6 +208,8 @@ export class DatabaseStorage {
   liveHooks: ((spotId: number) => void)[] = [];
   private live(spotId: number | undefined, status: string | undefined) { if (spotId && status === "live") for (const h of this.liveHooks) { try { h(spotId); } catch { /* never block a write */ } } }
   async createSpot(s: InsertSpot) { invalidateActivity(); const r = (await db().insert(spots).values({ ...s, createdAt: Date.now() }).returning())[0]; this.live(r?.id, r?.status); return r; }
+  /** An AI pick a member kept in a saved briefing, as a listing: no owner and no points, labeled AI added everywhere. */
+  async createAiSpot(s: InsertSpot) { invalidateActivity(); const r = (await db().insert(spots).values({ ...s, source: "ai", userId: null, modState: "approved", modNote: "AI pick kept in a saved briefing", createdAt: Date.now() } as any).returning())[0]; this.live(r?.id, r?.status); return r; }
   async updateSpot(id: number, s: Partial<InsertSpot>) { invalidateActivity(); const r = (await db().update(spots).set(s).where(eq(spots.id, id)).returning())[0]; if ((s as any).status) this.live(r?.id, r?.status); return r; }
   async deleteSpots(ids: number[]) {
     if (!ids.length) return 0;
@@ -603,7 +607,7 @@ export class DatabaseStorage {
       q(sql`SELECT COUNT(*)::int AS n FROM (SELECT s.id FROM spots s JOIN reviews r ON r.spot_id = s.id AND r.status = 'live'
               WHERE s.user_id = ${userId} AND s.status = 'live' GROUP BY s.id HAVING COUNT(*) >= 3 AND AVG(r.rating) >= 4.5) x`),
       q(sql`SELECT COUNT(*)::int AS n FROM briefings WHERE user_id = ${userId}`),
-      q(sql`SELECT COUNT(*)::int AS n FROM (SELECT DISTINCT ON (icao) icao, user_id FROM spots WHERE status = 'live' ORDER BY icao, created_at, id) x WHERE x.user_id = ${userId}`),
+      q(sql`SELECT COUNT(*)::int AS n FROM (SELECT DISTINCT ON (icao) icao, user_id FROM spots WHERE status = 'live' AND source <> 'ai' ORDER BY icao, created_at, id) x WHERE x.user_id = ${userId}`),
     ]);
     const followers = (await this.followCounts(userId)).followers;
     return { listings: sp.listings || 0, airports: sp.airports || 0, eat: sp.eat || 0, do: sp.do || 0, stay: sp.stay || 0, fbo: sp.fbo || 0,

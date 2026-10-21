@@ -27,6 +27,7 @@ import { registerLayover } from "./layover";
 import { registerLounge } from "./lounge";
 import { registerMyCrew, requestFromInvite, forgetMember } from "./mycrew";
 import { registerPush, forgetPush } from "./push";
+import { registerTrip, aiSpotsFor, aiSpotsForUser, promoteBriefAiPicks } from "./trip";
 import { dayKey } from "./metrics";
 import { SERVICES } from "@shared/services";
 import { track, visit, pageKey, outboundKey, report, untracked } from "./metrics";
@@ -256,7 +257,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }));
     const icaos = legs.filter((l) => l.airport).map((l) => l.airport!.icao);
     const v = await voterOf(req);
-    const results = codes.length ? (icaos.length ? await storage.searchSpots(icaos, false, v) : []) : await storage.searchSpots([], false, v);
+    const ai = { ai: await aiSpotsFor(req) };
+    const results = codes.length ? (icaos.length ? await storage.searchSpots(icaos, false, v, ai) : []) : await storage.searchSpots([], false, v, ai);
     if (codes.length) { track(req, "search"); for (const i of Array.from(new Set(icaos))) track(req, "search_airport", i); }
     res.json({ legs, spots: results });
   });
@@ -273,6 +275,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const v = await voterOf(req);
     const s = await storage.getSpot(id(req), v);
     if (!s || s.status === "hidden") return res.status(404).json({ message: "Not found" });
+    if (s.source === "ai" && !(await aiSpotsFor(req))) return res.status(404).json({ message: "Not found" });
     const viewer = await userOf(req);
     const mine = !!viewer && s.userId === viewer.id;
     if (s.status !== "live" && !mine) return res.status(404).json({ message: "Not found" });
@@ -574,14 +577,15 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const pref = await aiPrefOf(b.userId);
     const programs = await programsOf(b.userId);
     const out = [];
+    const ai = { ai: await aiSpotsForUser(b.userId) };
     for (const st of stops) {
       const airport = (await storage.resolveCode(st.icao)) || (refAirport(st.icao) as any) || null;
-      const all = airport?.icao ? await storage.searchSpots([airport.icao]) : [];
+      const all = airport?.icao ? await storage.searchSpots([airport.icao], false, "", ai) : [];
       const byId = new Map(all.map((s) => [s.id, s]));
       const picks = withFavorites(st.picks, all, favs).map((i) => byId.get(i)).filter(Boolean) as SpotWithStats[];
       const fill = airport?.icao ? await fillStop(airport.icao, st.layover, st.nights, picks, all, airport, st.ai ?? pref === "ai", st.aiAdd || [], programs, st.aiHide || []).catch(() => ({ aiPicks: [], aiStatus: "failed" as const, aiSlots: [], aiMore: [], aiMoreStatus: "idle" as const })) : { aiPicks: [], aiStatus: "none" as const, aiSlots: [], aiMore: [], aiMoreStatus: "idle" as const };
       out.push({
-        icao: airport?.icao || st.icao.toUpperCase(), layover: st.layover, nights: st.nights, ai: st.ai, airport,
+        icao: airport?.icao || st.icao.toUpperCase(), layover: st.layover, nights: st.nights, ai: st.ai, airport, arriveDate: st.arriveDate, arriveTime: st.arriveTime,
         picks, aiPicks: fill.aiPicks, aiStatus: fill.aiStatus, aiSlots: fill.aiSlots, aiAdd: st.aiAdd, aiHide: st.aiHide, order: st.order, aiMore: withCandidates ? fill.aiMore : undefined, aiMoreStatus: fill.aiMoreStatus,
         favoriteIds: all.filter((s) => favs.has(s.id)).map((s) => s.id),
         candidates: withCandidates ? all : undefined,
@@ -597,10 +601,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (!p.success) return res.status(400).json({ message: msg(p.error) });
     const stops = [];
     const favs = new Set(await storage.favoriteIds((req as any).user.id));
+    const ai = { ai: await aiSpotsForUser((req as any).user.id) };
     for (const st of p.data.stops) {
       const airport = (await storage.resolveCode(st.icao)) || (refAirport(st.icao) as any) || null;
       if (!airport) return res.status(400).json({ message: `Unknown airport ${st.icao.toUpperCase()}. Check the code (KOPF, OPF, X51 and 06FA all work).` });
-      const all = await storage.searchSpots([airport.icao]);
+      const all = await storage.searchSpots([airport.icao], false, "", ai);
       stops.push({ ...st, icao: airport.icao, picks: suggestPicks(all, st.layover, st.nights).filter((i) => !favs.has(i)) });
     }
     res.json({ title: p.data.title, stops });
@@ -627,9 +632,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const existing = req.body?.id ? await storage.getBriefing(Number(req.body.id)) : undefined;
     if (req.body?.id && (!existing || existing.userId !== user.id)) return res.status(404).json({ message: "Not found" });
     if (!existing && (await storage.listBriefings(user.id)).length >= 100) return res.status(400).json({ message: "You have 100 saved briefings. Delete a few first." });
-    const b = await storage.saveBriefing(user.id, { title: p.data.title, stops }, existing?.id);
+    let b = await storage.saveBriefing(user.id, { title: p.data.title, stops }, existing?.id);
     if (!existing) track(req, "briefing");
-    res.status(existing ? 200 : 201).json(await expandBriefing(b, true));
+    let out = await expandBriefing(b, true);
+    // AI picks kept in a saved briefing become "AI added" listings (map, search, other briefings) — preview: admins first
+    if (await promoteBriefAiPicks(b, out)) { b = (await storage.getBriefing(b.id))!; out = await expandBriefing(b, true); }
+    res.status(existing ? 200 : 201).json(out);
   });
   app.delete("/api/briefings/:id", requireUser, writeLimit, async (req, res) => {
     const b = await storage.getBriefing(id(req));
@@ -676,7 +684,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   registerLounge(app, { userOf, isSuperAdmin }); // Crew Lounge: admins only until lounge_audience = members
   registerLayover(app, { userOf, isSuperAdmin }); // Layover Today, Crew Up, Rate a spot: admins only until layover_audience = members
   registerMyCrew(app, { userOf, isSuperAdmin, requireAdmin, requireUser }); // My Crew + launch switch (experience_audience) + member messages
-  registerPush(app, { userOf, isSuperAdmin, requireAdmin, requireUser }); // push notifications (push_audience: admins until opened)
+  registerPush(app, { userOf, isSuperAdmin, requireAdmin, requireUser });
+  registerTrip(app, { userOf, isSuperAdmin, requireAdmin, requireUser }); // 4-tab nav, Home trip card, AI-added listings (trip_audience: admins until opened) // push notifications (push_audience: admins until opened)
   registerModFix(app, { requireAdmin, requireUser, ensureAirport: (c) => ensureAirport(c), byAdmin });
   app.get("/api/admin/costs", requireAdmin, async (req, res) => {
     const days = [7, 30, 90].includes(Number(req.query.days)) ? Number(req.query.days) : 30;

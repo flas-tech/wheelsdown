@@ -37,7 +37,7 @@ function seed(): DB {
     id: i + 1, icao: s.icao, category: s.category, name: s.name, description: s.description, address: s.address || "", website: "",
     costLevel: s.costLevel, minutesNeeded: s.minutesNeeded, milesFromField: s.milesFromField, crewTip: s.crewTip || "",
     tags: JSON.stringify(s.tags), submittedBy: users[i % users.length].displayName, userId: users[i % users.length].id, status: "live", createdAt: now - i * 3600_000,
-    pace: null, lat: null, lng: null, placeRef: null, modState: "", modNote: "", modAttempts: 0, pendingEdit: null,
+    pace: null, lat: null, lng: null, placeRef: null, modState: "", modNote: "", modAttempts: 0, pendingEdit: null, source: "crew",
   }));
   const reviews: Review[] = [];
   seedReviews.forEach((r, i) => {

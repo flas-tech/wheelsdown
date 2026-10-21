@@ -20,17 +20,19 @@ import { cn } from "@/lib/utils";
 import { DirectionsButton } from "@/lib/directions";
 import { PdfPreviewDialog } from "@/lib/pdfPreview";
 import { drawStaticMap, PIN_COLORS } from "@/lib/staticMap";
-import { buildBriefPdf, shareOrDownload, stopPins, layoverText, routeText, CAT_NAMES, isAi, aiReason, type AiPick, type BriefFull, type BriefStopFull } from "@/lib/briefPdf";
+import { buildBriefPdf, shareOrDownload, stopPins, layoverText, routeText, CAT_NAMES, isAi, isAiAdded, looksAi, aiReason, type AiPick, type BriefFull, type BriefStopFull } from "@/lib/briefPdf";
 import { errText } from "./add";
-import { PickTag, FindMore, aiAddHref } from "@/lib/aiPicks";
+import { PickTag, AiAddedTag, FindMore, aiAddHref } from "@/lib/aiPicks";
+import { useTrip } from "@/lib/experience";
+import { crewUpHref, fmtArrive } from "@/lib/tripNav";
 import { noteVisit } from "@/lib/visits";
 
-type StopInput = { icao: string; layover: LayoverId; nights?: number; picks: number[]; ai?: boolean; aiAdd?: number[]; aiHide?: number[]; order?: number[] };
+type StopInput = { icao: string; layover: LayoverId; nights?: number; picks: number[]; ai?: boolean; aiAdd?: number[]; aiHide?: number[]; order?: number[]; arriveDate?: string | null; arriveTime?: string | null };
 const uniq = (a: number[]) => Array.from(new Set(a));
 type BriefSummary = { id: number; title: string; stops: { icao: string; layover: LayoverId }[]; updatedAt: number };
 const parseCodes = (r: string) => r.toUpperCase().split(/[^A-Z0-9]+/).filter((c) => c.length === 3 || c.length === 4).slice(0, 12);
 const appUrl = () => `${window.location.origin}${window.location.pathname}`;
-const toInput = (b: BriefFull): StopInput[] => b.stops.map((s) => ({ icao: s.icao, layover: s.layover as LayoverId, nights: s.nights, picks: s.picks.map((p) => p.id), ...(s.ai != null ? { ai: s.ai } : {}), ...(s.aiAdd?.length ? { aiAdd: s.aiAdd } : {}), ...(s.aiHide?.length ? { aiHide: s.aiHide } : {}), ...(s.order?.length ? { order: s.order } : {}) }));
+const toInput = (b: BriefFull): StopInput[] => b.stops.map((s) => ({ icao: s.icao, layover: s.layover as LayoverId, nights: s.nights, picks: s.picks.map((p) => p.id), ...(s.ai != null ? { ai: s.ai } : {}), ...(s.aiAdd?.length ? { aiAdd: s.aiAdd } : {}), ...(s.aiHide?.length ? { aiHide: s.aiHide } : {}), ...(s.order?.length ? { order: s.order } : {}), ...(s.arriveDate ? { arriveDate: s.arriveDate, arriveTime: s.arriveTime || null } : {}) }));
 
 /** Refetch every few seconds while AI picks are still being found for a stop (they take about a minute). */
 const aiPolling = (q: { state: { data?: BriefFull } }) => (q.state.data?.stops.some((s) => s.aiStatus === "pending" || s.aiMoreStatus === "pending") ? 5000 : false);
@@ -140,13 +142,15 @@ function RouteForm({ initial, initialTitle, busy, onSubmit, submitLabel }: {
     const pre = sessionStorage.getItem("wd-brief-prefill") || ""; sessionStorage.removeItem("wd-brief-prefill"); return pre;
   });
   const [title, setTitle] = useState(initialTitle || "");
-  const [layovers, setLayovers] = useState<Record<string, { layover: LayoverId; nights?: number }>>(
-    Object.fromEntries((initial || []).map((s, i) => [`${i}:${s.icao}`, { layover: s.layover, nights: s.nights }])),
+  const trip = useTrip(); // four-tab preview: when you land at each stop (airport local), for Home and Crew Up
+  type L = { layover: LayoverId; nights?: number; arriveDate?: string | null; arriveTime?: string | null };
+  const [layovers, setLayovers] = useState<Record<string, L>>(
+    Object.fromEntries((initial || []).map((s, i) => [`${i}:${s.icao}`, { layover: s.layover, nights: s.nights, arriveDate: s.arriveDate, arriveTime: s.arriveTime }])),
   );
   const codes = parseCodes(route);
   const keyOf = (i: number, c: string) => `${i}:${c}`;
   const get = (i: number, c: string) => layovers[keyOf(i, c)] || { layover: (i === codes.length - 1 && codes.length > 1 ? "overnight" : "hours") as LayoverId };
-  const setL = (i: number, c: string, v: { layover: LayoverId; nights?: number }) => setLayovers({ ...layovers, [keyOf(i, c)]: v });
+  const setL = (i: number, c: string, v: L) => setLayovers({ ...layovers, [keyOf(i, c)]: { ...get(i, c), ...v } });
   const prevPicks = new Map((initial || []).map((s) => [s.icao, s.picks]));
 
   return (
@@ -158,7 +162,7 @@ function RouteForm({ initial, initialTitle, busy, onSubmit, submitLabel }: {
         const v = get(i, c);
         const same = initial?.find((s) => s.icao === c && s.layover === v.layover);
         const was = initial?.find((s) => s.icao === c);
-        return { icao: c, ...v, picks: same ? prevPicks.get(c) || [] : [], ...(was?.ai != null ? { ai: was.ai } : {}) };
+        return { icao: c, layover: v.layover, nights: v.nights, picks: same ? prevPicks.get(c) || [] : [], ...(was?.ai != null ? { ai: was.ai } : {}), ...(v.arriveDate ? { arriveDate: v.arriveDate, arriveTime: v.arriveTime || null } : {}) };
       }));
     }} data-testid="form-brief-route">
       <div>
@@ -190,6 +194,7 @@ function RouteForm({ initial, initialTitle, busy, onSubmit, submitLabel }: {
                     {[2, 3, 4, 5, 7].map((n) => <Chip key={n} active={v.nights === n} onClick={() => setL(i, c, { layover: "multi", nights: n })} className="text-xs font-code" testId={`chip-nights-${i}-${n}`}>{n}</Chip>)}
                   </div>
                 )}
+                {trip && <ArriveInputs i={i} date={v.arriveDate || ""} time={v.arriveTime || ""} onChange={(d, t) => setL(i, c, { layover: v.layover, arriveDate: d || null, arriveTime: d ? t || null : null })} />}
               </div>
             );
           })}
@@ -204,6 +209,23 @@ function RouteForm({ initial, initialTitle, busy, onSubmit, submitLabel }: {
         {busy ? "Building…" : submitLabel}
       </button>
     </form>
+  );
+}
+
+/** When you land (local time at that airport). Optional: Home uses it for your next trip, Crew Up to plan ahead. */
+function ArriveInputs({ i, date, time, onChange, compact }: { i: number; date: string; time: string; onChange: (date: string, time: string) => void; compact?: boolean }) {
+  const [t, setT] = useState(time);
+  useEffect(() => setT(time), [time]);
+  return (
+    <div className={cn("flex items-end gap-2", compact ? "" : "mt-3")} data-testid={`arrive-${i}`}>
+      <label className="min-w-0 flex-1 text-[11px] font-medium text-muted-foreground">Landing date
+        <input type="date" value={date} onChange={(e) => onChange(e.target.value, t)} className="mt-1 block h-10 w-full min-w-0 rounded-xl border border-input bg-background px-2.5 text-base text-foreground" data-testid={`input-arrive-date-${i}`} />
+      </label>
+      <label className="min-w-0 flex-1 text-[11px] font-medium text-muted-foreground">Time (local)
+        <input type="time" value={t} disabled={!date} onChange={(e) => setT(e.target.value)} onBlur={() => t !== time && onChange(date, t)} className="mt-1 block h-10 w-full min-w-0 rounded-xl border border-input bg-background px-2.5 text-base text-foreground disabled:opacity-50" data-testid={`input-arrive-time-${i}`} />
+      </label>
+      {date && <button type="button" onClick={() => onChange("", "")} className="h-10 shrink-0 rounded-xl border border-border px-2.5 text-xs hover-elevate" aria-label="Clear the date" data-testid={`button-arrive-clear-${i}`}><X className="h-3.5 w-3.5" /></button>}
+    </div>
   );
 }
 
@@ -304,7 +326,8 @@ export function BriefEditorPage() {
             onAddPick={(sid) => put((s) => ({ ...s, picks: [...s.picks, sid] }))}
             onResuggest={() => put((s) => ({ ...s, picks: [], aiHide: [], order: [] }), true)}
             onAi={(on) => put((s) => ({ ...s, ai: on, ...(on ? {} : { aiAdd: [], aiHide: [], order: (s.order || []).filter((x) => x > 0) }) }))}
-            onAiAdd={(rowId) => put((s) => ({ ...s, aiAdd: uniq([...(s.aiAdd || []), rowId]).slice(-20), aiHide: (s.aiHide || []).filter((x) => x !== rowId) }))} />
+            onAiAdd={(rowId) => put((s) => ({ ...s, aiAdd: uniq([...(s.aiAdd || []), rowId]).slice(-20), aiHide: (s.aiHide || []).filter((x) => x !== rowId) }))}
+            onArrive={(d, t) => put((s) => ({ ...s, arriveDate: d || null, arriveTime: d ? t || null : null }))} />
         );
       })}
 
@@ -411,11 +434,12 @@ function BriefOverview({ brief }: { brief: BriefFull }) {
   return <MapCanvas pins={pins} height={190} route testId="map-brief-overview" />;
 }
 
-function StopSection({ stop, index, onRemove, onAddPick, onMove, onResuggest, onAi, onAiAdd, busy }: {
+function StopSection({ stop, index, onRemove, onAddPick, onMove, onResuggest, onAi, onAiAdd, onArrive, busy }: {
   stop: BriefStopFull; index: number; busy: boolean;
   onRemove: (spot: SpotWithStats) => void; onAddPick: (id: number) => void; onMove: (keys: number[], id: number, dir: -1 | 1) => void; onResuggest: () => void; onAi: (on: boolean) => void;
-  onAiAdd: (rowId: number) => void;
+  onAiAdd: (rowId: number) => void; onArrive?: (date: string, time: string) => void;
 }) {
+  const trip = useTrip();
   const { pins, numbered } = useMemo(() => stopPins(stop), [stop]);
   const picked = new Set(stop.picks.map((p) => p.id));
   const favs = new Set(stop.favoriteIds || []);
@@ -443,6 +467,14 @@ function StopSection({ stop, index, onRemove, onAddPick, onMove, onResuggest, on
         </span>
       </div>
       {plan && <p className="text-[11px] text-muted-foreground">{plan.note}</p>}
+      {trip && onArrive && (
+        <div className="rounded-2xl border border-card-border bg-card p-3" data-testid={`stop-when-${index}`}>
+          <ArriveInputs i={index} compact date={stop.arriveDate || ""} time={stop.arriveTime || ""} onChange={onArrive} />
+          <Link href={crewUpHref(stop)} className="mt-2.5 flex h-10 w-full items-center justify-center gap-1.5 rounded-full border border-border text-sm font-semibold hover-elevate" data-testid={`link-stop-crewup-${index}`}>
+            <Users className="h-4 w-4" />Crew Up at {stop.icao}{stop.arriveDate ? `, ${fmtArrive(stop)}` : ""}
+          </Link>
+        </div>
+      )}
 
       <MapCanvas pins={pins} testId={`map-stop-${index}`} />
       {unmapped > 0 && <p className="text-[11px] text-muted-foreground">{unmapped} pick{unmapped > 1 ? "s aren't" : " isn't"} on the map yet (no location saved). They're still in the list and the PDF.</p>}
@@ -455,7 +487,7 @@ function StopSection({ stop, index, onRemove, onAddPick, onMove, onResuggest, on
         </div>
       )}
 
-      {numbered.some((x) => x.ai) && <PickLegend />}
+      {numbered.some((x) => looksAi(x.spot)) && <PickLegend />}
       <ol className="space-y-2">
         {numbered.map(({ n, spot }) => <PickRow key={spot.id} n={n} spot={spot} count={numbered.length}
           favorite={favs.has(spot.id)} onRemove={() => onRemove(spot)} busy={busy}
@@ -495,7 +527,7 @@ function PickRow({ n, spot, count, onRemove, onUp, onDown, busy, readOnly, favor
             {spot.category !== "fbo" && (!ai || spot.cost != null) && <span className="shrink-0 text-right"><span className="block font-code text-xs font-bold text-primary">{costText(spot)}</span>{spot.cost != null && spot.cost > 0 && <span className="block text-[10px] text-muted-foreground whitespace-nowrap">{costRange(spot.category, spot.cost)}</span>}</span>}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
-            <PickTag ai={ai} />
+            {isAiAdded(spot) ? <AiAddedTag rated={!!spot.reviewCount} /> : <PickTag ai={ai} />}
             {ai && <ReasonChip spot={spot as AiPick} />}
             {meal && !(ai && (spot as AiPick).ai.slot?.meal === meal && !(spot as AiPick).ai.extra) && <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold" data-testid={`text-meal-${-spot.id}`}>{MEAL_LABEL[meal]}</span>}
           </div>
@@ -630,8 +662,8 @@ function AiNote({ stop, onAi, busy }: { stop: BriefStopFull; onAi?: (on: boolean
 /** Number badge: solid in the category color for crew listings; white with a dashed ring for AI picks (same on the map and PDF). */
 function NumBadge({ n, spot, className }: { n: number; spot: SpotWithStats; className?: string }) {
   const c = PIN_COLORS[spot.category as keyof typeof PIN_COLORS];
-  return isAi(spot)
-    ? <span className={cn("grid h-6 w-6 shrink-0 place-items-center rounded-full border-2 border-dashed bg-background text-[11px] font-bold", className)} style={{ borderColor: c, color: c }} title="AI pick" data-testid={`badge-ai-${n}`}>{n}</span>
+  return looksAi(spot)
+    ? <span className={cn("grid h-6 w-6 shrink-0 place-items-center rounded-full border-2 border-dashed bg-background text-[11px] font-bold", className)} style={{ borderColor: c, color: c }} title={isAi(spot) ? "AI pick" : "AI added, no crew ratings yet"} data-testid={`badge-ai-${n}`}>{n}</span>
     : <span className={cn("grid h-6 w-6 shrink-0 place-items-center rounded-full text-[11px] font-bold text-white", className)} style={{ background: c }} title="Crew pick" data-testid={`badge-crew-${n}`}>{n}</span>;
 }
 function PickLegend() {

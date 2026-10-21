@@ -27,6 +27,16 @@ export function PickTag({ ai, className }: { ai: boolean; className?: string }) 
   );
 }
 
+/** A listing added from an AI pick kept in a saved briefing. Says so until crews rate it. */
+export function AiAddedTag({ rated, className }: { rated?: boolean; className?: string }) {
+  return (
+    <span className={cn("inline-flex items-center gap-1 rounded-full bg-violet-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-700 dark:text-violet-300", className)}
+      title="Added by AI from a crew briefing. Crews haven't checked it yet." data-testid="tag-ai-added">
+      <Sparkles className="h-3 w-3" />{rated ? "AI added" : "AI added · no crew ratings yet"}
+    </span>
+  );
+}
+
 /** Rewards-program chip on hotels (Hilton, Marriott…), read from the hotel's name. */
 export function ProgramChip({ spot }: { spot: Pick<SpotWithStats, "category" | "name" | "description" | "website" | "id"> }) {
   const mine = useMyPrograms();

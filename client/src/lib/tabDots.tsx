@@ -44,8 +44,18 @@ function CrewUpDot() {
   return fresh && loc !== "/meetup" ? <Dot label="New Crew Up plans from your crew" testId="dot-crewup" /> : null;
 }
 
+/** Crew tab in the four-tab bar: crew requests waiting or new Crew Up plans. */
+function CrewTabDot() {
+  const n = useMyCrew().data?.incoming.length || 0;
+  const [loc] = useLocation();
+  const fresh = useCrewUpNew();
+  if (n) return <Dot label={`${n} crew request${n === 1 ? "" : "s"} waiting`} testId="dot-crew" />;
+  return fresh && loc !== "/meetup" ? <Dot label="New Crew Up plans from your crew" testId="dot-crew" /> : null;
+}
+
 /** The dot for a tab, if that tab has one. */
 export function TabDot({ href }: { href: string }) {
+  if (href === "crew") return <CrewTabDot />;
   if (href === "/me") return <NoticeDot />;
   if (href === "/mycrew") return <CrewDot />;
   if (href === "/meetup") return <CrewUpDot />;

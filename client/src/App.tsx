@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { Switch, Route, Router, Link, useLocation } from "wouter";
+import { Switch, Route, Router, Link, Redirect, useLocation } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
 // match routes on the path only, so links like #/map?route=KPDK still find /map
 const useHashPath = (): [string, (to: string, opts?: { replace?: boolean }) => void] => { const [loc, nav] = useHashLocation(); return [loc.split("?")[0], nav as any]; };
@@ -14,7 +14,10 @@ import TodayPage from "@/pages/today";
 import MeetupPage from "@/pages/meetup";
 import RatePage from "@/pages/rate";
 import MyCrewPage from "@/pages/mycrew";
-import { useNav, usePreviewState } from "@/lib/experience";
+import { useNav, usePreviewState, useTripState } from "@/lib/experience";
+import TripHomePage from "@/pages/tripHome";
+import { SubTabs } from "@/lib/tripNav";
+import { NoticeDot } from "@/lib/notices";
 import FavoritesPage from "@/pages/favorites";
 import NotFound from "@/pages/not-found";
 import Home, { MapRoute, SearchProvider, useSearch } from "@/pages/home";
@@ -60,22 +63,26 @@ function Shell() {
   // members: the classic six-item nav; admins previewing an experience get a nav tailored to it (lib/experience.tsx)
   const { on: landing, ready: landingReady } = usePreviewState();
   const nav = useNav(loc).map((n) => ({ ...n, active: n.active(loc) }));
+  // four-tab layout (trip preview): Home is the hub, the logo and app start go there, Logbook is the header pill
+  const { on: trip, ready: tripReady } = useTripState();
+  const homeHref = trip ? "/home" : landing ? "/start" : "/";
   // the new landing page: once per visit, a signed-in member opening the app at home starts on /start
   const [, go] = useLocation();
   useEffect(() => {
-    if (!landingReady || !landing) return;
+    if (!landingReady || !tripReady || !(landing || trip)) return;
     let seen = false;
     try { seen = sessionStorage.getItem("wheelsdown-landed") === "1"; sessionStorage.setItem("wheelsdown-landed", "1"); } catch { /* private mode */ }
     const deep = window.location.search.length > 1 || (window.location.hash.split("?")[1] || "").length > 0;
-    if (!seen && loc === "/" && !deep) go("/start", { replace: true });
-  }, [landingReady, landing]); // eslint-disable-line
+    if (!seen && loc === "/" && !deep) go(trip ? "/home" : "/start", { replace: true });
+  }, [landingReady, landing, tripReady, trip]); // eslint-disable-line
   // the landing page has no navigation at all
+  if (loc === "/start" && trip) return <Redirect to="/home" replace />;
   if (loc === "/start") return (<><StartPage /><TourHost /><UpdateBar /><WhatsNewHost /><PushHost unread={unread} /><PushPrompt /></>);
   return (
     <div className="min-h-[100dvh] flex flex-col">
       <header className="print:hidden sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur pt-safe-top px-safe">
         <div className={cn("mx-auto flex h-14 items-center justify-between px-4", isAdmin ? "max-w-6xl" : "max-w-xl")}>
-          <Link href={landing ? "/start" : "/"} onClick={() => setSearch({ category: null })} data-testid="link-home" className="flex items-center gap-2">
+          <Link href={homeHref} onClick={() => setSearch({ category: null })} data-testid="link-home" className="flex items-center gap-2">
             <Logo className="h-7 w-7" />
             <span className="text-base font-semibold tracking-tight">Wheels<span className="text-primary">down</span></span>
             {IS_STATIC && <span className="rounded border border-primary/50 px-1 font-code text-[10px] font-bold text-primary" data-testid="badge-demo">DEMO</span>}
@@ -84,16 +91,17 @@ function Shell() {
             {nav.map((n) => (
               <Link key={n.href} href={n.href} aria-label={n.label} data-testid={`link-nav-${n.label}`}
                 className={cn("whitespace-nowrap hidden sm:inline-flex items-center gap-1.5 rounded-full px-2.5 lg:px-3 h-9 text-sm font-medium hover-elevate", n.active ? "text-foreground" : "text-muted-foreground")}>
-                <span className="relative"><n.icon className="h-4 w-4" /><TabDot href={n.href} /></span><span className="hidden lg:inline">{n.label}</span>
+                <span className="relative"><n.icon className="h-4 w-4" /><TabDot href={n.dot || n.href} /></span><span className="hidden lg:inline">{n.label}</span>
               </Link>
             ))}
             <ShareButton />
             <ThemeToggle />
             {me ? (
-              <Link href="/me" data-testid="link-me" className="ml-1 inline-flex items-center gap-1.5 rounded-full border border-border bg-card pl-1.5 pr-2.5 h-9 hover-elevate">
+              <Link href="/me" data-testid="link-me" aria-label="Logbook" className="relative ml-1 inline-flex items-center gap-1.5 rounded-full border border-border bg-card pl-1.5 pr-2.5 h-9 hover-elevate">
                 {me.aircraft ? <CrewAvatar aircraft={me.aircraft} className="h-6 w-6" /> : <Insignia tierId={me.tierId} className="h-4" />}
                 <span className="font-code text-xs font-bold tabular">{me.points.toLocaleString()}</span>
                 <span className="hidden sm:inline text-xs text-muted-foreground">{tierFor(me.points).tier.name}</span>
+                {trip && <NoticeDot />}
               </Link>
             ) : (
               <button onClick={() => openAuth()} data-testid="button-signin" className="ml-1 h-9 whitespace-nowrap rounded-full taxi-sign px-3.5 text-sm font-semibold hover-elevate">Sign in</button>
@@ -104,7 +112,9 @@ function Shell() {
 
       <main className={cn("mx-auto w-full flex-1 px-4 pt-5 pb-28 sm:pb-12", isAdmin ? "max-w-6xl" : "max-w-xl")}>
         <ErrorBoundary resetKey={loc}>
+        {trip && <SubTabs />}
         <Switch>
+          <Route path="/home" component={TripHomePage} />
           <Route path="/" component={Home} />
           <Route path="/map" component={MapRoute} />
           <Route path="/spot/:id/edit" component={AddPage} />
@@ -154,7 +164,7 @@ function Shell() {
           <div className="mx-auto max-w-xl grid px-safe" style={{ gridTemplateColumns: `repeat(${nav.length}, minmax(0, 1fr))` }}>
             {nav.map((n) => (
               <Link key={n.href} href={n.href} data-testid={`tab-${n.label}`} className={cn("flex min-w-0 flex-col items-center gap-0.5 pt-2 pb-1 text-[10px] font-medium tracking-tight", n.active ? "text-primary" : "text-muted-foreground")}>
-                <span className="relative"><n.icon className="h-5 w-5" /><TabDot href={n.href} /></span><span className="truncate max-w-full">{n.label}</span>
+                <span className="relative"><n.icon className="h-5 w-5" /><TabDot href={n.dot || n.href} /></span><span className="truncate max-w-full">{n.label}</span>
               </Link>
             ))}
           </div>

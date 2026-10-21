@@ -173,7 +173,7 @@ async function generate(icao: string, more = false) {
   // airports from the reference list (no listings yet) aren't in the airports table
   const ap = (await storage.resolveCode(icao)) || refAirport(icao);
   if (!ap) { console.error(`[ai-picks] unknown airport ${icao}`); await setState(icao, "failed"); return; }
-  const crew = await storage.searchSpots([ap.icao]);
+  const crew = await storage.searchSpots([ap.icao], false, "", { ai: true });
   const existing = more ? await rowsFor(ap.icao) : [];
   const avoid = [...crew.map((s) => s.name), ...existing.map((r) => r.name)];
   const mf = more ? moreFocus.get(icao) : undefined;
@@ -280,7 +280,7 @@ export function toCard(r: Row, airport?: any): AiPickCard {
     id: -r.id, icao: r.icao, category: r.category, name: r.name, description: r.description, address: r.address, website: r.website,
     costLevel: r.cost_level ?? 1, minutesNeeded: r.minutes_needed ?? (r.category === "stay" ? 720 : 60), milesFromField: r.miles ?? null,
     crewTip: "", tags: r.tags, submittedBy: "AI pick", userId: null, status: "live", createdAt: Number(r.created_at), pace: r.pace, lat: r.lat, lng: r.lng,
-    placeRef: null, modState: "", modNote: "", modAttempts: 0, pendingEdit: null,
+    placeRef: null, modState: "", modNote: "", modAttempts: 0, pendingEdit: null, source: "ai",
     avgRating: null, reviewCount: 0, airport, vet: { up: 0, down: 0, score: 0, level: "new", lastUpAt: null, reasons: {}, myVote: 0 },
     cost: r.cost_level, costVotes: 0, goArounds: 0,
     ai: { meal: (r.meal || null) as Meal | null, sources: parse(r.sources), createdAt: Number(r.created_at), focus: r.focus || "", draft: !!r.draft, foods: r.category === "eat" ? rowFoods(r) : [], acts: r.category === "do" ? rowActs(r) : [], bonus: FIRST_RATE_BONUS },
@@ -375,7 +375,7 @@ export function registerAiPicks(app: Express, o: { requireAdmin: Mw; requireUser
     const raw = String(req.query.food || "");
     const typeQ = raw && isFocus(raw) && focusCategory(raw) === cat ? raw : "";
     // with a type chosen, AI can help when no crew listing of that type exists here
-    const listed = (await storage.searchSpots([ap.icao])).filter((s) => s.category === cat);
+    const listed = (await storage.searchSpots([ap.icao], false, "", { ai: true })).filter((s) => s.category === cat);
     const crew = listed.filter((s) => pickable(s) && (!typeQ || matchesFocus(s, typeQ)));
     // all=1: "More places" under crew results, so AI picks show alongside them (never duplicating a crew listing)
     const alongside = req.query.all === "1";

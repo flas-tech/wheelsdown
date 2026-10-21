@@ -14,7 +14,7 @@ import { COST_LABELS, PACES, costOptions, costRange, costText, paceLabel, paceOf
 import { CostChoice } from "@/lib/costChip";
 import { PROGRAMS, programOf, type ProgramId } from "@shared/loyalty";
 import { VisitReminder } from "@/lib/visits";
-import { AiPicksPanel, MoreAiPlaces, ProgramChip, useMyPrograms } from "@/lib/aiPicks";
+import { AiAddedTag, AiPicksPanel, MoreAiPlaces, ProgramChip, useMyPrograms } from "@/lib/aiPicks";
 import { getPosition, type NearAirport } from "@/lib/geo";
 import { useToast } from "@/hooks/use-toast";
 import { trustScore } from "@shared/vetting";
@@ -35,6 +35,8 @@ type SearchState = {
   cost: number | null;
   sort: "trusted" | "rating" | "close" | "new";
   vettedOnly: boolean;
+  /** All, crew-rated listings only, or only listings AI added from briefings (the filter shows when any are in the results) */
+  source: "all" | "crew" | "ai";
   /** true = user chose to scroll through everything instead of searching a route */
   browse: boolean;
   /** results as a list or on the map */
@@ -43,11 +45,11 @@ type SearchState = {
   focus: number | null;
 };
 const SearchCtx = createContext<[SearchState, (p: Partial<SearchState>) => void]>([
-  { category: null, route: "", time: null, pace: null, food: null, act: null, rewards: null, cost: null, sort: "trusted", vettedOnly: false, browse: false, view: "list", focus: null },
+  { category: null, route: "", time: null, pace: null, food: null, act: null, rewards: null, cost: null, sort: "trusted", vettedOnly: false, source: "all", browse: false, view: "list", focus: null },
   () => {},
 ]);
 export function SearchProvider({ children }: { children: React.ReactNode }) {
-  const [s, set] = useState<SearchState>({ category: null, route: "", time: null, pace: null, food: null, act: null, rewards: null, cost: null, sort: "trusted", vettedOnly: false, browse: false, view: "list", focus: null });
+  const [s, set] = useState<SearchState>({ category: null, route: "", time: null, pace: null, food: null, act: null, rewards: null, cost: null, sort: "trusted", vettedOnly: false, source: "all", browse: false, view: "list", focus: null });
   return <SearchCtx.Provider value={[s, (p) => set((o) => ({ ...o, ...p }))]}>{children}</SearchCtx.Provider>;
 }
 export const useSearch = () => useContext(SearchCtx);
@@ -238,12 +240,15 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
   }
 
   const myPrograms = useMyPrograms();
+  const hasAi = (data?.spots || []).some((x) => x.source === "ai") || s.source !== "all";
   const filtered = useMemo(() => {
     let list = (data?.spots || []).filter((x) => x.category === cat);
     if (showTime && bucket) list = list.filter((x) => totalMinutes(x) <= bucket.max);
     if (showPace && s.pace) list = list.filter((x) => paceMatches(paceOf(x), s.pace as PaceId));
     if (showCost && budget != null) list = list.filter((x) => x.cost != null && x.cost <= budget);
     if (s.vettedOnly) list = list.filter((x) => x.vet.level === "vetted");
+    if (s.source === "ai") list = list.filter((x) => x.source === "ai");
+    if (s.source === "crew") list = list.filter((x) => x.source !== "ai");
     if (showPace && s.food) list = list.filter((x) => cuisinesOf(x).includes(s.food!));
     if (showTime && s.act) list = list.filter((x) => activitiesOf(x).includes(s.act!));
     if (showRewards && s.rewards) list = list.filter((x) => programOf(x) === s.rewards);
@@ -256,7 +261,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
     // hotels from the member's own rewards programs first, then the chosen order
     const mine = (x: SpotWithStats) => (x.category === "stay" && myPrograms.includes(programOf(x) as ProgramId) ? 1 : 0);
     return [...list].sort((a, b) => (myPrograms.length ? mine(b) - mine(a) : 0) || sorters[s.sort](a, b));
-  }, [data, cat, s.time, s.pace, s.food, s.act, s.rewards, budget, s.sort, s.vettedOnly, showTime, showPace, showCost, myPrograms]);
+  }, [data, cat, s.time, s.pace, s.food, s.act, s.rewards, budget, s.sort, s.vettedOnly, s.source, showTime, showPace, showCost, myPrograms]);
   // hotels per rewards program in these results (before the program filter)
   const programCounts = useMemo(() => {
     const n = new Map<string, number>();
@@ -296,7 +301,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
   const PAGE = 10, PER_AIRPORT = 6;
   const [shown, setShown] = useState(PAGE);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  useEffect(() => { setShown(PAGE); setExpanded(new Set()); }, [cat, route, s.time, s.pace, s.food, s.act, s.rewards, s.cost, s.vettedOnly, s.sort, s.browse]);
+  useEffect(() => { setShown(PAGE); setExpanded(new Set()); }, [cat, route, s.time, s.pace, s.food, s.act, s.rewards, s.cost, s.vettedOnly, s.source, s.sort, s.browse]);
   const mode: "choose" | "browse" | "route" = route ? "route" : s.browse ? "browse" : "choose";
   const { data: hl } = useQuery<Highlights>({ queryKey: [`/api/highlights?category=${cat}`], enabled: mode === "choose" });
 
@@ -399,6 +404,14 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
           <span className={cn("block h-4 w-4 rounded-full bg-white shadow transition-transform", s.vettedOnly && "translate-x-4")} />
         </span>
       </button>
+      {hasAi && (
+        <div className="flex items-center gap-1.5" role="group" aria-label="Who added it" data-testid="filter-source">
+          <span className="mr-1 text-xs text-muted-foreground">Show</span>
+          {([["all", "All"], ["crew", "Crew added"], ["ai", "AI added"]] as const).map(([v, label]) => (
+            <Chip key={v} active={s.source === v} onClick={() => set({ source: v })} className="text-xs" testId={`chip-source-${v}`}>{label}</Chip>
+          ))}
+        </div>
+      )}
 
   </div>);
   const legPts = legs.filter((l) => l.airport?.lat != null && l.airport?.lon != null).map((l) => ({ icao: l.airport!.icao, lat: l.airport!.lat!, lon: l.airport!.lon!, name: l.airport!.name }));
@@ -485,7 +498,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
         </div>
       )}
       {s.view === "map" ? (
-        <MapFilters active={[s.time && showTime, s.pace && showPace, s.food && showPace, s.act && showTime, s.rewards && showRewards, budget != null, s.vettedOnly].filter(Boolean).length}>{filtersEl}</MapFilters>
+        <MapFilters active={[s.time && showTime, s.pace && showPace, s.food && showPace, s.act && showTime, s.rewards && showRewards, budget != null, s.vettedOnly, s.source !== "all"].filter(Boolean).length}>{filtersEl}</MapFilters>
       ) : filtersEl}
 
       {s.view === "list" && <AdBanner slot="top" icaos={icaos} />}
@@ -542,7 +555,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
             {g.spots.length === 0 ? (
               <>
               <Empty
-                title={`No ${M.label.toLowerCase()} picks${s.time || s.pace || s.food || s.act || s.rewards || budget != null || s.vettedOnly ? " match these filters" : " yet"}`}
+                title={`No ${M.label.toLowerCase()} picks${s.time || s.pace || s.food || s.act || s.rewards || budget != null || s.vettedOnly || s.source !== "all" ? " match these filters" : " yet"}`}
                 body="Be the first crew to drop one here."
                 icao={g.icao}
               />
@@ -625,7 +638,7 @@ export function SpotCard({ spot }: { spot: SpotWithStats }) {
         </div>
       </div>
       <p className="mt-1.5 text-sm text-muted-foreground line-clamp-2">{spot.description}</p>
-      <div className="mt-2.5 flex flex-wrap items-center gap-2"><VetBadge vet={spot.vet} />{spot.goArounds > 0 && <GoAroundBadge count={spot.goArounds} />}</div>
+      <div className="mt-2.5 flex flex-wrap items-center gap-2">{spot.source === "ai" && <AiAddedTag rated={!!spot.reviewCount} />}<VetBadge vet={spot.vet} />{spot.goArounds > 0 && <GoAroundBadge count={spot.goArounds} />}</div>
       <div className="mt-2.5 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           {spot.reviewCount > 0 ? (
@@ -689,7 +702,7 @@ export function MapRoute() {
     const cat = q.get("cat") as Category | null;
     const spot = Number(q.get("spot")) || null;
     set({ category: cat && cat in CAT_META ? cat : "eat", route: (q.get("icao") || q.get("route") || "").toUpperCase(), browse: true, view: "map", focus: spot,
-      time: null, pace: null, food: null, act: null, cost: null, vettedOnly: false });
+      time: null, pace: null, food: null, act: null, cost: null, vettedOnly: false, source: "all" });
     navigate("/", { replace: true });
   }, []); // eslint-disable-line
   return null;

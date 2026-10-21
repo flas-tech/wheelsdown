@@ -10,6 +10,8 @@ import { CrewAvatar } from "@/lib/aircraft";
 import { PreviewBadge, PreviewGate, errMsg, left } from "@/lib/preview";
 import { InviteCrewCard, useMyCrew } from "@/lib/mycrew";
 import { markCrewUpSeen } from "@/lib/tabDots";
+import { crewUpHref, crewUpPrefill, fmtArrive, type TripResp, type TripStop } from "@/lib/tripNav";
+import { useTrip } from "@/lib/experience";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { findTailNumbers } from "@shared/tailNumber";
@@ -34,14 +36,24 @@ function When({ m }: { m: Meetup }) {
 function MeetupBoard() {
   const [code, setCode] = useState<string>(() => new URLSearchParams(window.location.hash.split("?")[1] || window.location.search.slice(1)).get("icao")?.toUpperCase() || "");
   const [typed, setTyped] = useState("");
+  // from a briefing stop ("Crew Up here"): its date, time and how long the layover is
+  const [pre, setPre] = useState(crewUpPrefill);
+  useEffect(() => { // read once: drop date/time/hours from the address so a later visit doesn't fill them in again
+    const u = new URL(window.location.href);
+    if (["date", "time", "hours"].some((k) => u.searchParams.has(k))) { for (const k of ["date", "time", "hours"]) u.searchParams.delete(k); history.replaceState(history.state, "", u.toString()); }
+  }, []);
+  const trip = useTrip();
+  const { data: trips } = useQuery<TripResp>({ queryKey: ["/api/preview/trip"], enabled: trip, staleTime: 60_000, retry: false });
+  const fromBriefs = trips ? [trips.next, ...trips.later].filter((s): s is TripStop => !!s && s.when !== "past").slice(0, 4) : [];
+  const pickStop = (s: TripStop) => { const u = new URL(`http://x${crewUpHref(s)}`); setPre({ date: u.searchParams.get("date"), time: u.searchParams.get("time"), hours: Number(u.searchParams.get("hours")) || null }); setCode(s.icao); setMore(true); };
   const { data, isLoading, error } = useQuery<MeetupResp>({
     queryKey: ["/api/preview/meetups", code], queryFn: async () => (await apiRequest("GET", `/api/preview/meetups${code ? `?icao=${encodeURIComponent(code)}` : ""}`)).json(), staleTime: 20_000, refetchInterval: 60_000, retry: false,
   });
-  const go = (c: string) => { const v = c.trim().toUpperCase(); if (v.length >= 3) { setCode(v); setTyped(""); } };
+  const go = (c: string) => { const v = c.trim().toUpperCase(); if (v.length >= 3) { setCode(v); setTyped(""); setPre({ date: null, time: null, hours: null }); } };
   // opening Crew Up clears its red dot (#51)
   useEffect(() => { if (data) markCrewUpSeen(); }, [data]);
-  const [more, setMore] = useState(false);
-  useEffect(() => setMore(false), [data?.icao]);
+  const [more, setMore] = useState(() => !!crewUpPrefill().hours);
+  useEffect(() => { if (!pre.date && !pre.hours) setMore(false); }, [data?.icao]); // eslint-disable-line
   const mineHere = data?.icao ? data.mine.filter((m) => m.icao === data.icao) : [];
   const full = (data?.mine.length || 0) >= MEETUP_RULES.maxPlans;
 
@@ -58,6 +70,21 @@ function MeetupBoard() {
           className="h-11 min-w-0 flex-1 rounded-xl border border-input bg-card px-3 font-code text-base uppercase tracking-wider placeholder:font-sans placeholder:normal-case placeholder:tracking-normal placeholder:text-muted-foreground/70" data-testid="input-meetup-airport" aria-label="Airport" />
         <button type="submit" className="h-11 rounded-xl taxi-sign px-4 text-sm font-semibold hover-elevate disabled:opacity-60" disabled={typed.trim().length < 3} data-testid="button-meetup-go">Go</button>
       </form>
+
+      {fromBriefs.length > 0 && (
+        <section className="space-y-1.5" data-testid="section-meetup-briefs">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">From your briefs</h2>
+          <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 no-scrollbar">
+            {fromBriefs.map((s) => (
+              <button key={`${s.briefId}-${s.stopIndex}`} type="button" onClick={() => pickStop(s)} data-testid={`chip-meetup-brief-${s.icao}`}
+                className={cn("shrink-0 rounded-xl border px-3 py-2 text-left hover-elevate", data?.icao === s.icao ? "border-primary bg-primary/10" : "border-border bg-card")}>
+                <span className="block font-code text-sm font-bold">{s.icao}</span>
+                <span className="block text-[11px] text-muted-foreground">{s.arriveDate ? fmtArrive(s) : "No date yet"}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       {isLoading ? <div className="grid place-items-center py-16 text-muted-foreground"><Loader2 className="h-6 w-6 animate-spin" /></div>
         : error ? <p className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground" data-testid="text-meetup-error">{errMsg(error)}</p>
@@ -76,7 +103,7 @@ function MeetupBoard() {
                   <button type="button" onClick={() => setMore(true)} className="inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-full border border-border bg-card text-sm font-semibold hover-elevate" data-testid="button-meetup-another">
                     <Plus className="h-4 w-4" />Make another plan at <span className="font-code">{data.icao}</span>
                   </button>
-                ) : <Compose d={data} onPosted={() => setMore(false)} />}
+                ) : <Compose key={`${data.icao}-${pre.date}-${pre.time}-${pre.hours}`} d={data} pre={pre} onPosted={() => { setMore(false); setPre({ date: null, time: null, hours: null }); }} />}
               <CrewHere d={data} />
             </>}
           {data.crewElsewhere.length > 0 && (
@@ -91,7 +118,7 @@ function MeetupBoard() {
   );
 }
 
-function Compose({ d, onPosted }: { d: MeetupResp; onPosted?: () => void }) {
+function Compose({ d, pre, onPosted }: { d: MeetupResp; pre?: { date: string | null; time: string | null; hours: number | null }; onPosted?: () => void }) {
   const icao = d.icao!;
   const { me } = useAuth();
   const { toast } = useToast();
@@ -99,14 +126,15 @@ function Compose({ d, onPosted }: { d: MeetupResp; onPosted?: () => void }) {
   const today = localDate(d.tz);
   // 7 PM local by default: today, or tomorrow once it's already evening there
   const localHour = Number(new Intl.DateTimeFormat("en-US", { timeZone: d.tz || undefined, hour: "numeric", hourCycle: "h23" }).format(Date.now())) % 24;
-  const [later, setLater] = useState(false);
-  const [date, setDate] = useState(() => (localHour >= 18 ? localDate(d.tz, Date.now() + 86400_000) : today));
-  const [time, setTime] = useState("19:00");
+  const preDate = pre?.date && pre.date >= today ? pre.date : null; // a stop's arrival date, if it's still ahead
+  const [later, setLater] = useState(!!preDate && (preDate > today || !!pre?.time));
+  const [date, setDate] = useState(() => preDate || (localHour >= 18 ? localDate(d.tz, Date.now() + 86400_000) : today));
+  const [time, setTime] = useState(pre?.time && preDate ? pre.time : "19:00");
   const [pickAll, setPickAll] = useState(true);
   const [picked, setPicked] = useState<number[]>([]);
   const toggle = (id: number) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
   const [note, setNote] = useState("");
-  const [hours, setHours] = useState<number>(MEETUP_RULES.defaultHours);
+  const [hours, setHours] = useState<number>(() => ((MEETUP_RULES.hours as readonly number[]).includes(pre?.hours || 0) ? pre!.hours! : MEETUP_RULES.defaultHours));
   const [spotId, setSpotId] = useState<number | null>(null);
   const { data: places } = useQuery<{ spots: SpotWithStats[] }>({ queryKey: ["/api/search", icao], queryFn: async () => (await apiRequest("GET", `/api/search?route=${icao}`)).json(), staleTime: 300_000 });
   const options = (places?.spots || []).filter((s) => s.icao === icao && (s.category === "eat" || s.category === "do" || s.category === "fbo")).sort((a, b) => (b.avgRating ?? 0) - (a.avgRating ?? 0)).slice(0, 25);

@@ -8,7 +8,7 @@ import { PIN_COLORS, staticMapDataUrl, type MapPin } from "@/lib/staticMap";
 
 export type Sponsor = { id: number; advertiser: string; headline: string; url: string | null } | null;
 export type BriefStopFull = {
-  icao: string; layover: string; nights?: number; airport: (Airport & { lat?: number | null; lon?: number | null }) | null;
+  icao: string; layover: string; nights?: number; arriveDate?: string | null; arriveTime?: string | null; airport: (Airport & { lat?: number | null; lon?: number | null }) | null;
   picks: SpotWithStats[]; candidates?: SpotWithStats[]; sponsor: Sponsor; favoriteIds?: number[];
   /** AI picks filling slots no crew listing covers (negative ids). */
   aiPicks?: AiPick[]; aiStatus?: "ready" | "pending" | "off" | "failed" | "none" | "offer"; ai?: boolean; aiSlots?: { cat: string; meal?: string }[];
@@ -19,6 +19,10 @@ export type BriefStopFull = {
 };
 export type AiPick = SpotWithStats & { ai: { meal: "breakfast" | "lunch" | "dinner" | null; sources: string[]; createdAt: number; draft?: boolean; extra?: boolean; focus?: string; foods?: string[]; acts?: string[]; slot?: { cat: string; meal?: string } } };
 export const isAi = (s: SpotWithStats): s is AiPick => s.id < 0 || !!(s as any).ai;
+/** A listing made from an AI pick kept in a saved briefing: a real listing (positive id), marked "AI added" until crews rate it. */
+export const isAiAdded = (s: SpotWithStats) => s.id > 0 && (s as any).source === "ai";
+/** Dashed ring on the map, the number badge and the PDF: AI picks, and AI-added listings no crew has rated yet. */
+export const looksAi = (s: SpotWithStats) => isAi(s) || (isAiAdded(s) && !s.reviewCount);
 const SLOT_FILL: Record<string, string> = { breakfast: "breakfast", lunch: "lunch", dinner: "dinner" };
 /** Why an AI pick is in a briefing: the gap it fills, or what the owner asked for when it was found. */
 export function aiReason(s: AiPick): { text: string; kind: "fill" | "asked" | "local" | "added" } {
@@ -50,7 +54,7 @@ export function stopPins(st: BriefStopFull): { pins: MapPin[]; numbered: { n: nu
   const items = pos.size ? natural.map((s, k) => ({ s, k })).sort((a, b) => (pos.get(a.s.id) ?? 1000 + a.k) - (pos.get(b.s.id) ?? 1000 + b.k)).map((x) => x.s) : natural;
   const numbered = items.map((spot, i) => {
     const mapped = spot.lat != null && spot.lng != null;
-    if (mapped) pins.push({ lat: spot.lat!, lng: spot.lng!, label: String(i + 1), kind: spot.category as MapPin["kind"], ai: isAi(spot) });
+    if (mapped) pins.push({ lat: spot.lat!, lng: spot.lng!, label: String(i + 1), kind: spot.category as MapPin["kind"], ai: looksAi(spot) });
     return { n: i + 1, spot, mapped, ai: isAi(spot) };
   });
   if (st.airport?.lat != null && st.airport?.lon != null) pins.push({ lat: st.airport.lat, lng: st.airport.lon, label: st.icao, kind: "airport" });
@@ -209,10 +213,11 @@ export async function buildBriefPdf(b: BriefFull, opts: { appUrl: string; prepar
         nx += fw + 6; doc.setFontSize(11.5); doc.setTextColor(...navy);
       }
       { // CREW PICK / AI PICK tag
-        const tag = ai ? "AI PICK" : "CREW PICK";
+        const added = isAiAdded(spot);
+        const tag = ai ? "AI PICK" : added ? "AI ADDED" : "CREW PICK";
         doc.setFont("helvetica", "bold"); doc.setFontSize(6.5);
         const tw = doc.getTextWidth(tag) + 8;
-        if (ai) doc.setFillColor(124, 58, 237); else doc.setFillColor(5, 150, 105);
+        if (ai || added) doc.setFillColor(124, 58, 237); else doc.setFillColor(5, 150, 105);
         doc.roundedRect(nx, yy - 8.5, tw, 11, 2, 2, "F");
         doc.setTextColor(255, 255, 255); doc.text(tag, nx + tw / 2, yy - 0.8, { align: "center" });
         nx += tw + 6; doc.setFontSize(11.5); doc.setTextColor(...navy);

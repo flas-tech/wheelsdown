@@ -10,7 +10,7 @@ import { AirportCheckInCard, CheckInList, ProfileMap } from "@/lib/checkins";
 import { InviteCard } from "@/lib/share";
 import { AiPrefCard, ProgramsCard } from "@/lib/aiPicks";
 import { VersionCard } from "@/lib/version";
-import { setExperience, useAdminOnly, useExperience, usePreview } from "@/lib/experience";
+import { setExperience, useAdminOnly, useExperience, usePreview, useTripState } from "@/lib/experience";
 import { Switch } from "@/components/ui/switch";
 import { BIO_MAX } from "@shared/interests";
 import { aircraftList } from "@shared/aircraft";
@@ -410,6 +410,8 @@ export function PreviewCard() {
   const on = usePreview();
   const adminOnly = useAdminOnly();
   const names = { plan: "Plan a layover", spots: "Find spots", lounge: "Crew Lounge" } as const;
+  const trip = useTripState();
+  if (trip.on) return <TripCardAdmin adminOnly={trip.adminOnly} admin={!!me?.isAdmin} />;
   if (!on) return null;
   return (
     <section className={cn("rounded-2xl bg-card px-4 py-3", adminOnly ? "border border-dashed border-primary/60" : "border border-card-border")} data-testid="card-preview-start">
@@ -422,6 +424,45 @@ export function PreviewCard() {
       </div>
       {me?.isAdmin && <LaunchSwitch />}
     </section>
+  );
+}
+
+/** Four-tab layout preview: what it is, and (admins) the switch that opens it to members. */
+function TripCardAdmin({ adminOnly, admin }: { adminOnly: boolean; admin: boolean }) {
+  if (!admin && !adminOnly) return null;
+  return (
+    <section className={cn("rounded-2xl bg-card px-4 py-3", adminOnly ? "border border-dashed border-primary/60" : "border border-card-border")} data-testid="card-trip-preview">
+      {adminOnly && <p className="text-[11px] font-semibold uppercase tracking-wider text-primary">Admin preview</p>}
+      <p className="mt-0.5 text-sm font-semibold">Home and four tabs</p>
+      <p className="text-xs text-muted-foreground">Home, Briefs, Spots and Crew on every page. Home walks you through the trip: plan, find spots, add spots, rate. AI picks you keep in a saved brief become AI-added listings.{adminOnly ? " Members don't see any of this yet." : ""}</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <Link href="/home" className="inline-flex h-9 items-center rounded-full taxi-sign px-3.5 text-xs font-semibold hover-elevate" data-testid="link-trip-preview-home">Open Home</Link>
+      </div>
+      {admin && <TripSwitch />}
+      {admin && <><p className="mt-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Earlier switch: My Crew, Crew Up, Lounge</p><LaunchSwitch /></>}
+    </section>
+  );
+}
+
+/** Admins: open the four tabs, Home and AI-added listings to members (app_settings trip_audience). Instant, no deploy. */
+function TripSwitch() {
+  const { toast } = useToast();
+  const q = useQuery<{ audience: "admins" | "members"; aiSpots: number; aiRated: number }>({ queryKey: ["/api/admin/trip"], queryFn: async () => (await apiRequest("GET", "/api/admin/trip")).json(), retry: false });
+  const m = useMutation({
+    mutationFn: async (audience: "admins" | "members") => (await apiRequest("PUT", "/api/admin/trip", { audience })).json(),
+    onSuccess: (r: { audience: string }) => {
+      for (const k of ["/api/admin/trip", "/api/features", "/api/search", "/api/preview/trip"]) queryClient.invalidateQueries({ queryKey: [k] });
+      toast({ title: r.audience === "members" ? "Open to members" : "Back to admins only", description: r.audience === "members" ? "Members get Home, the four tabs and AI-added listings." : "Members get the current navigation again. AI-added listings are hidden from them; nothing is deleted." });
+    },
+    onError: (e: Error) => toast({ title: "Couldn't change it", description: e.message, variant: "destructive" }),
+  });
+  if (!q.data) return null;
+  const live = q.data.audience === "members";
+  return (
+    <div className="mt-3 flex items-start justify-between gap-3 border-t border-dashed border-border pt-3" data-testid="row-trip-switch">
+      <span><span className="block text-xs font-semibold">Open to members</span><span className="block text-[11px] text-muted-foreground">{live ? "On: members have Home, four tabs and AI-added listings." : "Off: only admins see it."} {q.data.aiSpots} AI-added listing{q.data.aiSpots === 1 ? "" : "s"}, {q.data.aiRated} rated by crew.</span></span>
+      <Switch checked={live} disabled={m.isPending} onCheckedChange={(v) => { if (window.confirm(v ? "Open Home, the four tabs and AI-added listings to all members?" : "Put members back on the current navigation and hide AI-added listings from them?")) m.mutate(v ? "members" : "admins"); }} data-testid="switch-trip" aria-label="Open the four tabs to members" />
+    </div>
   );
 }
 

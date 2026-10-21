@@ -8,6 +8,7 @@ import { rateLimit } from "express-rate-limit";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import tzlookup from "tz-lookup";
+import { aiSpotsForUser } from "./trip";
 import { db } from "./db";
 import { notify } from "./push";
 import { storage } from "./storage";
@@ -212,7 +213,7 @@ export function registerLayover(app: Express, o: { userOf: (req: Request) => Pro
 
     const [metarR, spots, rated, favRows, queue] = await Promise.all([
       metarFor(icao, ap).then((v) => ({ v, err: false })).catch(() => ({ v: null, err: true })),
-      storage.searchSpots([icao], false, ""), myReviewed(u.id),
+      aiSpotsForUser(u.id).then((ai) => storage.searchSpots([icao], false, "", { ai })), myReviewed(u.id),
       rows(sql`SELECT spot_id FROM favorites WHERE user_id = ${u.id}`), rateQueue(u.id),
     ]);
     const byId = new Map(spots.map((s) => [s.id, s]));

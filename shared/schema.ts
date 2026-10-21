@@ -56,6 +56,8 @@ export const spots = pgTable("spots", {
   modNote: text("mod_note").notNull().default(""),
   modAttempts: integer("mod_attempts").notNull().default(0),
   pendingEdit: text("pending_edit"),
+  // "crew" (listed by a crew member) | "ai" (an AI pick a member kept in a saved briefing; no owner, no points)
+  source: text("source").notNull().default("crew"),
 }, (t) => [index("spots_icao_idx").on(t.icao), index("spots_user_idx").on(t.userId)]);
 export const insertSpotSchema = createInsertSchema(spots, {
   icao: z.string().min(3).max(4),
@@ -67,7 +69,7 @@ export const insertSpotSchema = createInsertSchema(spots, {
   lat: z.number().min(-90).max(90).nullable().optional(),
   lng: z.number().min(-180).max(180).nullable().optional(),
   placeRef: z.string().max(40).nullable().optional(),
-}).omit({ id: true, createdAt: true, modState: true, modNote: true, modAttempts: true, pendingEdit: true });
+}).omit({ id: true, createdAt: true, modState: true, modNote: true, modAttempts: true, pendingEdit: true, source: true });
 export type InsertSpot = z.infer<typeof insertSpotSchema>;
 export type Spot = typeof spots.$inferSelect;
 
@@ -178,7 +180,7 @@ export type LayoverId = (typeof LAYOVERS)[number]["id"];
 /** aiAdd: AI picks the owner added on top of the automatic ones (ai_picks ids). */
 /** aiHide: automatic AI picks the owner removed (ai_picks ids); order: the owner's order of everything at the stop
  *  (listing ids, AI picks as negative ids). */
-export type BriefingStop = { icao: string; layover: LayoverId; nights?: number; picks: number[]; ai?: boolean; aiAdd?: number[]; aiHide?: number[]; order?: number[] };
+export type BriefingStop = { icao: string; layover: LayoverId; nights?: number; picks: number[]; ai?: boolean; aiAdd?: number[]; aiHide?: number[]; order?: number[]; arriveDate?: string | null; arriveTime?: string | null };
 export const briefingSchema = z.object({
   title: z.string().trim().max(80).default(""),
   stops: z.array(z.object({
@@ -190,6 +192,9 @@ export const briefingSchema = z.object({
     aiAdd: z.array(z.coerce.number().int().positive()).max(20).optional(),
     aiHide: z.array(z.coerce.number().int().positive()).max(40).optional(),
     order: z.array(z.coerce.number().int()).max(80).optional(),
+    // when you get there (local at the airport), so Home knows your next trip and Crew Up can be posted from the brief
+    arriveDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+    arriveTime: z.string().regex(/^\d{2}:\d{2}$/).optional().nullable(),
   })).min(1, "Add at least one stop").max(12),
 });
 

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { AiAddedTag } from "@/lib/aiPicks";
 import { noteVisit, clearVisit } from "@/lib/visits";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useRoute } from "wouter";
@@ -71,12 +72,18 @@ export default function SpotPage() {
             <FavoriteButton spotId={spot.id} name={spot.name} />
           </div>
         </div>
+        {spot.source === "ai" && !spot.reviewCount && (
+          <p className="mt-2 rounded-xl border border-dashed border-violet-500/50 bg-violet-500/5 px-3 py-2 text-xs text-muted-foreground" data-testid="text-ai-added-note">
+            AI suggested this place for a crew briefing. No crew has rated it yet, so check hours and details before you go. Be the first to rate it and earn bonus points.
+          </p>
+        )}
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <Stars value={spot.avgRating ?? 0} size={16} />
           <span className="text-sm text-muted-foreground tabular" data-testid="text-rating">
             {spot.reviewCount ? `${spot.avgRating?.toFixed(1)} from ${spot.reviewCount} crew` : "No ratings yet"}
           </span>
           {spot.goArounds > 0 && <GoAroundBadge count={spot.goArounds} />}
+          {spot.source === "ai" && <AiAddedTag rated={!!spot.reviewCount} />}
           <button type="button" onClick={() => document.getElementById("rate")?.scrollIntoView({ behavior: "smooth", block: "center" })} className="text-xs font-medium text-primary" data-testid="button-jump-rate">Rate it</button>
         </div>
         <div className="mt-3"><CheckInButton spotId={spot.id} name={spot.name} /></div>
