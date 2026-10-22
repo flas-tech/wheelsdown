@@ -17,6 +17,8 @@ import MyCrewPage from "@/pages/mycrew";
 import { useNav, usePreviewState, useTripState } from "@/lib/experience";
 import TripHomePage from "@/pages/tripHome";
 import { SubTabs, useNavDepth } from "@/lib/tripNav";
+import MessagesPage from "@/pages/messages";
+import { DmKeyHost } from "@/lib/dm";
 import { NoticeDot } from "@/lib/notices";
 import FavoritesPage from "@/pages/favorites";
 import NotFound from "@/pages/not-found";
@@ -127,6 +129,8 @@ function Shell() {
           <Route path="/admin" component={AdminPage} />
           <Route path="/me" component={ProfilePage} />
           <Route path="/notifications" component={NotificationsPage} />
+          <Route path="/messages" component={MessagesPage} />
+          <Route path="/messages/:id" component={MessagesPage} />
           <Route path="/settings" component={SettingsPage} />
           <Route path="/crew" component={CrewPage} />
           <Route path="/following" component={FollowingPage} />
@@ -157,6 +161,7 @@ function Shell() {
       <TourHost />
       <UpdateBar />
       <PushHost unread={unread} />
+      <DmKeyHost />
       <PushPrompt />
       <WhatsNewHost />
 

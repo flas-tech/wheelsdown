@@ -439,6 +439,7 @@ function TripCardAdmin({ adminOnly, admin }: { adminOnly: boolean; admin: boolea
         <Link href="/home" className="inline-flex h-9 items-center rounded-full taxi-sign px-3.5 text-xs font-semibold hover-elevate" data-testid="link-trip-preview-home">Open Home</Link>
       </div>
       {admin && <TripSwitch />}
+      {admin && <><p className="mt-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Private messages</p><DmSwitch /></>}
       {admin && <><p className="mt-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Earlier switch: My Crew, Crew Up, Lounge</p><LaunchSwitch /></>}
     </section>
   );
@@ -462,6 +463,28 @@ function TripSwitch() {
     <div className="mt-3 flex items-start justify-between gap-3 border-t border-dashed border-border pt-3" data-testid="row-trip-switch">
       <span><span className="block text-xs font-semibold">Open to members</span><span className="block text-[11px] text-muted-foreground">{live ? "On: members have Home, four tabs and AI-added listings." : "Off: only admins see it."} {q.data.aiSpots} AI-added listing{q.data.aiSpots === 1 ? "" : "s"}, {q.data.aiRated} rated by crew.</span></span>
       <Switch checked={live} disabled={m.isPending} onCheckedChange={(v) => { if (window.confirm(v ? "Open Home, the four tabs and AI-added listings to all members?" : "Put members back on the current navigation and hide AI-added listings from them?")) m.mutate(v ? "members" : "admins"); }} data-testid="switch-trip" aria-label="Open the four tabs to members" />
+    </div>
+  );
+}
+
+/** Admins: open private messages to members (app_settings dm_audience). Counts only: messages are end-to-end encrypted. */
+function DmSwitch() {
+  const { toast } = useToast();
+  const q = useQuery<{ audience: "admins" | "members"; messages: number; conversations: number; people: number }>({ queryKey: ["/api/admin/dm"], queryFn: async () => (await apiRequest("GET", "/api/admin/dm")).json(), retry: false });
+  const m = useMutation({
+    mutationFn: async (audience: "admins" | "members") => (await apiRequest("PUT", "/api/admin/dm", { audience })).json(),
+    onSuccess: (r: { audience: string }) => {
+      for (const k of ["/api/admin/dm", "/api/dm/config"]) queryClient.invalidateQueries({ queryKey: [k] });
+      toast({ title: r.audience === "members" ? "Messages open to members" : "Messages back to admins only", description: r.audience === "members" ? "Members can message their crew and talk in Crew Up threads." : "Members can't open Messages. Nothing is deleted." });
+    },
+    onError: (e: Error) => toast({ title: "Couldn't change it", description: e.message, variant: "destructive" }),
+  });
+  if (!q.data) return null;
+  const live = q.data.audience === "members";
+  return (
+    <div className="mt-1 flex items-start justify-between gap-3 pt-1" data-testid="row-dm-switch">
+      <span><span className="block text-xs font-semibold">Open to members</span><span className="block text-[11px] text-muted-foreground">{live ? "On: members can message their crew." : "Off: only admins can use Messages."} {q.data.messages} message{q.data.messages === 1 ? "" : "s"} in {q.data.conversations} conversation{q.data.conversations === 1 ? "" : "s"}, {q.data.people} people set up. End-to-end encrypted, so nobody here can read them.</span></span>
+      <Switch checked={live} disabled={m.isPending} onCheckedChange={(v) => { if (window.confirm(v ? "Open private messages to all members?" : "Close Messages for members? Nothing is deleted.")) m.mutate(v ? "members" : "admins"); }} data-testid="switch-dm" aria-label="Open private messages to members" />
     </div>
   );
 }

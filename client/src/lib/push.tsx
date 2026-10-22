@@ -6,6 +6,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { BellOff, BellRing, Loader2, Moon, Share, SquarePlus } from "lucide-react";
 import { DEFAULT_NOTIFY_PREFS, type NotifyPrefs, type PushConfig } from "@shared/push";
 import { apiRequest, queryClient, IS_STATIC } from "@/lib/queryClient";
+import { useDmOn } from "@/lib/dm";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { Switch } from "@/components/ui/switch";
@@ -159,6 +160,7 @@ const ROWS: { key: keyof NotifyPrefs; title: string; body: string }[] = [
   { key: "crewRequests", title: "Crew requests", body: "Someone wants to add you, or accepts your request." },
   { key: "crewUp", title: "Crew Up plans", body: "Someone in My Crew posts plans at an airport." },
   { key: "crewUpJoins", title: "Who's in", body: "A crew member says they're in on your Crew Up." },
+  { key: "messages", title: "Messages", body: "A private message, or a reply in a Crew Up thread. It never shows the text." },
   { key: "team", title: "From Wheelsdown", body: "Replies to your feedback and notes from the team." },
 ];
 const hourLabel = (h: number) => (h === 0 ? "12 AM" : h < 12 ? `${h} AM` : h === 12 ? "12 PM" : `${h - 12} PM`);
@@ -166,6 +168,7 @@ const hourLabel = (h: number) => (h === 0 ? "12 AM" : h < 12 ? `${h} AM` : h ===
 /** Settings > Notifications. */
 export function NotificationSettings() {
   const { me } = useAuth();
+  const dmOn = useDmOn();
   const { toast } = useToast();
   const cfg = usePushConfig();
   const [state, recheck] = useDeviceState();
@@ -232,7 +235,7 @@ export function NotificationSettings() {
       </div>
 
       <ul className="divide-y divide-border border-t border-border">
-        {ROWS.map((r) => (
+        {ROWS.filter((r) => r.key !== "messages" || dmOn).map((r) => (
           <li key={r.key} className="flex items-center justify-between gap-3 py-2.5">
             <span className="min-w-0"><span className="block text-sm font-medium">{r.title}</span><span className="block text-[11px] text-muted-foreground">{r.body}</span></span>
             <Switch checked={!!prefs[r.key]} onCheckedChange={(v) => save.mutate({ [r.key]: v })} aria-label={r.title} data-testid={`switch-push-${r.key}`} />

@@ -7,6 +7,7 @@ import { useLocation } from "wouter";
 import { usePreview } from "@/lib/experience";
 import { useMyCrew } from "@/lib/mycrew";
 import { NoticeDot } from "@/lib/notices";
+import { useDmUnread } from "@/lib/dm";
 
 const KEY = "wd-crewup-seen";
 const EVENT = "wheelsdown:crewup-seen";
@@ -49,7 +50,9 @@ function CrewTabDot() {
   const n = useMyCrew().data?.incoming.length || 0;
   const [loc] = useLocation();
   const fresh = useCrewUpNew();
+  const dms = useDmUnread();
   if (n) return <Dot label={`${n} crew request${n === 1 ? "" : "s"} waiting`} testId="dot-crew" />;
+  if (dms && !loc.startsWith("/messages")) return <Dot label={`${dms} unread message${dms === 1 ? "" : "s"}`} testId="dot-crew" />;
   return fresh && loc !== "/meetup" ? <Dot label="New Crew Up plans from your crew" testId="dot-crew" /> : null;
 }
 

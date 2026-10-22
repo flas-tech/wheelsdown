@@ -2,6 +2,13 @@
 export type Release = { date: string; sha?: string; title: string; notes: string[] };
 
 export const RELEASES: Release[] = [
+  { date: "2026-10-22", title: "Admin preview: private messages (end-to-end encrypted) and a thread on every Crew Up plan", notes: [
+    "Messages (Crew pills, chat bubble) for direct messages between mutual crew, plus a Messages thread on every Crew Up plan for the host and the crew who can see it, so replies stay in one place instead of new Crew Up posts. Feedback from JPJ and Jeff King.",
+    "Truly private: each phone or browser makes its own keys (kept on the device, can't be exported), messages are encrypted on the sender's device for each recipient device and signed. The server and admins only ever have ciphertext; there's no moderation and no admin view, only counts. Safety code in each conversation to check keys in person.",
+    "Limits: a new device (or Safari vs the home-screen app, which keep separate storage) can't read messages sent before it was set up. The server still knows who talks to whom and when. Crew Up threads are deleted 7 days after the plan ends.",
+    "Push: a new Messages alert type (on by default) that never includes the text, just Open Wheelsdown to read it.",
+    "Gated by dm_audience (default admins). Members see no change until it's opened in Settings > Admin preview > Private messages. Rollback: switch it back to admins; redeploy acbe04c if needed (the dm_ tables are new and can stay).",
+  ] },
   { date: "2026-10-22", title: "Version 1.16: Home, Plan, Crew for everyone; lifetime trip sheet count; short What moved tour", notes: [
     "Badges: Flight Planner now counts trip sheets ever made (users.briefs_made, +1 on every new sheet, backfilled to the sheets saved at deploy and never below what's saved). Deleting a sheet no longer lowers it. Sheets deleted before this weren't recorded per member, so they can't be counted back.",
     "What's new 1.16 (shown only once trip_audience is members): new layout, At the field now, trip sheets, Crew Up from a sheet, badge count. Its first item opens the short What moved tour.",

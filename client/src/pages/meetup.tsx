@@ -8,6 +8,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { CrewAvatar } from "@/lib/aircraft";
 import { PreviewBadge, PreviewGate, errMsg, left } from "@/lib/preview";
+import { ThreadButton } from "@/lib/dm";
 import { InviteCrewCard, useMyCrew } from "@/lib/mycrew";
 import { markCrewUpSeen } from "@/lib/tabDots";
 import { crewUpHref, crewUpPrefill, fmtArrive, type TripResp, type TripStop } from "@/lib/tripNav";
@@ -365,6 +366,7 @@ function Posted({ mine }: { mine: Meetup }) {
           <CalendarClock className="h-3.5 w-3.5" />{mine.startsAt > Date.now() + SOON ? "Change date or time" : "Add a date"}
         </button>
       )}
+      <ThreadButton meetupId={mine.id} className="mt-3 mr-2 inline-flex h-9 items-center gap-1.5 rounded-full border border-border px-3.5 text-xs font-semibold hover-elevate disabled:opacity-50" />
       <button type="button" onClick={() => end.mutate()} disabled={end.isPending} className="mt-3 inline-flex h-9 items-center gap-1.5 rounded-full border border-border px-3.5 text-xs font-semibold hover-elevate" data-testid={`button-meetup-end-${mine.id}`}><LogOut className="h-3.5 w-3.5" />{upcoming(mine) ? "Cancel it" : "End it"}</button>
     </section>
   );
@@ -407,6 +409,7 @@ function Other({ m, showIcao }: { m: Meetup; showIcao?: boolean }) {
           className={cn("inline-flex h-9 items-center gap-1.5 rounded-full px-3.5 text-xs font-semibold hover-elevate", m.joined ? "border border-primary bg-primary/15" : "taxi-sign")} data-testid={`button-meetup-join-${m.id}`}>
           {m.joined ? <><UserCheck className="h-3.5 w-3.5" />You're in</> : <><UserPlus className="h-3.5 w-3.5" />I'm in</>}
         </button>
+        <ThreadButton meetupId={m.id} />
         <span className="text-xs text-muted-foreground">{m.joins ? `${m.joins} in` : ""}</span>
         <button type="button" onClick={() => { if (window.confirm("Report these plans to the Wheelsdown team?")) report.mutate(); }} className="inline-flex h-8 items-center gap-1 rounded-full px-2 text-xs text-muted-foreground hover-elevate" data-testid={`button-meetup-report-${m.id}`}><Flag className="h-3.5 w-3.5" />Report</button>
       </div>

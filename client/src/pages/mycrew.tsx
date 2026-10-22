@@ -7,6 +7,7 @@ import type { CrewFindRow, CrewMember, CrewPrivacy, CrewShared } from "@shared/m
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { PreviewBadge, PreviewGate, errMsg, ago } from "@/lib/preview";
+import { ThreadButton } from "@/lib/dm";
 import { CrewButton, CrewRequestList, RemoveFromCrew, InviteCrewCard, PersonLine, useCrewAction, useMyCrew } from "@/lib/mycrew";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -86,7 +87,8 @@ function CrewList({ crew, onFind }: { crew: CrewMember[]; onFind: () => void }) 
             <li key={c.id} data-testid={`crew-member-${c.id}`}>
               <div className="flex items-center gap-3 px-4 py-3">
                 <PersonLine p={c} />
-                {c.crewUpAt && <Link href={`/meetup?icao=${c.crewUpAt}`} className="shrink-0 rounded-full bg-primary/20 px-2 py-1 font-code text-[11px] font-bold text-foreground" data-testid={`badge-crewup-${c.id}`}>Crew Up · {c.crewUpAt}</Link>}
+                {c.crewUpAt && <Link href={`/meetup?icao=${c.crewUpAt}`} className="shrink-0 rounded-full bg-primary/20 px-2 py-1 font-code text-[11px] font-bold text-foreground" aria-label={`Crew Up at ${c.crewUpAt}`} data-testid={`badge-crewup-${c.id}`}>{c.crewUpAt}</Link>}
+                <ThreadButton userId={c.id} label="" className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-border hover-elevate disabled:opacity-50 [&>svg]:h-4 [&>svg]:w-4" ariaLabel={`Message ${c.displayName}`} testId={`button-message-row-${c.id}`} />
                 <button type="button" onClick={() => setOpenId(openId === c.id ? null : c.id)} aria-expanded={openId === c.id} aria-label={`What ${c.displayName} shares`} className="grid h-9 w-9 shrink-0 place-items-center rounded-full hover-elevate" data-testid={`button-crew-open-${c.id}`}>
                   {openId === c.id ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                 </button>
@@ -108,7 +110,7 @@ function Shared({ member }: { member: CrewMember }) {
     <div className="space-y-3 border-t border-dashed border-border bg-muted/30 px-4 py-3 text-sm" data-testid={`shared-${member.id}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">In your crew since {new Date(member.since).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</p>
-        <RemoveFromCrew userId={member.id} name={member.displayName} />
+        <span className="flex items-center gap-2"><ThreadButton userId={member.id} /><RemoveFromCrew userId={member.id} name={member.displayName} /></span>
       </div>
       {isLoading || !data ? <Skeleton className="h-12 rounded-xl" /> : (
         <>

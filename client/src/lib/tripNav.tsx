@@ -1,7 +1,8 @@
 // Sub-tabs at the top of the Spots and Crew sections in the four-tab layout (lib/experience.tsx TRIP_NAV).
 // One row of pills, the current one filled; Spots also has an Add button on the right.
 import { Link, useLocation } from "wouter";
-import { ArrowLeft, Plus } from "lucide-react";
+import { ArrowLeft, MessageCircle, Plus } from "lucide-react";
+import { useDmOn, useDmUnread } from "@/lib/dm";
 import { useEffect } from "react";
 import { SPOTS_SUB, subTabsFor } from "@/lib/experience";
 import { TabDot } from "@/lib/tabDots";
@@ -34,6 +35,7 @@ export function SubTabs() {
           );
         })}
       </div>
+      {!spots && <MessagesButton active={loc.startsWith("/messages")} />}
       {spots && (
         <Link href="/add" aria-label="Add a spot" data-testid="subtab-add" className="grid h-10 w-10 shrink-0 place-items-center rounded-full taxi-sign hover-elevate">
           <Plus className="h-5 w-5" />
@@ -92,5 +94,19 @@ export function BackButton({ fallback = "/", label = "Back", className }: { fall
       className={cn("inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground", className)} data-testid="button-back">
       <ArrowLeft className="h-4 w-4" />{label}
     </button>
+  );
+}
+
+/** Crew section: Messages, next to the sub-tabs (private messages, when they're open for you). */
+function MessagesButton({ active }: { active: boolean }) {
+  const on = useDmOn();
+  const unread = useDmUnread();
+  if (!on) return null;
+  return (
+    <Link href="/messages" aria-label={unread ? `Messages, ${unread} unread` : "Messages"} data-testid="subtab-messages"
+      className={cn("relative grid h-10 w-10 shrink-0 place-items-center rounded-full border border-border hover-elevate", active && "bg-primary text-primary-foreground border-primary")}>
+      <MessageCircle className="h-5 w-5" />
+      {!!unread && <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-background" data-testid="dot-messages" />}
+    </Link>
   );
 }

@@ -27,6 +27,7 @@ import { registerLayover } from "./layover";
 import { registerLounge } from "./lounge";
 import { registerMyCrew, requestFromInvite, forgetMember } from "./mycrew";
 import { registerPush, forgetPush } from "./push";
+import { registerDm, forgetDm } from "./dm";
 import { registerTrip, aiSpotsFor, aiSpotsForUser, promoteBriefAiPicks } from "./trip";
 import { dayKey } from "./metrics";
 import { SERVICES } from "@shared/services";
@@ -210,6 +211,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     await storage.deleteUser(u.id);
     await forgetMember(u.id);
     await forgetPush(u.id);
+    await forgetDm(u.id);
     res.json({ ok: true });
   });
   app.get("/api/me/contributions", requireUser, async (req, res) => res.json(await storage.userContributions((req as any).user.id)));
@@ -703,6 +705,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   registerLayover(app, { userOf, isSuperAdmin }); // Layover Today, Crew Up, Rate a spot: admins only until layover_audience = members
   registerMyCrew(app, { userOf, isSuperAdmin, requireAdmin, requireUser }); // My Crew + launch switch (experience_audience) + member messages
   registerPush(app, { userOf, isSuperAdmin, requireAdmin, requireUser });
+  registerDm(app, { userOf, isSuperAdmin, requireAdmin }); // private messages, end-to-end encrypted (dm_audience: admins until opened)
   registerTrip(app, { userOf, isSuperAdmin, requireAdmin, requireUser }); // 4-tab nav, Home trip card, AI-added listings (trip_audience: admins until opened) // push notifications (push_audience: admins until opened)
   registerModFix(app, { requireAdmin, requireUser, ensureAirport: (c) => ensureAirport(c), byAdmin });
   app.get("/api/admin/costs", requireAdmin, async (req, res) => {

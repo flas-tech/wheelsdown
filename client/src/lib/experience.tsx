@@ -108,7 +108,7 @@ export const EXPERIENCE_NAV: Record<Experience, NavItem[]> = {
 export const TRIP_NAV: NavItem[] = [
   { href: "/", label: "Home", icon: House, active: (l) => l === "/" || on("/today", "/home", "/start", "/spot", "/map", "/favorites", "/add", "/rate")(l) },
   { href: "/brief", label: "Plan", icon: ClipboardList, active: on("/plan", "/brief", "/b") },
-  { href: "/mycrew", label: "Crew", icon: Users, active: on("/meetup", "/mycrew", "/lounge", "/crew", "/following", "/followers"), dot: "crew" },
+  { href: "/mycrew", label: "Crew", icon: Users, active: on("/meetup", "/mycrew", "/lounge", "/crew", "/following", "/followers", "/messages"), dot: "crew" },
 ];
 /** Sub-tabs at the top of the Spots and Crew sections (pages that are a step of their own, like a listing or Add, have none). */
 export const SPOTS_SUB: NavItem[] = [
@@ -125,7 +125,7 @@ export const CREW_SUB: NavItem[] = [
 ];
 export function subTabsFor(loc: string): NavItem[] | null {
   if (SPOTS_SUB.some((n) => n.active(loc))) return SPOTS_SUB;
-  if (CREW_SUB.some((n) => n.active(loc)) && !/^\/crew\/\d/.test(loc)) return CREW_SUB;
+  if ((CREW_SUB.some((n) => n.active(loc)) || loc === "/messages") && !/^\/crew\/\d/.test(loc)) return CREW_SUB;
   return null;
 }
 
