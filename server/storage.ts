@@ -606,7 +606,8 @@ export class DatabaseStorage {
       q(sql`SELECT COUNT(*)::int AS n FROM favorites f JOIN spots s ON s.id = f.spot_id AND s.status = 'live' WHERE s.user_id = ${userId} AND f.user_id <> ${userId}`),
       q(sql`SELECT COUNT(*)::int AS n FROM (SELECT s.id FROM spots s JOIN reviews r ON r.spot_id = s.id AND r.status = 'live'
               WHERE s.user_id = ${userId} AND s.status = 'live' GROUP BY s.id HAVING COUNT(*) >= 3 AND AVG(r.rating) >= 4.5) x`),
-      q(sql`SELECT COUNT(*)::int AS n FROM briefings WHERE user_id = ${userId}`),
+      // trip sheets ever made, not just the ones still saved (cleaning up old sheets doesn't cost badge credit)
+      q(sql`SELECT GREATEST(COALESCE((SELECT briefs_made FROM users WHERE id = ${userId}), 0), (SELECT COUNT(*)::int FROM briefings WHERE user_id = ${userId}))::int AS n`),
       q(sql`SELECT COUNT(*)::int AS n FROM (SELECT DISTINCT ON (icao) icao, user_id FROM spots WHERE status = 'live' AND source <> 'ai' ORDER BY icao, created_at, id) x WHERE x.user_id = ${userId}`),
     ]);
     const followers = (await this.followCounts(userId)).followers;
@@ -683,7 +684,9 @@ export class DatabaseStorage {
     const now = Date.now();
     const d = db();
     if (id) return (await d.update(briefings).set({ title: b.title, stops: JSON.stringify(b.stops), updatedAt: now }).where(and(eq(briefings.id, id), eq(briefings.userId, userId))).returning())[0];
-    return (await d.insert(briefings).values({ userId, title: b.title, stops: JSON.stringify(b.stops), shareToken: randomBytes(12).toString("base64url"), createdAt: now, updatedAt: now }).returning())[0];
+    const made = (await d.insert(briefings).values({ userId, title: b.title, stops: JSON.stringify(b.stops), shareToken: randomBytes(12).toString("base64url"), createdAt: now, updatedAt: now }).returning())[0];
+    await d.execute(sql`UPDATE users SET briefs_made = briefs_made + 1 WHERE id = ${userId}`); // lifetime count for badges
+    return made;
   }
   async deleteBriefing(userId: number, id: number) { await db().delete(briefings).where(and(eq(briefings.id, id), eq(briefings.userId, userId))); }
   async spotsByIds(ids: number[]) {

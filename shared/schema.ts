@@ -242,6 +242,7 @@ export const users = pgTable("users", {
   interests: text("interests").notNull().default("[]"), // JSON ids from shared/interests.ts
   referredBy: integer("referred_by"), // member whose invite link this account signed up with
   wrightNo: integer("wright_no"), // seat number in the founding Orville & Wilbur Wright Club (1-10), null for everyone else
+  briefsMade: integer("briefs_made").notNull().default(0), // trip sheets ever made; deleting one keeps the credit
   createdAt: bigint("created_at", { mode: "number" }).notNull().default(0),
 });
 export type User = typeof users.$inferSelect;

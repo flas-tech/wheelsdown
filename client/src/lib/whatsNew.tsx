@@ -4,7 +4,7 @@
 // FEATURES IN DEVELOPMENT (admin-only, e.g. Crew Lounge): don't add What's new entries for them, and don't bump the id for
 // admin-only releases. If an entry is written ahead of launch, tag it with feature: "lounge"; it stays hidden until that
 // feature is listed in PUBLIC_FEATURES.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Settings, BadgeCheck, Contact, LayoutGrid, MessagesSquare, Trash2, Users, MapPinned, PanelBottom, ArrowUpDown, BellRing, CircleHelp, ClipboardCheck, Compass, Flame, ListPlus, RefreshCw, Sparkles, Star, Undo2, Navigation, Eye, PlusCircle, UserMinus, CalendarDays } from "lucide-react";
@@ -12,14 +12,27 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { Logo } from "@/lib/ui";
+import { startTour } from "@/lib/tour";
+import { useTrip } from "@/lib/experience";
 
-type Item = { icon: typeof Star; title: string; body: string; to?: string; feature?: DevFeature };
-export type Release = { id: number; date: string; items: Item[] };
+type Item = { icon: typeof Star; title: string; body: string; to?: string; feature?: DevFeature; tour?: "layout" };
+/** trip: notes for the Home / Plan / Crew layout, shown only once that layout is open to the member (trip_audience). */
+export type Release = { id: number; date: string; items: Item[]; trip?: boolean };
 /** Features still being built for admins only. Add one to PUBLIC_FEATURES on launch day. */
 type DevFeature = "lounge";
 const PUBLIC_FEATURES = new Set<DevFeature>([]);
 
 const ALL_RELEASES: Release[] = [
+  {
+    id: 16, date: "October 22, 2026", trip: true,
+    items: [
+      { icon: PanelBottom, title: "A new layout: Home, Plan, Crew", body: "Three tabs at the bottom now: Home, Plan and Crew. Everything is still here; the short tour shows where it went.", tour: "layout" },
+      { icon: Navigation, title: "At the field now", body: "Home opens on Eat, Do, Stay and FBO intel, with a card on top for the airport you're at. Tap it for Layover today: local time, weather, the METAR and crew plans there.", to: "/" },
+      { icon: ClipboardCheck, title: "Briefings are now trip sheets", body: "Under Plan. Each stop has a box for Hotels, Do and Eat, crew picks first. Ask AI for more right in a box and watch the finds pop in. Finalize, Preview and Share are at the bottom.", to: "/brief" },
+      { icon: Users, title: "Crew Up from your trip sheet", body: "Crew holds My Crew, Crew Up, Ranks and the Lounge. Post a plan from a stop on your trip sheet or type a place, then pick who sees it. Tap the notification to open the plan.", to: "/meetup" },
+      { icon: BadgeCheck, title: "Badges keep your trip sheets", body: "Flight Planner counts every trip sheet you've made from now on, so cleaning up old ones doesn't cost you credit." },
+    ],
+  },
   {
     id: 15, date: "October 20, 2026",
     items: [
@@ -146,28 +159,32 @@ export function openWhatsNew() { window.dispatchEvent(new Event(EVENT)); }
 /** Mounted once in the app shell. */
 export function WhatsNewHost() {
   const { me } = useAuth();
+  const trip = useTrip();
+  const visible = trip ? RELEASES : RELEASES.filter((r) => !r.trip);
+  const latest = visible[0].id;
   const [, navigate] = useLocation();
   const [show, setShow] = useState<Release[] | null>(null);
   const [manual, setManual] = useState(false);
+  const visibleRef = useRef(visible); visibleRef.current = visible;
   const { data } = useQuery<{ seen: number | null }>({ queryKey: ["/api/me/release-seen"], enabled: !!me, staleTime: Infinity });
   useEffect(() => {
     if (!me || !data || skipCheck || show) return;
     const seen = data.seen ?? FIRST_ID - 1;
-    const fresh = RELEASES.filter((r) => r.id > seen && r.id >= FIRST_ID).slice(0, 3);
+    const fresh = visible.filter((r) => r.id > seen && r.id >= FIRST_ID).slice(0, 3);
     if (!fresh.length) return;
     // let the page (and any sign-in dialog) settle first
     const t = setTimeout(() => { if (!document.querySelector("[role=dialog]")) setShow(fresh); }, 1200);
     return () => clearTimeout(t);
-  }, [me?.id, data?.seen]); // eslint-disable-line
+  }, [me?.id, data?.seen, trip]); // eslint-disable-line
   useEffect(() => {
-    const on = () => { setManual(true); setShow(RELEASES.slice(0, 3)); };
+    const on = () => { setManual(true); setShow(visibleRef.current.slice(0, 3)); };
     window.addEventListener(EVENT, on);
     return () => window.removeEventListener(EVENT, on);
   }, []);
   const close = (to?: string) => {
     setShow(null);
     setManual(false);
-    if (me && (data?.seen ?? 0) < LATEST_RELEASE) void markSeen();
+    if (me && (data?.seen ?? 0) < latest) void markSeen(latest);
     if (to) navigate(to);
   };
   if (!show) return null;
@@ -196,6 +213,7 @@ export function WhatsNewHost() {
                     <div className="min-w-0">
                       <p className="text-sm font-semibold leading-snug">{it.title}</p>
                       <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{it.body}</p>
+                      {it.tour && <button type="button" onClick={() => { close(); setTimeout(() => startTour(it.tour), 250); }} className="mt-1.5 inline-flex h-8 items-center rounded-full taxi-sign px-3 text-xs font-semibold hover-elevate" data-testid="button-whats-new-tour">Show me what moved</button>}
                       {it.to && <button type="button" onClick={() => close(it.to)} className="mt-1 text-xs font-semibold text-foreground underline underline-offset-2" data-testid={`link-whats-new-${it.to.replace(/\W/g, "")}`}>Take a look</button>}
                     </div>
                   </li>
@@ -205,7 +223,7 @@ export function WhatsNewHost() {
           ))}
         </div>
         <div className="sticky bottom-0 flex gap-2 border-t border-border bg-background p-3">
-          {manual && show.length < RELEASES.length && <button type="button" onClick={() => setShow(RELEASES)} className="h-11 flex-1 rounded-full border border-border text-sm font-medium hover-elevate" data-testid="button-whats-new-earlier">Earlier releases</button>}
+          {manual && show.length < visible.length && <button type="button" onClick={() => setShow(visible)} className="h-11 flex-1 rounded-full border border-border text-sm font-medium hover-elevate" data-testid="button-whats-new-earlier">Earlier releases</button>}
           <button type="button" onClick={() => close()} autoFocus className="h-11 flex-1 rounded-full taxi-sign text-sm font-semibold hover-elevate" data-testid="button-whats-new-done">Got it</button>
         </div>
       </DialogContent>

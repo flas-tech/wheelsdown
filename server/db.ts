@@ -90,6 +90,8 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS bio text NOT NULL DEFAULT '';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS interests text NOT NULL DEFAULT '[]';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS wright_no integer;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by integer;
+-- trip sheets ever made, for badges: deleting an old sheet keeps the credit, and it never drops below what's saved now
+ALTER TABLE users ADD COLUMN IF NOT EXISTS briefs_made integer NOT NULL DEFAULT 0;
 ALTER TABLE spots ADD COLUMN IF NOT EXISTS mod_state text NOT NULL DEFAULT '';
 ALTER TABLE spots ADD COLUMN IF NOT EXISTS mod_note text NOT NULL DEFAULT '';
 ALTER TABLE spots ADD COLUMN IF NOT EXISTS mod_attempts integer NOT NULL DEFAULT 0;
@@ -146,6 +148,7 @@ CREATE TABLE IF NOT EXISTS lounge_votes (target_type text NOT NULL, target_id in
 CREATE TABLE IF NOT EXISTS lounge_reports (id serial PRIMARY KEY, target_type text NOT NULL, target_id integer NOT NULL, reporter_id integer NOT NULL, reason text NOT NULL, note text NOT NULL DEFAULT '', status text NOT NULL DEFAULT 'open', created_at bigint NOT NULL DEFAULT 0, resolved_at bigint, resolved_by text NOT NULL DEFAULT '');
 CREATE INDEX IF NOT EXISTS lounge_reports_status_idx ON lounge_reports (status, created_at);
 INSERT INTO app_settings (key, value) VALUES ('lounge_audience', 'admins') ON CONFLICT (key) DO NOTHING;
+UPDATE users u SET briefs_made = b.n FROM (SELECT user_id, COUNT(*)::int AS n FROM briefings GROUP BY user_id) b WHERE b.user_id = u.id AND u.briefs_made < b.n;
 `;
 
 async function migrate(d: DB) {

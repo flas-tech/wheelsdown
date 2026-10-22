@@ -98,9 +98,18 @@ const TRIP_QA: Record<string, [string, string]> = {
   "Can I delete a briefing?": ["Can I delete a trip sheet?", "Yes. On Plan, tap Delete on the sheet's tile, then confirm. Deleting can't be undone."],
   "Can I choose who sees a Crew Up plan?": ["Who sees my Crew Up plan?", "Only the crew you pick under Who sees it. They're the only ones who see the plan and get the notification, and your plan card shows who it's shared with."],
 };
+/** New questions for the three-tab layout, added to the top of the section with this title. */
+const TRIP_EXTRA: Record<string, QA[]> = {
+  [SECTIONS[0].title]: [
+    qa("Where did everything go?", "The bottom bar now has three tabs. Home is Spots search (Eat, Do, Stay, FBO intel, plus Map, Favorites and Rate at the top) with the field you're at on top. Plan has your trip sheets, which used to be called briefings. Crew has My Crew, Crew Up, Ranks and the Lounge. Your Logbook is the points at the top of the page. What moved, next to Take the tour above, walks through it in a minute."),
+  ],
+  "Trip briefings": [
+    qa("Do deleted trip sheets still count for badges?", "Yes. Flight Planner counts every trip sheet you've made, so cleaning up old ones doesn't take credit away. Sheets deleted before October 22, 2026 weren't recorded, so the count starts from the ones you had then."),
+  ],
+};
 const TRIP_SECTIONS = SECTIONS.map((s) => ({
   title: s.title === "Trip briefings" ? "Trip sheets" : s.title,
-  items: s.items.map((x) => (TRIP_QA[x.q] ? qa(TRIP_QA[x.q][0], TRIP_QA[x.q][1]) : x)),
+  items: [...(TRIP_EXTRA[s.title] || []), ...s.items.map((x) => (TRIP_QA[x.q] ? qa(TRIP_QA[x.q][0], TRIP_QA[x.q][1]) : x))],
 }));
 
 export default function FaqPage() {
@@ -126,6 +135,7 @@ export default function FaqPage() {
       <div className="flex flex-wrap gap-2">
         <button type="button" onClick={() => openWhatsNew()} className="inline-flex h-9 items-center gap-1.5 rounded-full border border-border px-3.5 text-xs font-semibold hover-elevate" data-testid="button-faq-whats-new"><Sparkles className="h-3.5 w-3.5" />What's new</button>
         <button type="button" onClick={() => startTour()} className="inline-flex h-9 items-center rounded-full border border-border px-3.5 text-xs font-semibold hover-elevate" data-testid="button-faq-tour">Take the tour</button>
+        {trip && <button type="button" onClick={() => startTour("layout")} className="inline-flex h-9 items-center rounded-full border border-border px-3.5 text-xs font-semibold hover-elevate" data-testid="button-faq-layout-tour">What moved (1 min)</button>}
       </div>
       {sections.map((s) => (
         <section key={s.title} className="space-y-2">

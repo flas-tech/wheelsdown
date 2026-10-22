@@ -2,6 +2,13 @@
 export type Release = { date: string; sha?: string; title: string; notes: string[] };
 
 export const RELEASES: Release[] = [
+  { date: "2026-10-22", title: "Version 1.16: Home, Plan, Crew for everyone; lifetime trip sheet count; short What moved tour", notes: [
+    "Badges: Flight Planner now counts trip sheets ever made (users.briefs_made, +1 on every new sheet, backfilled to the sheets saved at deploy and never below what's saved). Deleting a sheet no longer lowers it. Sheets deleted before this weren't recorded per member, so they can't be counted back.",
+    "What's new 1.16 (shown only once trip_audience is members): new layout, At the field now, trip sheets, Crew Up from a sheet, badge count. Its first item opens the short What moved tour.",
+    "Tour: new 5-step What moved tour for current members (three tabs, Home and the field card, Plan and trip sheets, Crew pills, Logbook in the points pill), from What's new and the FAQ (What moved). The full tour's steps match the three tabs.",
+    "FAQ: Where did everything go? and Do deleted trip sheets still count for badges? added for the three-tab layout.",
+    "Launch: trip_audience set to members. Rollback: set trip_audience back to admins (Admin console), and redeploy d46548c if needed.",
+  ] },
   { date: "2026-10-22", title: "Admin preview, round 7: Joe's test notes (Home tab, bottom bar, maps, admin fixes, tour)", notes: [
     "Home tab now always goes back to the Eat / Do / Stay / FBO intel tiles, even from a search. Search results have a back arrow to the tiles, and Layover today has a Home back button.",
     "Bottom bar: tapping a tile no longer hides it. The search box was focused without a keyboard, which hid the bar; on phones the box isn't auto-focused anymore and the bar only steps aside when the keyboard is really up.",

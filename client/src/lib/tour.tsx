@@ -17,7 +17,8 @@ const TOUR_VERSION = 2;
 const EVENT = "wheelsdown:tour";
 
 /** Open the tour from anywhere (Logbook link, right after sign-up). */
-export function startTour(mode: "full" | "new" = "full") {
+export type TourMode = "full" | "new" | "layout";
+export function startTour(mode: TourMode = "full") {
   // the go-live notification prompt waits for the next visit if the tour already covered it this time
   try { sessionStorage.setItem("wd-tour-this-visit", "1"); } catch { /* private mode */ }
   window.dispatchEvent(new CustomEvent(EVENT, { detail: mode }));
@@ -161,19 +162,59 @@ const STEPS: { key: string; title: string; body: string; art: React.ReactNode; e
   },
 ];
 
-/** Four-tab preview (Home, Plan, Crew): these steps replace the ones with the same key, so the tour matches what admins see. */
+const TabsArt = ({ on = 0 }: { on?: number }) => (
+  <div className="grid grid-cols-3 gap-1.5">
+    {([[PlaneLanding, "Home"], [ClipboardList, "Plan"], [Users, "Crew"]] as const).map(([I, t], k) => (
+      <div key={t} className={cn("flex flex-col items-center gap-0.5 rounded-xl py-2 ring-1", k === on ? "bg-primary text-[#0B1222] ring-primary" : "bg-white/[0.06] ring-white/10")}><I className="h-4 w-4" /><span className="text-[10px] font-semibold">{t}</span></div>
+    ))}
+  </div>
+);
+const FieldCardArt = () => (
+  <div className="rounded-xl bg-white/[0.06] px-3 py-2 ring-1 ring-white/10"><p className="text-[9px] font-semibold uppercase tracking-wider text-white/50">At the field now</p><p className="flex items-baseline justify-between"><span className="font-code text-lg font-bold text-primary">KTEB</span><span className="font-code text-xs font-bold">7:26 PM</span></p><p className="mt-0.5 text-right text-[10px] font-semibold text-primary">Layover today ›</p></div>
+);
+const Pills = ({ items, on = 0 }: { items: string[]; on?: number }) => (
+  <div className="grid gap-0.5 rounded-full bg-white/[0.06] p-0.5 ring-1 ring-white/10" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
+    {items.map((t, k) => <span key={t} className={cn("rounded-full py-1 text-center text-[10px] font-semibold", k === on ? "bg-white text-[#0B1222]" : "text-white/70")}>{t}</span>)}
+  </div>
+);
+
+/** Short tour for members who knew the old layout: where things moved (opened from What's new 1.16 and the FAQ). */
+const LAYOUT_STEPS: (typeof STEPS)[number][] = [
+  {
+    key: "l-intro", title: "Wheelsdown has a new layout",
+    body: "Same picks and the same crews, laid out around a trip. There are now three tabs at the bottom: Home, Plan and Crew. Here's where everything went. It takes about a minute.",
+    art: <div className="space-y-3"><p className="text-center text-sm font-semibold">Three tabs</p><TabsArt /></div>,
+  },
+  {
+    key: "l-home", title: "Home: find spots and the field you're at",
+    body: "Home opens on Eat, Do, Stay and FBO intel, like before. Search, Map, Favorites and Rate are the pills at the top, and the + adds a spot. The card on top is the airport you're at; tap it for Layover today, which used to be Plan layover.",
+    art: <div className="space-y-2"><FieldCardArt /><Pills items={["Search", "Map", "Favorites", "Rate"]} /></div>,
+  },
+  {
+    key: "l-plan", title: "Plan: briefings are now trip sheets",
+    body: "All your briefings are under Plan, now called trip sheets. Each stop has a box for Hotels, Do and Eat with crew picks first. Ask AI for more right in a box, then Finalize, Preview and Share at the bottom of the sheet. Deleting old sheets doesn't cost you badge credit.",
+    art: <div className="space-y-2"><TabsArt on={1} />
+      {[[Hotel, "Hotels"], [Star, "Do"], [UtensilsCrossed, "Eat"]].map(([I, t]: any) => <div key={t} className="flex items-center gap-2 rounded-lg bg-white/[0.06] px-3 py-1.5 text-xs font-semibold ring-1 ring-white/10"><I className="h-3.5 w-3.5 text-primary" />{t}</div>)}
+    </div>,
+  },
+  {
+    key: "l-crew", title: "Crew: one tab for your people",
+    body: "My Crew, Crew Up, Ranks (the leaderboard) and the Lounge are the pills at the top of Crew. Crew Up plans go to just the crew you pick. A red dot means something new is waiting.",
+    art: <div className="space-y-2"><TabsArt on={2} /><Pills items={["My Crew", "Crew Up", "Ranks", "Lounge"]} on={1} /></div>,
+  },
+  {
+    key: "l-logbook", title: "Your Logbook is the points at the top",
+    body: "Tap your points at the top of any page for your Logbook, badges and map; the gear there opens Settings. Tap Home or the logo to get back to the start. You can take the full tour any time from the FAQ.",
+    art: <div className="flex items-center justify-center gap-3"><span className="rounded-full bg-white px-3 py-1.5 font-code text-sm font-bold text-[#0B1222] ring-2 ring-primary">✦ 1,010</span><UserRound className="h-6 w-6 text-white/70" /></div>,
+  },
+];
+
+/** Four-tab layout (Home, Plan, Crew): these steps replace the ones with the same key, so the tour matches the app. */
 const TRIP_STEPS: Record<string, Partial<(typeof STEPS)[number]>> = {
   home: {
     title: "Three tabs: Home, Plan, Crew", preview: false,
     body: "Home opens on Spots. Tap Eat, Do, Stay or FBO intel, type your route, then switch between List and Map. The card on top shows the airport you're at; tap it for Layover today. Tap Home or the logo any time to come back to this page.",
-    art: <div className="space-y-2.5">
-      <div className="rounded-xl bg-white/[0.06] px-3 py-2 ring-1 ring-white/10"><p className="text-[9px] font-semibold uppercase tracking-wider text-white/50">At the field now</p><p className="flex items-baseline justify-between"><span className="font-code text-lg font-bold text-primary">KTEB</span><span className="font-code text-xs font-bold">7:26 PM</span></p></div>
-      <div className="grid grid-cols-3 gap-1.5">
-        {([[PlaneLanding, "Home"], [ClipboardList, "Plan"], [Users, "Crew"]] as const).map(([I, t], k) => (
-          <div key={t} className={cn("flex flex-col items-center gap-0.5 rounded-xl py-2 ring-1", k === 0 ? "bg-primary text-[#0B1222] ring-primary" : "bg-white/[0.06] ring-white/10")}><I className="h-4 w-4" /><span className="text-[10px] font-semibold">{t}</span></div>
-        ))}
-      </div>
-    </div>,
+    art: <div className="space-y-2.5"><FieldCardArt /><TabsArt /></div>,
   },
   today: {
     title: "Layover today, from the Home card", preview: false,
@@ -183,9 +224,12 @@ const TRIP_STEPS: Record<string, Partial<(typeof STEPS)[number]>> = {
     title: "Plan: trip sheets for every stop",
     body: "Plan holds your trip sheets. Add your route and dates, and each stop gets a box for Hotels, Do and Eat: crew picks first, AI picks below. Don't like what you see? Ask AI for more in that box and watch the finds pop in. Drag and pinch the maps to look around. Finalize, preview the PDF and share it at the bottom.",
   },
+  profile: {
+    body: "Tap your points at the top of any page for your Logbook: points, badges and a private map of everywhere you've added or checked in. The gear there opens Settings: your profile, notifications and AI picks. Something wrong or missing? Tap Send feedback at the bottom of any page.",
+  },
   crew: {
     title: "Crew: your crew and Crew Up", preview: false,
-    body: "Crew holds My Crew and Crew Up. Add crew you fly with; it's mutual. Crew Up a plan at an airport: pick a spot from your trip sheet or type a place, then pick who sees it. A red dot means there's a new plan, and tapping the notification opens it.",
+    body: "Crew holds My Crew, Crew Up, Ranks and the Lounge. Add crew you fly with; it's mutual. Crew Up a plan at an airport: pick a spot from your trip sheet or type a place, then pick who sees it. A red dot means there's a new plan, and tapping the notification opens it.",
   },
 };
 
@@ -193,15 +237,16 @@ const TRIP_STEPS: Record<string, Partial<(typeof STEPS)[number]>> = {
 export function TourHost() {
   const [open, setOpen] = useState(false);
   const [i, setI] = useState(0);
-  const [mode, setMode] = useState<"full" | "new">("full");
+  const [mode, setMode] = useState<TourMode>("full");
   const preview = usePreview();
   const trip = useTrip();
-  const steps = STEPS.map((x) => (trip && TRIP_STEPS[x.key] ? { ...x, ...TRIP_STEPS[x.key] } : x)).filter((x) => (preview || !x.preview) && (mode === "full" || x.isNew));
+  const steps = mode === "layout" ? LAYOUT_STEPS
+    : STEPS.map((x) => (trip && TRIP_STEPS[x.key] ? { ...x, ...TRIP_STEPS[x.key] } : x)).filter((x) => (preview || !x.preview) && (mode === "full" || x.isNew));
   const [, navigate] = useLocation();
   const touch = useRef<number | null>(null);
   // release notes after the tour's own "What's new" (v2) live in whatsNew.tsx, shown once per release per member
   useEffect(() => {
-    const on = (e: Event) => { setMode((e as CustomEvent).detail === "new" ? "new" : "full"); setI(0); setOpen(true); };
+    const on = (e: Event) => { const d = (e as CustomEvent).detail; setMode(d === "new" || d === "layout" ? d : "full"); setI(0); setOpen(true); };
     window.addEventListener(EVENT, on);
     return () => window.removeEventListener(EVENT, on);
   }, []);
@@ -226,7 +271,7 @@ export function TourHost() {
           <button type="button" onClick={() => finish()} className="absolute right-3 top-3 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white/90 hover:bg-white/20" data-testid="button-tour-skip">Skip tour</button>
         </div>
         <div className="max-h-[min(52vh,calc(100dvh-22rem))] overflow-y-auto p-5 pb-2 pt-4">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground" data-testid="text-tour-step">{mode === "new" ? "What's new · " : ""}{i + 1} of {steps.length}</p>
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground" data-testid="text-tour-step">{mode === "new" ? "What's new · " : mode === "layout" ? "What moved · " : ""}{i + 1} of {steps.length}</p>
           <DialogTitle className="mt-1 text-lg font-semibold leading-snug" data-testid="text-tour-title">{s.title}</DialogTitle>
           <DialogDescription className={cn("mt-1.5 text-sm leading-relaxed text-muted-foreground", s.extra ? "" : "min-h-[88px]")}>{s.body}</DialogDescription>
           {s.extra && <div className="mt-3">{s.extra}</div>}
@@ -243,13 +288,18 @@ export function TourHost() {
                 <button type="button" onClick={() => finish("/")} className="inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-full border border-border text-sm font-semibold hover-elevate" data-testid="button-tour-done"><PlaneLanding className="h-4 w-4 shrink-0" />Start exploring</button>
                 <button type="button" onClick={() => finish("/settings?focus=pf-displayName")} className="text-xs font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground" data-testid="button-tour-profile">Finish my profile</button>
               </div>
+            ) : last && mode === "layout" ? (
+              <>
+                <button type="button" onClick={() => { setMode("full"); setI(0); }} className="h-11 flex-1 whitespace-nowrap rounded-full border border-border text-sm font-semibold hover-elevate" data-testid="button-tour-full">Full tour</button>
+                <button type="button" onClick={() => finish("/")} className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-full taxi-sign text-sm font-semibold hover-elevate" data-testid="button-tour-done"><PlaneLanding className="h-4 w-4 shrink-0" />Got it</button>
+              </>
             ) : last ? (
               <>
                 <button type="button" onClick={() => finish("/me")} className="h-11 flex-1 whitespace-nowrap rounded-full border border-border text-sm font-semibold hover-elevate" data-testid="button-tour-profile">Finish my profile</button>
                 <button type="button" onClick={() => finish("/")} className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-full taxi-sign text-sm font-semibold hover-elevate" data-testid="button-tour-done"><PlaneLanding className="h-4 w-4 shrink-0" />Start exploring</button>
               </>
             ) : (
-              <button type="button" onClick={next} autoFocus className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-full taxi-sign text-sm font-semibold hover-elevate" data-testid="button-tour-next">{i === 0 && mode === "full" ? "Show me around" : "Next"}<ArrowRight className="h-4 w-4" /></button>
+              <button type="button" onClick={next} autoFocus className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-full taxi-sign text-sm font-semibold hover-elevate" data-testid="button-tour-next">{i === 0 && mode !== "new" ? "Show me around" : "Next"}<ArrowRight className="h-4 w-4" /></button>
             )}
           </div>
       </DialogContent>
