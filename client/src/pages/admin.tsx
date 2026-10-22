@@ -131,12 +131,15 @@ function invalidateAll() {
   queryClient.invalidateQueries({ queryKey: ["/api/airports"] });
 }
 
+const missingBits = (s: SpotWithStats) => [!(s.address || "").trim() && "address", !(s.website || "").trim() && "website", (s.lat == null || s.lng == null) && "map pin"].filter(Boolean) as string[];
+
 function SpotsTable() {
   const { toast } = useToast();
   const { data, isLoading } = useQuery<SpotWithStats[]>({ queryKey: ["/api/admin/spots"], queryFn: admGet("/api/admin/spots") });
   const [q, setQ] = useState("");
   const [cat, setCat] = useState("all");
   const [status, setStatus] = useState("all");
+  const [gaps, setGaps] = useState(false); // only listings missing an address, website or map pin
   const [sel, setSel] = useState<Set<number>>(new Set());
   const [edit, setEdit] = useState<SpotWithStats | null>(null);
   const [confirmDel, setConfirmDel] = useState(false);
@@ -144,9 +147,10 @@ function SpotsTable() {
   const rows = useMemo(() => {
     const t = q.trim().toLowerCase();
     return (data || []).filter((s) =>
-      (cat === "all" || s.category === cat) && (status === "all" || s.status === status) &&
+      (cat === "all" || s.category === cat) && (status === "all" || s.status === status) && (!gaps || missingBits(s).length > 0) &&
       (!t || `${s.name} ${s.icao} ${s.airport?.iata ?? ""} ${s.airport?.city ?? ""} ${s.submittedBy}`.toLowerCase().includes(t)));
-  }, [data, q, cat, status]);
+  }, [data, q, cat, status, gaps]);
+  const gapCount = useMemo(() => (data || []).filter((s) => s.status === "live" && missingBits(s).length > 0).length, [data]);
 
   const bulk = useMutation({
     mutationFn: async (p: { action: string; value?: string }) => (await adm("POST", "/api/admin/spots/bulk", { ids: Array.from(sel), ...p })).json(),
@@ -167,7 +171,11 @@ function SpotsTable() {
         <select value={status} onChange={(e) => setStatus(e.target.value)} className={cn(inputCls, "w-auto")} data-testid="select-admin-status">
           <option value="all">All statuses</option><option value="live">Live</option><option value="pending">Pending</option><option value="hidden">Hidden</option><option value="rejected">Rejected</option>
         </select>
+        <button type="button" onClick={() => setGaps(!gaps)} aria-pressed={gaps} className={cn(btn, gaps && "border-primary bg-primary/15")} data-testid="button-admin-gaps">
+          Missing details{gapCount ? ` · ${gapCount} live` : ""}
+        </button>
       </div>
+      {gaps && <p className="text-xs text-muted-foreground" data-testid="text-admin-gaps">Listings with no address, website or map pin. Tap Fix to open it in the app, run Autofill, check what it found and save. It goes live right away under the poster's name.</p>}
 
       {sel.size > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-primary/50 bg-primary/10 px-3 py-2" data-testid="bar-bulk">
@@ -203,7 +211,8 @@ function SpotsTable() {
               <tr key={s.id} className="border-t border-border" data-testid={`row-spot-${s.id}`}>
                 <td className="p-2.5"><Checkbox checked={sel.has(s.id)} onCheckedChange={() => toggle(s.id)} data-testid={`checkbox-spot-${s.id}`} aria-label={`Select ${s.name}`} /></td>
                 <td className="p-2.5 font-code text-xs font-bold">{s.icao}</td>
-                <td className="p-2.5"><p className="font-medium leading-tight">{s.name}</p><p className="text-xs text-muted-foreground">{s.submittedBy}</p></td>
+                <td className="p-2.5"><p className="font-medium leading-tight">{s.name}</p><p className="text-xs text-muted-foreground">{s.submittedBy}</p>
+                  {missingBits(s).length > 0 && <p className="mt-0.5 text-[11px] text-orange-600 dark:text-orange-400" data-testid={`text-gaps-${s.id}`}>No {missingBits(s).join(", ")} · <a href={`/#/spot/${s.id}/edit`} className="font-semibold underline" data-testid={`link-fix-${s.id}`}>Fix</a></p>}</td>
                 <td className="p-2.5 text-xs">{CAT_META[s.category as keyof typeof CAT_META]?.label}</td>
                 <td className="p-2.5 font-code text-xs" title={s.costVotes ? `${s.costVotes} price vote(s); submitter set ${COST_LABELS[s.costLevel]}` : ""}>{costText(s) || "–"}</td>
                 <td className="p-2.5 text-xs tabular">{s.reviewCount ? `${s.avgRating?.toFixed(1)} (${s.reviewCount})` : "—"}</td>

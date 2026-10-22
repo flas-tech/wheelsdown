@@ -87,6 +87,11 @@ export default function SpotPage() {
           <button type="button" onClick={() => document.getElementById("rate")?.scrollIntoView({ behavior: "smooth", block: "center" })} className="text-xs font-medium text-primary" data-testid="button-jump-rate">Rate it</button>
         </div>
         <div className="mt-3"><CheckInButton spotId={spot.id} name={spot.name} /></div>
+        {!mine && me?.isAdmin && (
+          <Link href={`/spot/${spot.id}/edit`} className="mt-3 ml-2 inline-flex items-center gap-1.5 rounded-full border border-primary/50 px-3 h-8 text-xs font-medium hover-elevate" data-testid="link-admin-edit-spot">
+            <Pencil className="h-3.5 w-3.5" /> Admin: edit or autofill
+          </Link>
+        )}
         {mine && (
           <Link href={`/spot/${spot.id}/edit`} className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-border px-3 h-8 text-xs font-medium hover-elevate" data-testid="link-edit-spot">
             <Pencil className="h-3.5 w-3.5" /> Edit your listing

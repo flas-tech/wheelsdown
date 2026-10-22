@@ -2,6 +2,14 @@
 export type Release = { date: string; sha?: string; title: string; notes: string[] };
 
 export const RELEASES: Release[] = [
+  { date: "2026-10-22", title: "Admin preview, round 7: Joe's test notes (Home tab, bottom bar, maps, admin fixes, tour)", notes: [
+    "Home tab now always goes back to the Eat / Do / Stay / FBO intel tiles, even from a search. Search results have a back arrow to the tiles, and Layover today has a Home back button.",
+    "Bottom bar: tapping a tile no longer hides it. The search box was focused without a keyboard, which hid the bar; on phones the box isn't auto-focused anymore and the bar only steps aside when the keyboard is really up.",
+    "Trip sheet maps can be dragged and pinch-zoomed (with + and − buttons), like the Search map. The PDF still uses the printed map.",
+    "Admins: every listing has Admin: edit or autofill, so you can fix someone else's listing (e.g. missing address or website) with Autofill; it goes live right away under the poster's name. Admin > Spots has a Missing details filter with a Fix link.",
+    "The tour and FAQ describe the new Home, Plan and Crew tabs, trip sheets and Layover today for admins. Members see no change.",
+    "Rollback: redeploy 99068e6.",
+  ] },
   { date: "2026-10-21", title: "Admin preview, round 6: Home is Spots search with an At the field now card", notes: [
     "Tabs are now Home, Plan, Crew. Home (/) opens on Spots search (sub-tabs Search, Map, Favorites, Rate stay) with a card at the top: the nearest airport (your location, else the last airport you picked), local time, flight category, temperature and how many crew plans are there. Tapping it opens Layover today for that airport. The logo goes to Home; /home and /start go there too.",
     "The separate Spots tab is gone because it was the same page as Home. Members see no change.",

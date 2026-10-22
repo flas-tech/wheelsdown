@@ -47,7 +47,10 @@ export function installViewportFix() {
   const measure = () => {
     raf = 0;
     const typing = editable(document.activeElement);
-    root.classList.toggle("kb-open", typing);
+    // four-tab preview (html.wd-trip): only step the bar aside when the keyboard is really up. iOS ignores a focus()
+    // that isn't from a tap, so the box can be focused with no keyboard, and the bar used to vanish (crew feedback, round 6)
+    const kbUp = !root.classList.contains("wd-trip") || !vv || window.innerHeight - vv.height * vv.scale > 120;
+    root.classList.toggle("kb-open", typing && kbUp);
     // never move the bar mid-scroll; look again once it settles
     if (performance.now() - lastScroll < SETTLE_MS || bouncing()) { settle(); return; }
     let next = 0;

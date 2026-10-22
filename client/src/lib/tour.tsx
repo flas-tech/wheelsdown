@@ -7,7 +7,7 @@ import { Insignia } from "@/lib/auth";
 import { GoAroundIcon, Logo } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { skipWhatsNewForNewMember } from "@/lib/whatsNew";
-import { usePreview } from "@/lib/experience";
+import { usePreview, useTrip } from "@/lib/experience";
 import { HomeScreenSteps } from "@/lib/push";
 
 const DONE_KEY = "wheelsdown-tour-done";
@@ -161,13 +161,42 @@ const STEPS: { key: string; title: string; body: string; art: React.ReactNode; e
   },
 ];
 
+/** Four-tab preview (Home, Plan, Crew): these steps replace the ones with the same key, so the tour matches what admins see. */
+const TRIP_STEPS: Record<string, Partial<(typeof STEPS)[number]>> = {
+  home: {
+    title: "Three tabs: Home, Plan, Crew", preview: false,
+    body: "Home opens on Spots. Tap Eat, Do, Stay or FBO intel, type your route, then switch between List and Map. The card on top shows the airport you're at; tap it for Layover today. Tap Home or the logo any time to come back to this page.",
+    art: <div className="space-y-2.5">
+      <div className="rounded-xl bg-white/[0.06] px-3 py-2 ring-1 ring-white/10"><p className="text-[9px] font-semibold uppercase tracking-wider text-white/50">At the field now</p><p className="flex items-baseline justify-between"><span className="font-code text-lg font-bold text-primary">KTEB</span><span className="font-code text-xs font-bold">7:26 PM</span></p></div>
+      <div className="grid grid-cols-3 gap-1.5">
+        {([[PlaneLanding, "Home"], [ClipboardList, "Plan"], [Users, "Crew"]] as const).map(([I, t], k) => (
+          <div key={t} className={cn("flex flex-col items-center gap-0.5 rounded-xl py-2 ring-1", k === 0 ? "bg-primary text-[#0B1222] ring-primary" : "bg-white/[0.06] ring-white/10")}><I className="h-4 w-4" /><span className="text-[10px] font-semibold">{t}</span></div>
+        ))}
+      </div>
+    </div>,
+  },
+  today: {
+    title: "Layover today, from the Home card", preview: false,
+    body: "Tap the card at the top of Home. Layover today shows local time, sunset, weather and the METAR, crew plans at the field, your trip sheet picks and crew favorites. Directions on any place opens Apple Maps or Google Maps.",
+  },
+  brief: {
+    title: "Plan: trip sheets for every stop",
+    body: "Plan holds your trip sheets. Add your route and dates, and each stop gets a box for Hotels, Do and Eat: crew picks first, AI picks below. Don't like what you see? Ask AI for more in that box and watch the finds pop in. Drag and pinch the maps to look around. Finalize, preview the PDF and share it at the bottom.",
+  },
+  crew: {
+    title: "Crew: your crew and Crew Up", preview: false,
+    body: "Crew holds My Crew and Crew Up. Add crew you fly with; it's mutual. Crew Up a plan at an airport: pick a spot from your trip sheet or type a place, then pick who sees it. A red dot means there's a new plan, and tapping the notification opens it.",
+  },
+};
+
 /** Mounted once in the app shell; opens on startTour(). Skippable at any step. */
 export function TourHost() {
   const [open, setOpen] = useState(false);
   const [i, setI] = useState(0);
   const [mode, setMode] = useState<"full" | "new">("full");
   const preview = usePreview();
-  const steps = STEPS.filter((x) => (preview || !x.preview) && (mode === "full" || x.isNew));
+  const trip = useTrip();
+  const steps = STEPS.map((x) => (trip && TRIP_STEPS[x.key] ? { ...x, ...TRIP_STEPS[x.key] } : x)).filter((x) => (preview || !x.preview) && (mode === "full" || x.isNew));
   const [, navigate] = useLocation();
   const touch = useRef<number | null>(null);
   // release notes after the tour's own "What's new" (v2) live in whatsNew.tsx, shown once per release per member

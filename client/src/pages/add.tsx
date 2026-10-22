@@ -89,7 +89,8 @@ export default function AddPage() {
     if (s.address || s.website || s.tags !== "[]") setMore(true);
     setLoaded(true);
   }, [editData, loaded]);
-  const notOwner = !!editData && !!me && editData.spot.userId !== me.id;
+  const notOwner = !!editData && !!me && editData.spot.userId !== me.id && !me.isAdmin;
+  const staffEdit = !!editData && !!me && editData.spot.userId !== me.id && !!me.isAdmin; // admin fixing someone else's listing
 
   // from an AI pick: load the whole pick and fill in everything the member hasn't typed yet
   const { data: aiRow } = useQuery<SpotWithStats>({ queryKey: ["/api/ai-picks/row", String(aiPickId)], queryFn: () => getJson<SpotWithStats>(`/api/ai-picks/row/${aiPickId}`), enabled: !editId && !!aiPickId, retry: false, staleTime: Infinity });
@@ -274,7 +275,8 @@ export default function AddPage() {
     <form onSubmit={(e) => { e.preventDefault(); if (canSubmit && !instead && !dup) requireAuth(() => m.mutate(), editId ? "Sign in to edit your listing." : `Sign in to add this spot and earn ${POINTS.listing} points.`); }} className="space-y-6" data-testid="form-add">
       <header>
         {editId && <Link href={`/spot/${editId}`} className="mb-3 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground" data-testid="link-back-spot"><ArrowLeft className="h-4 w-4" /> Listing</Link>}
-        <h1 className="text-xl font-semibold">{editId ? "Edit your listing" : "Add a spot"}</h1>
+        <h1 className="text-xl font-semibold">{staffEdit ? "Fix this listing" : editId ? "Edit your listing" : "Add a spot"}</h1>
+        {staffEdit && <p className="mt-1 rounded-lg bg-primary/10 p-2 text-xs" data-testid="text-admin-edit">Admin edit of {(editData!.spot as any).submittedBy || "a crew member"}'s listing. Run Autofill to fill in the missing address, website and details, check them, then save. Your changes go live right away and the listing stays under their name.</p>}
         <p className="text-sm text-muted-foreground mt-1">{editId ? "Fix anything that's wrong. Ratings, votes and points stay as they are." : "Start typing the name and pick it from the list — we fill in the address and distance."}</p>
         {!editId && (
           <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium" data-testid="text-add-points">

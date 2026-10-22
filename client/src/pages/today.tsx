@@ -1,4 +1,5 @@
 // Layover Today (Version 0, admins only): one screen for the airport you're at.
+import { BackButton } from "@/lib/tripNav";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
@@ -109,6 +110,7 @@ function Today() {
   return (
     <div className="space-y-4" data-testid="page-today">
       <header className="space-y-1">
+        {trip && <BackButton fallback="/" label="Home" className="mb-1" />}
         <PreviewBadge />
         <h1 className="text-xl font-semibold">Layover today</h1>
         <p className="text-sm text-muted-foreground">Everything for the field you're at, on one screen.</p>

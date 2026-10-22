@@ -16,7 +16,7 @@ import RatePage from "@/pages/rate";
 import MyCrewPage from "@/pages/mycrew";
 import { useNav, usePreviewState, useTripState } from "@/lib/experience";
 import TripHomePage from "@/pages/tripHome";
-import { SubTabs } from "@/lib/tripNav";
+import { SubTabs, useNavDepth } from "@/lib/tripNav";
 import { NoticeDot } from "@/lib/notices";
 import FavoritesPage from "@/pages/favorites";
 import NotFound from "@/pages/not-found";
@@ -66,6 +66,8 @@ function Shell() {
   // four-tab layout (trip preview): Home is the hub, the logo and app start go there, Logbook is the header pill
   const { on: trip, ready: tripReady } = useTripState();
   const homeHref = trip ? "/" : landing ? "/start" : "/";
+  useEffect(() => { document.documentElement.classList.toggle("wd-trip", trip); }, [trip]);
+  useNavDepth(loc);
   // the new landing page: once per visit, a signed-in member opening the app at home starts on /start
   const [, go] = useLocation();
   useEffect(() => {
@@ -89,7 +91,7 @@ function Shell() {
           </Link>
           <nav className="flex items-center gap-1">
             {nav.map((n) => (
-              <Link key={n.href} href={n.href} aria-label={n.label} data-testid={`link-nav-${n.label}`}
+              <Link key={n.href} href={n.href} onClick={() => { if (trip && n.href === "/") setSearch({ category: null }); }} aria-label={n.label} data-testid={`link-nav-${n.label}`}
                 className={cn("whitespace-nowrap hidden sm:inline-flex items-center gap-1.5 rounded-full px-2.5 lg:px-3 h-9 text-sm font-medium hover-elevate", n.active ? "text-foreground" : "text-muted-foreground")}>
                 <span className="relative"><n.icon className="h-4 w-4" /><TabDot href={n.dot || n.href} /></span><span className="hidden lg:inline">{n.label}</span>
               </Link>
@@ -163,7 +165,7 @@ function Shell() {
         <nav className="tabbar print:hidden sm:hidden fixed bottom-0 inset-x-0 z-30 border-t border-border bg-background/90 backdrop-blur pb-safe" data-testid="nav-tabbar">
           <div className="mx-auto max-w-xl grid px-safe" style={{ gridTemplateColumns: `repeat(${nav.length}, minmax(0, 1fr))` }}>
             {nav.map((n) => (
-              <Link key={n.href} href={n.href} data-testid={`tab-${n.label}`} className={cn("flex min-w-0 flex-col items-center gap-0.5 pt-2 pb-1 text-[10px] font-medium tracking-tight", n.active ? "text-primary" : "text-muted-foreground")}>
+              <Link key={n.href} href={n.href} onClick={() => { if (trip && n.href === "/") { setSearch({ category: null }); window.scrollTo(0, 0); } }} data-testid={`tab-${n.label}`} className={cn("flex min-w-0 flex-col items-center gap-0.5 pt-2 pb-1 text-[10px] font-medium tracking-tight", n.active ? "text-primary" : "text-muted-foreground")}>
                 <span className="relative"><n.icon className="h-5 w-5" /><TabDot href={n.dot || n.href} /></span><span className="truncate max-w-full">{n.label}</span>
               </Link>
             ))}

@@ -378,7 +378,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const user = (req as any).user as User;
     const cur = await storage.getSpot(id(req));
     if (!cur || cur.status === "hidden") return res.status(404).json({ message: "Not found" });
-    if (cur.userId !== user.id) return res.status(403).json({ message: "Only the crew member who posted this can edit it" });
+    // admins can fix anyone's listing (missing address, website and so on); the poster keeps credit
+    const staff = isSuperAdmin(user) && cur.userId !== user.id;
+    if (cur.userId !== user.id && !staff) return res.status(403).json({ message: "Only the crew member who posted this can edit it" });
     const p = submitSchema.safeParse({ ...cur, tags: (() => { try { return JSON.parse(cur.tags); } catch { return []; } })(), ...req.body, icao: req.body?.icao ?? cur.icao });
     if (!p.success) return res.status(400).json({ message: msg(p.error) });
     const { airportCity, tags, ...rest } = p.data;
@@ -398,7 +400,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       costLevel: rest.costLevel, minutesNeeded: rest.minutesNeeded, pace: rest.pace ?? null, milesFromField: rest.milesFromField,
       lat: rest.lat ?? null, lng: rest.lng ?? null, placeRef: rest.placeRef ?? null, crewTip: rest.crewTip, tags: tagJson(tags),
     };
-    if (AI_ENABLED) {
+    if (AI_ENABLED && !staff) {
       if (cur.status === "live") {
         // the live listing stays exactly as it is until the edit passes the check
         const held = Object.fromEntries(SPOT_EDIT_FIELDS.map((k) => [k, (patch as any)[k]]));

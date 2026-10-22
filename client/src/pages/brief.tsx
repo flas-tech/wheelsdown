@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useRoute } from "wouter";
 import {
@@ -470,7 +470,20 @@ function ExportBar({ brief, preparedBy, onShared }: { brief: BriefFull; prepared
 }
 
 // ---------------- maps ----------------
-function MapCanvas({ pins, height = 220, route, testId }: { pins: ReturnType<typeof stopPins>["pins"]; height?: number; route?: boolean; testId?: string }) {
+const PinsMap = lazy(() => import("@/lib/pinsMap"));
+/** Four-tab preview: a map you can drag and pinch-zoom (crew feedback, round 6). Members keep the static picture. */
+function MapCanvas(props: { pins: ReturnType<typeof stopPins>["pins"]; height?: number; route?: boolean; testId?: string }) {
+  const trip = useTrip();
+  const h = props.height ?? 220;
+  if (!trip) return <StaticMapCanvas {...props} />;
+  return (
+    <Suspense fallback={<div className="w-full rounded-xl border border-border bg-muted" style={{ height: h }} data-testid={props.testId} />}>
+      <PinsMap pins={props.pins} height={h} route={props.route} testId={props.testId} />
+    </Suspense>
+  );
+}
+
+function StaticMapCanvas({ pins, height = 220, route, testId }: { pins: ReturnType<typeof stopPins>["pins"]; height?: number; route?: boolean; testId?: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const wrap = useRef<HTMLDivElement>(null);
   const sig = JSON.stringify(pins);

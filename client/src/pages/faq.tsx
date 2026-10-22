@@ -5,6 +5,7 @@ import { POINTS, SOLO_POINTS, TIERS } from "@shared/tiers";
 import { startTour } from "@/lib/tour";
 import { openWhatsNew } from "@/lib/whatsNew";
 import { FeedbackLink } from "@/lib/feedback";
+import { useTrip } from "@/lib/experience";
 
 type QA = { q: string; a: React.ReactNode; text: string };
 const qa = (q: string, a: string, extra?: React.ReactNode): QA => ({ q, a: <>{a}{extra}</>, text: `${q} ${a}`.toLowerCase() });
@@ -86,11 +87,29 @@ const SECTIONS: { title: string; items: QA[] }[] = [
   },
 ];
 
+/** Four-tab preview (Home, Plan, Crew): answers that changed with the new layout, keyed by the original question. */
+const TRIP_QA: Record<string, [string, string]> = {
+  "What's on the home screen?": ["What's on the home screen?", "Home opens on Spots: tap Eat, Do, Stay or FBO intel and type your route. The card at the top shows the airport you're at (or the last one you looked at) with local time and weather; tap it for Layover today. The bottom bar has three tabs: Home, Plan and Crew."],
+  "How do I get back to the home screen?": ["How do I get back to the home screen?", "Tap Home in the bottom bar or the Wheelsdown logo at the top. Either one takes you back to the Eat, Do, Stay and FBO intel tiles."],
+  "What's a trip briefing?": ["What's a trip sheet?", "A plan for every stop on your trip, under Plan. Each stop has a box for Hotels, Do and Eat. Crew picks come first, AI picks are below them, and your favorites are always included."],
+  "How do I change what's in a briefing?": ["How do I change what's in a trip sheet?", "Use Up, Down and Remove on any pick. Each box has See more for more crew listings of that type, and Don't like what you see? asks AI for more; new finds pop in as they're found. Re-pick at the bottom of a stop starts that stop over."],
+  "How do I send it to the crew?": ["How do I send a trip sheet to the crew?", "Scroll to the bottom of the sheet: Finalize, Preview PDF to see the exact pages, then Share PDF or Share link. Anyone with the link can view it."],
+  "What is Plan layover?": ["What is Layover today?", "One screen for the airport you're at: local time, sunrise and sunset, weather and the METAR, crew plans there, your trip sheet picks and crew favorites. Open it from the card at the top of Home."],
+  "Can I delete a briefing?": ["Can I delete a trip sheet?", "Yes. On Plan, tap Delete on the sheet's tile, then confirm. Deleting can't be undone."],
+  "Can I choose who sees a Crew Up plan?": ["Who sees my Crew Up plan?", "Only the crew you pick under Who sees it. They're the only ones who see the plan and get the notification, and your plan card shows who it's shared with."],
+};
+const TRIP_SECTIONS = SECTIONS.map((s) => ({
+  title: s.title === "Trip briefings" ? "Trip sheets" : s.title,
+  items: s.items.map((x) => (TRIP_QA[x.q] ? qa(TRIP_QA[x.q][0], TRIP_QA[x.q][1]) : x)),
+}));
+
 export default function FaqPage() {
+  const trip = useTrip();
+  const base = trip ? TRIP_SECTIONS : SECTIONS;
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<string | null>(null);
   const term = q.trim().toLowerCase();
-  const sections = useMemo(() => SECTIONS.map((s) => ({ ...s, items: term ? s.items.filter((x) => term.split(/\s+/).every((w) => x.text.includes(w))) : s.items })).filter((s) => s.items.length), [term]);
+  const sections = useMemo(() => base.map((s) => ({ ...s, items: term ? s.items.filter((x) => term.split(/\s+/).every((w) => x.text.includes(w))) : s.items })).filter((s) => s.items.length), [term, base]);
   const count = sections.reduce((n, s) => n + s.items.length, 0);
   return (
     <div className="space-y-5" data-testid="page-faq">

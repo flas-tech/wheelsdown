@@ -1,7 +1,8 @@
 // Sub-tabs at the top of the Spots and Crew sections in the four-tab layout (lib/experience.tsx TRIP_NAV).
 // One row of pills, the current one filled; Spots also has an Add button on the right.
 import { Link, useLocation } from "wouter";
-import { Plus } from "lucide-react";
+import { ArrowLeft, Plus } from "lucide-react";
+import { useEffect } from "react";
 import { SPOTS_SUB, subTabsFor } from "@/lib/experience";
 import { TabDot } from "@/lib/tabDots";
 import { cn } from "@/lib/utils";
@@ -77,4 +78,19 @@ export function sheetWords(on: boolean) {
     .replace(/Trip briefing/g, "Trip sheet").replace(/trip briefing/g, "trip sheet")
     .replace(/Briefings/g, "Trip sheets").replace(/briefings/g, "trip sheets")
     .replace(/Briefing/g, "Trip sheet").replace(/briefing/g, "trip sheet");
+}
+
+
+// ---- Back (four-tab preview): one page back inside the app, or to `fallback` when the app was opened on this page ----
+let depth = 0;
+/** Called once in the app shell: counts in-app page changes so Back knows whether there's a page to go back to. */
+export function useNavDepth(loc: string) { useEffect(() => { depth++; }, [loc]); }
+export function BackButton({ fallback = "/", label = "Back", className }: { fallback?: string; label?: string; className?: string }) {
+  const [, go] = useLocation();
+  return (
+    <button type="button" onClick={() => (depth > 1 ? window.history.back() : go(fallback))}
+      className={cn("inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground", className)} data-testid="button-back">
+      <ArrowLeft className="h-4 w-4" />{label}
+    </button>
+  );
 }

@@ -2,7 +2,7 @@ import { createContext, lazy, Suspense, useContext, useEffect, useMemo, useRef, 
 import { GuestJoinPrompt } from "@/lib/guestPrompt";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
-import { ArrowRight, Map as MapIcon, SlidersHorizontal, ChevronDown, MapPin, Clock, Search, Plus, X, ChevronRight, Lightbulb, ShieldCheck, List, Sparkles, Trophy, LocateFixed, Loader2, Utensils, Flame } from "lucide-react";
+import { ArrowLeft, ArrowRight, Map as MapIcon, SlidersHorizontal, ChevronDown, MapPin, Clock, Search, Plus, X, ChevronRight, Lightbulb, ShieldCheck, List, Sparkles, Trophy, LocateFixed, Loader2, Utensils, Flame } from "lucide-react";
 import type { Highlights } from "@shared/highlights";
 import { TIME_BUCKETS, type Category, type SpotWithStats, type Airport } from "@shared/schema";
 import { apiRequest, IS_STATIC } from "@/lib/queryClient";
@@ -72,8 +72,11 @@ function useDebounced<T>(v: T, ms = 300) {
 export default function Home() {
   const [s, set] = useSearch();
   const routeRef = useRef<HTMLInputElement>(null);
+  const trip = useTrip();
+  // phones ignore a focus() that isn't from a tap (no keyboard), so in the preview only focus the box on a computer
+  const touch = typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches;
 
-  if (!s.category) return <Prompt onPick={(c) => { set({ category: c }); setTimeout(() => routeRef.current?.focus(), 50); }} />;
+  if (!s.category) return <Prompt onPick={(c) => { set({ category: c }); if (!(trip && touch)) setTimeout(() => routeRef.current?.focus(), 50); }} />;
   return <Results routeRef={routeRef} />;
 }
 
@@ -216,6 +219,7 @@ function Rail({ title, icon: Icon, spots, testId, bare }: { title: string; icon:
 
 function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) {
   const [s, set] = useSearch();
+  const tripR = useTrip();
   const cat = s.category!;
   const route = useDebounced(s.route.trim());
   const { data, isLoading } = useQuery<SearchResp>({
@@ -427,6 +431,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
       <GuestJoinPrompt ready={!isLoading && !!data && legs.some((l) => !!l.airport)} icao={legs.find((l) => l.airport)?.airport?.icao} />
       {/* Category switcher */}
       <div className="flex items-center gap-2 overflow-x-auto no-scrollbar -mx-4 px-4">
+        {tripR && <button type="button" onClick={() => { set({ category: null }); window.scrollTo(0, 0); }} aria-label="Back to Home" className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-border hover-elevate" data-testid="button-results-back"><ArrowLeft className="h-4 w-4" /></button>}
         {(Object.keys(CAT_META) as Category[]).map((c) => {
           const I = CAT_META[c].icon;
           return (
