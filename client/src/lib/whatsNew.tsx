@@ -24,6 +24,14 @@ const PUBLIC_FEATURES = new Set<DevFeature>([]);
 
 const ALL_RELEASES: Release[] = [
   {
+    id: 17, date: "October 22, 2026", trip: true,
+    items: [
+      { icon: MessagesSquare, title: "Private messages with your crew", body: "Tap the chat bubble next to the Crew pills, or the bubble next to someone in My Crew. Only the two of you can read it: messages are encrypted on your phone, and Wheelsdown and its admins can't see them.", to: "/messages" },
+      { icon: Users, title: "Talk it over on a Crew Up plan", body: "Every Crew Up plan has Messages: one thread for the host and the crew who can see the plan, so you can go back and forth without posting new plans. It's deleted a week after the plan ends.", to: "/meetup" },
+      { icon: BellRing, title: "Message alerts keep it private", body: "Alerts for new messages never show what was said, just that you have one. Turn them off under Settings, Notifications, Messages." },
+    ],
+  },
+  {
     id: 16, date: "October 22, 2026", trip: true,
     items: [
       { icon: PanelBottom, title: "A new layout: Home, Plan, Crew", body: "Three tabs at the bottom now: Home, Plan and Crew. Everything is still here; the short tour shows where it went.", tour: "layout" },

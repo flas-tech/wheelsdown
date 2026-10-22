@@ -103,6 +103,11 @@ const TRIP_EXTRA: Record<string, QA[]> = {
   [SECTIONS[0].title]: [
     qa("Where did everything go?", "The bottom bar now has three tabs. Home is Spots search (Eat, Do, Stay, FBO intel, plus Map, Favorites and Rate at the top) with the field you're at on top. Plan has your trip sheets, which used to be called briefings. Crew has My Crew, Crew Up, Ranks and the Lounge. Your Logbook is the points at the top of the page. What moved, next to Take the tour above, walks through it in a minute."),
   ],
+  "My Crew, Crew Up and the Lounge": [
+    qa("How do I send a private message?", "Tap the chat bubble next to the Crew pills to see your conversations, or the bubble next to someone in My Crew to start one. You can message anyone who's in your crew. On a Crew Up plan, tap Messages to talk it over with everyone on the plan in one thread."),
+    qa("Who can read my messages?", "Only the people in the conversation. Messages are encrypted on your phone before they're sent, so Wheelsdown and its admins can't read them, and they aren't moderated. Wheelsdown does know who messaged whom and when. To check nobody's keys were swapped, compare the Safety code in the conversation in person."),
+    qa("Why can't I read some older messages?", "Each phone or browser has its own keys, so a new device can't read messages sent before it was set up. On iPhone, Safari and the home-screen app count as separate devices. Use the same one you started on, and new messages reach all your devices. Crew Up threads are deleted a week after the plan ends."),
+  ],
   "Trip briefings": [
     qa("Do deleted trip sheets still count for badges?", "Yes. Flight Planner counts every trip sheet you've made, so cleaning up old ones doesn't take credit away. Sheets deleted before October 22, 2026 weren't recorded, so the count starts from the ones you had then."),
   ],

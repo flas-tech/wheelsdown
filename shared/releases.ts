@@ -2,6 +2,11 @@
 export type Release = { date: string; sha?: string; title: string; notes: string[] };
 
 export const RELEASES: Release[] = [
+  { date: "2026-10-22", title: "Version 1.17: private messages open to members; FAQ and What's new", notes: [
+    "dm_audience set to members (Oct 22). What's new 17 (trip layout): private messages, Crew Up threads, private alerts.",
+    "FAQ (Crew section): How do I send a private message?, Who can read my messages?, Why can't I read some older messages?",
+    "Rollback: set dm_audience back to admins (Settings > Admin preview > Private messages); redeploy afa1ffa for the notes.",
+  ] },
   { date: "2026-10-22", title: "Admin preview: private messages (end-to-end encrypted) and a thread on every Crew Up plan", notes: [
     "Messages (Crew pills, chat bubble) for direct messages between mutual crew, plus a Messages thread on every Crew Up plan for the host and the crew who can see it, so replies stay in one place instead of new Crew Up posts. Feedback from JPJ and Jeff King.",
     "Truly private: each phone or browser makes its own keys (kept on the device, can't be exported), messages are encrypted on the sender's device for each recipient device and signed. The server and admins only ever have ciphertext; there's no moderation and no admin view, only counts. Safety code in each conversation to check keys in person.",
