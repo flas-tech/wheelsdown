@@ -25,7 +25,7 @@ export async function hashPassword(pw: string) {
   const salt = randomBytes(16).toString("hex");
   return `scrypt:${salt}:${(await scrypt(pw, salt, 64)).toString("hex")}`;
 }
-async function checkPassword(pw: string, stored: string) {
+export async function checkPassword(pw: string, stored: string) {
   const [, salt, hash] = stored.split(":");
   if (!salt || !hash) return false;
   const a = Buffer.from(hash, "hex"), b = await scrypt(pw, salt, 64);

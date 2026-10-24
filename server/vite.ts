@@ -5,6 +5,7 @@ import viteConfig from "../vite.config";
 import fs from "node:fs";
 import path from "node:path";
 import { nanoid } from "nanoid";
+import { isFboHost } from "./fbo";
 
 const viteLogger = createLogger();
 
@@ -39,7 +40,7 @@ export async function setupVite(server: Server, app: Express) {
         import.meta.dirname,
         "..",
         "client",
-        "index.html",
+        isFboHost(req) || url.startsWith("/fbo-portal") ? "fbo.html" : "index.html",
       );
 
       // always reload the index.html file from disk incase it changes
@@ -47,7 +48,7 @@ export async function setupVite(server: Server, app: Express) {
       template = template.replace(
         `src="/src/main.tsx"`,
         `src="/src/main.tsx?v=${nanoid()}"`,
-      );
+      ).replace(`src="/src/fbo/main.tsx"`, `src="/src/fbo/main.tsx?v=${nanoid()}"`);
       const page = await vite.transformIndexHtml(url, template);
       res.status(200).set({ "Content-Type": "text/html" }).end(page);
     } catch (e) {

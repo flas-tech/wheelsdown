@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { FEEDBACK_LABEL, type FeedbackItem } from "@shared/feedback";
 import { OverviewPanel, ErrorLog, ChangeLog, AiPicksAdmin, type AdmApi } from "./adminOps";
 import { LoungePanel } from "./lounge";
+import { FboAdminPanel } from "./adminFbo";
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 
 const inputCls = "w-full h-9 rounded-lg border border-input bg-background px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring";
@@ -74,6 +75,8 @@ const TABS: { id: string; label: string }[] = [
 ];
 /** Crew Lounge (Phase 0) needs a signed-in super-user account (posts have an author), and isn't in the browser-only demo. */
 const LOUNGE_TAB = { id: "lounge", label: "Crew Lounge" };
+/** FBO portal beta (server-backed only; not in the browser demo). */
+const FBO_TAB = { id: "fbo", label: "FBO beta" };
 const TAB_KEY = "wheelsdown-admin-tab";
 const API: AdmApi = { adm, admGet };
 
@@ -82,7 +85,8 @@ function Console({ onLogout, viaAccount = false }: { onLogout: () => void; viaAc
   const { data: fbOpen } = useQuery<{ counts: Record<string, number> }>({ queryKey: ["/api/admin/feedback", "open"], queryFn: admGet("/api/admin/feedback?status=open"), refetchInterval: 30000 });
   const { data: ov } = useQuery<{ errorsOpen: number; errors24: number }>({ queryKey: ["/api/admin/overview"], queryFn: admGet("/api/admin/overview"), refetchInterval: 60_000 });
   const fbNew = fbOpen?.counts?.new || 0;
-  const tabs = viaAccount && !IS_STATIC ? [...TABS.slice(0, 6), LOUNGE_TAB, ...TABS.slice(6)] : TABS;
+  const base = IS_STATIC ? TABS : [...TABS, FBO_TAB];
+  const tabs = viaAccount && !IS_STATIC ? [...base.slice(0, 6), LOUNGE_TAB, ...base.slice(6)] : base;
   const [tab, setTabState] = useState(() => { try { const t = sessionStorage.getItem(TAB_KEY); return t && tabs.some((x) => x.id === t) ? t : "overview"; } catch { return "overview"; } });
   const setTab = (t: string) => { setTabState(t); try { sessionStorage.setItem(TAB_KEY, t); } catch { /* private mode */ } window.scrollTo({ top: 0 }); };
   const badge = (id: string) => {
@@ -119,6 +123,7 @@ function Console({ onLogout, viaAccount = false }: { onLogout: () => void; viaAc
         <TabsContent value="bulk"><Bulk /></TabsContent>
         <TabsContent value="ads"><AdsManager /></TabsContent>
         <TabsContent value="users"><UsersAdmin /></TabsContent>
+        {tabs.includes(FBO_TAB) && <TabsContent value="fbo"><FboAdminPanel api={API} /></TabsContent>}
       </Tabs>
     </div>
   );

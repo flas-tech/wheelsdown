@@ -25,6 +25,7 @@ import { registerAiPicks, fillStop, aiPrefOf, programsOf, claimAiPick, checkFirs
 import { registerSimilar } from "./similar";
 import { registerLayover } from "./layover";
 import { registerLounge } from "./lounge";
+import { registerFbo, fboHiddenAdIds } from "./fbo";
 import { registerMyCrew, requestFromInvite, forgetMember } from "./mycrew";
 import { registerPush, forgetPush } from "./push";
 import { registerDm, forgetDm } from "./dm";
@@ -566,7 +567,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   // ---------- trip briefings (signed-in crew; no points) ----------
   async function sponsorFor(icao: string) {
-    const all = (await storage.listAds()).filter((a) => a.active);
+    const hidden = await fboHiddenAdIds();
+    const all = (await storage.listAds()).filter((a) => a.active && !hidden.has(a.id));
     const ad = all.find((a) => a.targetIcao === icao) || all.find((a) => !a.targetIcao);
     return ad ? { id: ad.id, advertiser: ad.advertiser, headline: ad.headline, url: ad.url } : null;
   }
@@ -674,7 +676,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.get("/api/ads", async (req, res) => {
     const icaos = parseRoute(String(req.query.icaos || ""));
-    const all = (await storage.listAds()).filter((a) => a.active);
+    const hidden = await fboHiddenAdIds();
+    const all = (await storage.listAds()).filter((a) => a.active && !hidden.has(a.id));
     res.json(all.filter((a) => !a.targetIcao || icaos.includes(a.targetIcao)));
   });
   app.post("/api/ads/:id/:kind", writeLimit, async (req, res) => {
@@ -698,6 +701,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   // ---------- admin ----------
   registerFeedback(app, { userOf, requireAdmin });
+  registerFbo(app, { requireAdmin }); // FBO portal beta: separate accounts (fbo_users), never on the leaderboard, invite-only
   registerCheckins(app, { requireUser, userOf });
   registerAiPicks(app, { requireAdmin, requireUser, userOf });
   registerOps(app, { requireAdmin, userOf });

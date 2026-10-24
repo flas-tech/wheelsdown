@@ -19,6 +19,10 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    // the FBO portal (beta) is a second, separate app; the browser-only Pages demo doesn't include it
+    rollupOptions: process.env.VITE_STATIC === "1" ? undefined : {
+      input: { main: path.resolve(import.meta.dirname, "client", "index.html"), fbo: path.resolve(import.meta.dirname, "client", "fbo.html") },
+    },
   },
   server: {
     fs: {
