@@ -10,20 +10,21 @@ import { Card, PageHeader, btn, btnPrimary } from "./ui";
 
 type Stats = {
   d7: { views: number; devices: number; qr: number }; d30: { views: number; devices: number; qr: number }; all: { views: number; devices: number; qr: number };
-  adImpressions: number; adClicks: number; places: number; favorites: number; offers: number; intel: number; prints: number; daily: { day: string; views: number; qr: number }[];
+  adImpressions: number; adClicks: number; referrals: number; added: number; places: number; favorites: number; offers: number; intel: number; prints: number; daily: { day: string; views: number; qr: number }[];
 };
 
 export function DashboardPage() {
-  const { me } = useMe();
+  const { me, openWelcome } = useMe();
   const { toast } = useToast();
   const { data: s } = useQuery<Stats>({ queryKey: ["/api/fbo/stats"], queryFn: get("/api/fbo/stats") });
   const copy = async () => { try { await navigator.clipboard.writeText(me.account.publicUrl); toast({ title: "Link copied" }); } catch { /* */ } };
   const steps = [
-    { done: (s?.places || 0) > 0, label: "Add your restaurant and hotel recommendations", to: "/places" },
+    { done: (s?.places || 0) >= 5, label: "Check at least five places you recommend", to: "/places" },
     { done: (s?.favorites || 0) > 0, label: "Star your favorites so they show first", to: "/places" },
     { done: (s?.offers || 0) > 0, label: "Add a crew discount or coupon code", to: "/offers" },
     { done: (s?.intel || 0) > 0, label: "Fill in your FBO intel", to: "/intel" },
-    { done: (s?.prints || 0) > 0, label: "Print your QR card or counter sign", to: "/qr" },
+    { done: (s?.prints || 0) > 0, label: "Print your QR code for the front desk", to: "/qr" },
+    { done: false, label: "Put the self-serve sign in the pilot lounge", to: "/qr" },
   ];
   // fill missing days so the chart shows the whole month
   const days: { day: string; views: number; qr: number }[] = [];
@@ -32,14 +33,14 @@ export function DashboardPage() {
   const firstName = (me.user.name || "").split(" ")[0];
   return (
     <>
-      <PageHeader title={firstName ? `Welcome back, ${firstName}` : "Dashboard"} sub={<>Your crew page for {me.account.icao} shows everything you post here, labeled as provided by {me.account.name}. Changes go live as soon as you save.</>}
+      <PageHeader title={firstName ? `Welcome, ${firstName}` : "Dashboard"} sub={<>Your crew page for {me.account.icao} shows everything you post here, labeled as provided by {me.account.name}. Changes go live as soon as you save.</>}
         actions={<><button className={btn} onClick={copy} data-testid="button-copy-link"><Copy className="h-4 w-4" />Copy link</button><a className={btn} href={me.account.publicUrl} target="_blank" rel="noreferrer"><ExternalLink className="h-4 w-4" />View crew page</a><Link href="/qr" className={btnPrimary}><QrCode className="h-4 w-4" />Print QR</Link></>} />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Page views · 7 days" value={s?.d7.views} sub={`${s?.d7.qr ?? 0} from QR scans`} />
         <Stat label="Page views · 30 days" value={s?.d30.views} sub={`${s?.d30.devices ?? 0} device-days`} />
         <Stat label="Recommendations" value={s?.places} sub={`${s?.favorites ?? 0} favorites · ${s?.offers ?? 0} live discounts`} />
-        <Stat label="Ad impressions" value={s?.adImpressions} sub={`${s?.adClicks ?? 0} clicks`} />
+        <Stat label="Crews who joined from your page" value={s?.referrals} sub={`${s?.adImpressions ?? 0} ad impressions · ${s?.adClicks ?? 0} clicks`} />
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[1.6fr_1fr]">
@@ -72,6 +73,8 @@ export function DashboardPage() {
             ))}
           </ul>
           <Link href="/places" className={cn(btn, "mt-3 w-full")}><Upload className="h-4 w-4" />Upload an existing list</Link>
+          <div className="mt-3 rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground"><b className="text-foreground">Tip:</b> put the pilot lounge sign or a spare tablet running your kiosk page in the lounge, so crews can help themselves when the desk is busy.</div>
+          <button className="mt-2 text-xs text-muted-foreground underline" onClick={openWelcome} data-testid="button-replay-welcome">Replay the welcome tour</button>
         </Card>
       </div>
       <p className="mt-6 text-xs text-muted-foreground">FBO accounts are a separate source of information from crews. Nothing you post earns points or appears on the crew leaderboard.</p>

@@ -16,16 +16,17 @@ import { IntelPage } from "./intel";
 import { AdsPage } from "./ads";
 import { QrPage, PrintPage } from "./print";
 import { TeamPage, ProfilePage, AccountPage } from "./team";
+import { Welcome } from "./welcome";
 
 const useHashPath = (): [string, (to: string, opts?: { replace?: boolean }) => void] => { const [loc, nav] = useHashLocation(); return [loc.split("?")[0], nav as any]; };
 
 export type Me = {
-  user: { id: number; fboId: number; email: string; name: string; role: FboRole };
-  account: FboAccount & { publicUrl: string; qrUrl: string };
+  user: { id: number; fboId: number; email: string; name: string; role: FboRole; onboarded: boolean };
+  account: FboAccount & { publicUrl: string; qrUrl: string; kioskUrl: string; verified: boolean; signupSource: string };
   adsServing: boolean;
   limits: Record<string, number>;
 };
-const MeCtx = createContext<{ me: Me; signOut: () => void } | null>(null);
+const MeCtx = createContext<{ me: Me; signOut: () => void; openWelcome: () => void } | null>(null);
 export const useMe = () => useContext(MeCtx)!;
 
 export default function FboApp() {
@@ -47,16 +48,22 @@ function Gate() {
   const [token, setToken] = useState(fboToken());
   useEffect(() => { const f = () => setToken(""); window.addEventListener("fbo-signed-out", f); return () => window.removeEventListener("fbo-signed-out", f); }, []);
   const [isInvite, params] = useRoute("/invite/:token");
+  const [isVerify, vparams] = useRoute("/verify/:token");
+  const [isSignup] = useRoute("/signup");
+  const [welcome, setWelcome] = useState(false);
   const { data: me, isLoading, error } = useQuery<Me>({ queryKey: ["/api/fbo/me", token], queryFn: get("/api/fbo/me"), enabled: !!token });
   const signedIn = (t: string) => { setFboToken(t); fboQuery.clear(); setToken(t); window.location.hash = "#/"; };
   const signOut = async () => { try { await api("POST", "/api/fbo/logout"); } catch { /* */ } setFboToken(""); fboQuery.clear(); setToken(""); window.location.hash = "#/"; };
 
   if (isInvite) return <AuthFrame><InviteForm token={params!.token} onDone={signedIn} /></AuthFrame>;
+  if (isVerify) return <AuthFrame><VerifyEmail token={vparams!.token} signedIn={!!token} /></AuthFrame>;
+  if (isSignup && !token) return <AuthFrame><SignupForm onDone={signedIn} /></AuthFrame>;
   if (!token) return <AuthFrame><LoginForm onDone={signedIn} /></AuthFrame>;
   if (isLoading) return <div className="grid min-h-screen place-items-center"><Spinner className="h-6 w-6 text-muted-foreground" /></div>;
   if (error || !me) return <AuthFrame><LoginForm onDone={signedIn} notice={(error as any)?.status === 403 ? (error as Error).message : undefined} /></AuthFrame>;
   return (
-    <MeCtx.Provider value={{ me, signOut }}>
+    <MeCtx.Provider value={{ me, signOut, openWelcome: () => setWelcome(true) }}>
+      {(welcome || !me.user.onboarded) && !window.location.hash.startsWith("#/print") && <Welcome onClose={() => { setWelcome(false); fboQuery.setQueryData(["/api/fbo/me", token], { ...me, user: { ...me.user, onboarded: true } }); }} />}
       <Switch>
         <Route path="/print/:kind">{(p) => <PrintPage kind={p.kind} />}</Route>
         <Route><Shell /></Route>
@@ -78,7 +85,7 @@ function AuthFrame({ children }: { children: ReactNode }) {
             <li>Add crew discounts and FBO intel, labeled as coming from you.</li>
             <li>Print a QR card or counter sign that opens your page on any phone.</li>
           </ul>
-          <p className="mt-8 text-xs text-muted-foreground">Invitation-only beta.</p>
+          <p className="mt-8 text-xs text-muted-foreground">Free for FBOs. Nothing to install: it works in any browser and can be added to your home screen.</p>
         </div>
         <div className="w-full max-w-sm justify-self-center rounded-2xl border border-card-border bg-card p-6 shadow-sm">
           <div className="mb-5 flex items-center justify-between lg:hidden">
@@ -116,14 +123,59 @@ function LoginForm({ onDone, notice }: { onDone: (t: string) => void; notice?: s
     }}>
       <div>
         <h2 className="text-lg font-semibold">Sign in</h2>
-        <p className="text-sm text-muted-foreground">For FBO staff with an invitation.</p>
+        <p className="text-sm text-muted-foreground">For FBO desk and management staff.</p>
       </div>
       <input className={inputCls} type="email" autoComplete="email" placeholder="Work email" value={email} onChange={(e) => setEmail(e.target.value)} data-testid="input-email" autoFocus />
       <input className={inputCls} type="password" autoComplete="current-password" placeholder="Password" value={pw} onChange={(e) => setPw(e.target.value)} data-testid="input-password" />
       {err && <p className="text-sm text-destructive" data-testid="text-login-error">{err}</p>}
       <button className={cn(btnPrimary, "h-10 w-full")} disabled={!email || !pw || busy} data-testid="button-login">{busy ? <Spinner /> : "Sign in"}</button>
       <button type="button" className="text-sm text-muted-foreground underline" onClick={() => setForgot(true)} data-testid="button-forgot">Forgot password?</button>
+      <div className="border-t border-border pt-4 text-sm">New to Wheelsdown? <a href="#/signup" className="font-semibold underline" data-testid="link-signup">Create an FBO account</a></div>
     </form>
+  );
+}
+
+function SignupForm({ onDone }: { onDone: (t: string) => void }) {
+  const { data: cfg } = useQuery<{ open: boolean; passwordMin: number }>({ queryKey: ["/api/fbo/signup"], queryFn: get("/api/fbo/signup") });
+  const ref = new URLSearchParams(window.location.hash.split("?")[1] || window.location.search.slice(1)).get("ref") || "";
+  const [f, setF] = useState({ fboName: "", icao: "", name: "", email: "", password: "", agree: false });
+  const [err, setErr] = useState(""); const [busy, setBusy] = useState(false);
+  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: k === "icao" ? e.target.value.toUpperCase().slice(0, 4) : e.target.value });
+  if (cfg && !cfg.open) return <div className="space-y-3"><h2 className="text-lg font-semibold">Sign-up is paused</h2><p className="text-sm text-muted-foreground">Email <a className="underline" href="mailto:hello@getwheelsdown.com">hello@getwheelsdown.com</a> and we'll set up your FBO.</p><a className="text-sm underline" href="#/">Sign in</a></div>;
+  return (
+    <form className="space-y-3" onSubmit={async (e) => {
+      e.preventDefault(); setErr(""); setBusy(true);
+      try { const r = await api<{ token: string }>("POST", "/api/fbo/signup", { ...f, ref }); onDone(r.token); }
+      catch (x: any) { setErr(x.message); }
+      setBusy(false);
+    }}>
+      <div>
+        <h2 className="text-lg font-semibold">Create your FBO account</h2>
+        <p className="text-sm text-muted-foreground">Free. One account per FBO location; invite the rest of your team after.</p>
+      </div>
+      <input className={inputCls} placeholder="FBO name, e.g. Signature TEB" value={f.fboName} onChange={set("fboName")} maxLength={120} autoFocus data-testid="input-signup-fbo" />
+      <input className={inputCls} placeholder="Airport code, e.g. KTEB" value={f.icao} onChange={set("icao")} autoCapitalize="characters" data-testid="input-signup-icao" />
+      <input className={inputCls} placeholder="Your name" autoComplete="name" value={f.name} onChange={set("name")} maxLength={80} data-testid="input-signup-name" />
+      <input className={inputCls} type="email" autoComplete="email" placeholder="Work email" value={f.email} onChange={set("email")} data-testid="input-signup-email" />
+      <input className={inputCls} type="password" autoComplete="new-password" placeholder={`Password (${cfg?.passwordMin || 10}+ characters)`} value={f.password} onChange={set("password")} data-testid="input-signup-password" />
+      <label className="flex items-start gap-2 text-xs text-muted-foreground"><input type="checkbox" checked={f.agree} onChange={(e) => setF({ ...f, agree: e.target.checked })} className="mt-0.5 h-4 w-4 accent-[hsl(var(--primary))]" data-testid="checkbox-signup-agree" />
+        <span>I work for this FBO and agree to the <a className="underline" href="https://getwheelsdown.com/#/terms" target="_blank" rel="noreferrer">Terms</a> and <a className="underline" href="https://getwheelsdown.com/#/privacy" target="_blank" rel="noreferrer">Privacy Policy</a>.</span></label>
+      {err && <p className="text-sm text-destructive" data-testid="text-signup-error">{err}</p>}
+      <button className={cn(btnPrimary, "h-10 w-full")} disabled={busy || !f.fboName || !f.icao || !f.name || !f.email || !f.password || !f.agree} data-testid="button-signup">{busy ? <Spinner /> : "Create account"}</button>
+      <p className="text-sm">Already have an account? <a href="#/" className="font-semibold underline">Sign in</a></p>
+    </form>
+  );
+}
+
+function VerifyEmail({ token, signedIn }: { token: string; signedIn: boolean }) {
+  const { data, error, isLoading } = useQuery({ queryKey: ["verify", token], queryFn: () => api("POST", `/api/fbo/verify/${token}`), retry: false, staleTime: Infinity });
+  if (isLoading) return <Spinner />;
+  return (
+    <div className="space-y-3">
+      <h2 className="text-lg font-semibold">{data ? "Email confirmed" : "Link not valid"}</h2>
+      <p className="text-sm text-muted-foreground" data-testid="text-verify">{data ? "Your crew page is published, and any places you added are now live for crews." : (error as Error)?.message}</p>
+      <a className={cn(btnPrimary, "h-10 w-full")} href="#/" onClick={() => fboQuery.invalidateQueries()}>{signedIn ? "Go to the dashboard" : "Sign in"}</a>
+    </div>
   );
 }
 
@@ -214,6 +266,7 @@ function Shell() {
 
       <main className="min-w-0 px-4 py-5 sm:px-6 lg:px-10 lg:py-8">
         <div className="mx-auto max-w-6xl">
+          {!me.account.verified && <VerifyBanner />}
           <Switch>
             <Route path="/" component={DashboardPage} />
             <Route path="/places" component={PlacesPage} />
@@ -228,6 +281,18 @@ function Shell() {
           </Switch>
         </div>
       </main>
+    </div>
+  );
+}
+
+function VerifyBanner() {
+  const [state, setState] = useState<"" | "busy" | string>("");
+  return (
+    <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-primary/50 bg-primary/10 px-4 py-3 text-sm" data-testid="banner-verify">
+      <p><b>Confirm your email to publish your crew page.</b> We sent a link when you signed up. Until then crews who scan your QR code see "not published yet."</p>
+      <button className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium hover-elevate" disabled={state === "busy"} onClick={async () => { setState("busy"); try { const r = await api<{ email?: string }>("POST", "/api/fbo/verify-resend"); setState(`Sent to ${r.email || "your email"}`); } catch (e: any) { setState(e.message); } }} data-testid="button-resend-verify">
+        {state && state !== "busy" ? state : "Resend the link"}
+      </button>
     </div>
   );
 }

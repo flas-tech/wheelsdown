@@ -25,7 +25,8 @@ import { registerAiPicks, fillStop, aiPrefOf, programsOf, claimAiPick, checkFirs
 import { registerSimilar } from "./similar";
 import { registerLayover } from "./layover";
 import { registerLounge } from "./lounge";
-import { registerFbo, fboHiddenAdIds } from "./fbo";
+import { registerFbo, fboHiddenAdIds, recordFboReferral, fboPublicName } from "./fbo";
+import { fboRecsForSpot } from "./fboSpots";
 import { registerMyCrew, requestFromInvite, forgetMember } from "./mycrew";
 import { registerPush, forgetPush } from "./push";
 import { registerDm, forgetDm } from "./dm";
@@ -147,6 +148,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const u = await storage.createUser(p.data);
       // crew invite link (?ref=..&crew=1): the inviter's crew request is waiting for the new member to accept
       if (p.data.crewInvite && (u as any).referredBy) await requestFromInvite((u as any).referredBy as number, u.id);
+      if (req.body?.fbo) await recordFboReferral(req.body.fbo, u.id); // signed up after scanning an FBO's QR code
       if (!isTestSignup(u.handle, u.email)) {
         track(req, "signup");
         // one line per sign-up so a missing referral can be traced later
@@ -289,7 +291,14 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       let edit = null; try { edit = raw?.pendingEdit ? JSON.parse(raw.pendingEdit) : null; } catch { /* ignore */ }
       mod = { status: s.status, state: raw?.modState || "", note: (raw?.modNote || "").replace(/^\[[a-z_]+\]\s*/, ""), pendingEdit: edit };
     }
-    res.json({ spot: s, reviews: await storage.listReviewsWithVotes(s.id, v), mod });
+    const base = APP_URL || `${req.protocol}://${req.get("host")}`;
+    res.json({ spot: s, reviews: await storage.listReviewsWithVotes(s.id, v), mod, fbo: await fboRecsForSpot(s.id, base) });
+  });
+  // "Welcome from <FBO>" prompt in the crew app after a QR scan (fbo=<slug> in the link)
+  app.get("/api/fbo-public/:slug", async (req, res) => {
+    const f = await fboPublicName(String(req.params.slug));
+    if (!f) return res.status(404).json({ message: "Not found" });
+    res.json(f);
   });
 
   // Up/down vote on a listing or review. value: 1, -1, or 0 to clear. One vote per account per target.
@@ -701,7 +710,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   // ---------- admin ----------
   registerFeedback(app, { userOf, requireAdmin });
-  registerFbo(app, { requireAdmin }); // FBO portal beta: separate accounts (fbo_users), never on the leaderboard, invite-only
+  registerFbo(app, { requireAdmin, spots: { applyCategoryRules, ensureAirport, milesFromAirport } }); // FBO portal: separate accounts (fbo_users), never on the leaderboard
   registerCheckins(app, { requireUser, userOf });
   registerAiPicks(app, { requireAdmin, requireUser, userOf });
   registerOps(app, { requireAdmin, userOf });

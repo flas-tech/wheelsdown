@@ -1,5 +1,5 @@
 import { startTourForNewMember } from "@/lib/tour";
-import { pendingRef, clearRef } from "@/lib/referral";
+import { pendingRef, clearRef, pendingFbo, clearFboRef } from "@/lib/referral";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient, setAuthToken, getAuthToken, IS_STATIC } from "@/lib/queryClient";
@@ -164,13 +164,13 @@ function AuthDialog({ open, onOpenChange, reason, onAuthed }: { open: boolean; o
         const r = await (await apiRequest("POST", "/api/auth/forgot", { email })).json();
         setNotice(r.message); setBusy(false); return;
       }
-      const body = mode === "signup" ? { handle, password, displayName, crewRole, homeBase, anonymous, email, acceptTerms: true, ref: pendingRef() ?? refId } : { handle, password };
+      const body = mode === "signup" ? { handle, password, displayName, crewRole, homeBase, anonymous, email, acceptTerms: true, ref: pendingRef() ?? refId, fbo: pendingFbo() } : { handle, password };
       const res = await apiRequest("POST", mode === "signup" ? "/api/auth/signup" : "/api/auth/login", body);
       const { token, me } = await res.json();
       setAuthToken(token);
       queryClient.setQueryData(["/api/me"], me);
       setPassword("");
-      if (mode === "signup") clearRef();
+      if (mode === "signup") { clearRef(); clearFboRef(); }
       onAuthed();
       if (mode === "signup") startTourForNewMember();
       if (mode === "signup" && me?.wrightNo) {

@@ -150,9 +150,23 @@ export type FboAccount = {
   address: string; about: string; status: "active" | "suspended"; createdAt: number;
 };
 export type FboUser = { id: number; fboId: number; email: string; name: string; role: FboRole; status: string; createdAt: number; lastLoginAt: number | null };
+/** One FBO recommendation: a link from the FBO to a shared Wheelsdown listing (spots table), plus the FBO's own note.
+ *  The listing itself exists once; any number of FBOs (and crews) can stand behind it. `id` is the recommendation id. */
 export type FboPlace = {
-  id: number; category: FboCategory; name: string; address: string; phone: string; website: string; notes: string;
+  id: number; spotId: number; category: FboCategory; name: string; address: string; website: string; phone: string; notes: string;
   crewRate: string; distance: string; favorite: boolean; sort: number; hidden: boolean; updatedAt: number; updatedBy: string;
+};
+/** A listing at the FBO's airport, as shown in the portal's checklist. `rec` is set when this FBO recommends it. */
+export type FboSpot = {
+  spotId: number; category: FboCategory; name: string; address: string; website: string; description: string;
+  costLevel: number | null; pace: string | null; miles: number | null; status: string;
+  crew: { ratings: number; avg: number | null; goArounds: number };
+  addedBy: "you" | "crew" | "fbo"; otherFbos: number; canEdit: boolean;
+  rec: (Omit<FboPlace, "spotId" | "category" | "name" | "address" | "website">) | null;
+};
+export type FboSpotInput = {
+  category: FboCategory; name: string; address?: string; website?: string; description?: string; crewTip?: string;
+  costLevel?: number | null; pace?: string | null; lat?: number | null; lng?: number | null; placeRef?: string | null; tags?: string[];
 };
 export type FboOffer = { id: number; placeId: number | null; title: string; code: string; details: string; expiresOn: string; active: boolean; updatedAt: number; updatedBy: string };
 export type FboIntel = Record<string, { value: string; updatedAt: number; updatedBy: string }>;

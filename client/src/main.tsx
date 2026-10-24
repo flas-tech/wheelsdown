@@ -1,12 +1,13 @@
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
-import { captureRef } from "./lib/referral";
+import { captureRef, captureFboRef } from "./lib/referral";
 import { installErrorReporting } from "./lib/errorReport";
 import { installUpdateCheck } from "./lib/update";
 import { installViewportFix } from "./lib/viewportFix";
 
 captureRef();
+captureFboRef();
 installErrorReporting();
 installUpdateCheck();
 installViewportFix();

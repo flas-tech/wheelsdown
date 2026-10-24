@@ -37,6 +37,7 @@ import { ShareButton } from "@/lib/share";
 import { trackPage } from "@/lib/metrics";
 import { BriefListPage, BriefEditorPage, SharedBriefPage } from "@/pages/brief";
 import { AuthProvider, useAuth, Insignia } from "@/lib/auth";
+import { FboWelcome } from "@/components/FboWelcome";
 import { CrewAvatar } from "@/lib/aircraft";
 import { tierFor } from "@shared/tiers";
 import { TabDot } from "@/lib/tabDots";
@@ -159,6 +160,7 @@ function Shell() {
         )}
       </main>
       <TourHost />
+      <FboWelcome />
       <UpdateBar />
       <PushHost unread={unread} />
       <DmKeyHost />

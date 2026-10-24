@@ -9,7 +9,7 @@ export function setFboToken(t: string) {
   try { t ? localStorage.setItem(KEY, t) : localStorage.removeItem(KEY); } catch { /* private mode */ }
 }
 
-export class ApiError extends Error { constructor(public status: number, message: string) { super(message); } }
+export class ApiError extends Error { constructor(public status: number, message: string, public body?: any) { super(message); } }
 
 export async function api<T = any>(method: string, url: string, data?: unknown): Promise<T> {
   const res = await fetch(url, {
@@ -22,7 +22,7 @@ export async function api<T = any>(method: string, url: string, data?: unknown):
   try { body = text ? JSON.parse(text) : null; } catch { body = text; }
   if (!res.ok) {
     if (res.status === 401 && TOKEN && !url.includes("/login")) { setFboToken(""); fboQuery.clear(); window.dispatchEvent(new Event("fbo-signed-out")); }
-    throw new ApiError(res.status, (body && body.message) || res.statusText || "Something went wrong");
+    throw new ApiError(res.status, (body && body.message) || res.statusText || "Something went wrong", body);
   }
   return body as T;
 }

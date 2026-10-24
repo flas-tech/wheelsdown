@@ -23,13 +23,41 @@ import { useAuth, useCrewIndex, TierChip } from "@/lib/auth";
 import { POINTS, publicName } from "@shared/tiers";
 
 
+type FboRec = { fbo: string; icao: string; url: string; note: string; crewRate: string; favorite: boolean; updatedAt: number; offers: { title: string; code: string; details: string; expiresOn: string }[] };
+/** FBOs that recommend this place. Provided by the FBO, kept apart from crew ratings and never counted in them. */
+function FboRecs({ recs }: { recs: FboRec[] }) {
+  return (
+    <section className="space-y-2" data-testid="section-fbo-recs">
+      {recs.map((r, i) => (
+        <div key={i} className="rounded-2xl border border-card-border bg-card p-4">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm font-semibold">Recommended by {r.fbo}{r.favorite ? " · a desk favorite" : ""}</p>
+            <a href={r.url} target="_blank" rel="noopener noreferrer" className="shrink-0 text-xs font-medium text-primary" data-testid={`link-fbo-page-${i}`}>FBO picks</a>
+          </div>
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Provided by the FBO at {r.icao}</p>
+          {r.crewRate && <p className="mt-2 inline-block rounded-md bg-primary/15 px-2 py-0.5 text-xs font-medium">{r.crewRate}</p>}
+          {r.note && <p className="mt-2 text-sm leading-relaxed">{r.note}</p>}
+          {r.offers.map((o, k) => (
+            <div key={k} className="mt-2 rounded-xl border border-dashed border-primary/60 p-2.5 text-sm">
+              <p className="font-semibold">{o.title}</p>
+              {o.code && <p className="font-code mt-0.5 text-base font-bold tracking-wider">{o.code}</p>}
+              {o.details && <p className="text-xs text-muted-foreground">{o.details}</p>}
+              {o.expiresOn && <p className="text-[11px] text-muted-foreground">Good through {o.expiresOn}</p>}
+            </div>
+          ))}
+        </div>
+      ))}
+    </section>
+  );
+}
+
 export default function SpotPage() {
   const [, params] = useRoute("/spot/:id");
   const id = params?.id;
   const crew = useCrewIndex();
   const { me } = useAuth();
   const [editing, setEditing] = useState<number | null>(null);
-  const { data, isLoading, isError } = useQuery<{ spot: SpotWithStats; reviews: ReviewWithVotes[]; mod?: ModInfo }>({
+  const { data, isLoading, isError } = useQuery<{ spot: SpotWithStats; reviews: ReviewWithVotes[]; mod?: ModInfo; fbo?: FboRec[] }>({
     queryKey: ["/api/spots", id],
     // poll while the automatic check is running on something the viewer posted
     refetchInterval: (q) => { const d = q.state.data; return d && (d.mod?.state === "checking" || d.mod?.state === "awaiting" || d.reviews.some((r) => (r.modState === "checking" || r.modState === "awaiting") && r.userId === me?.id)) ? 4000 : false; },
@@ -42,7 +70,7 @@ export default function SpotPage() {
   if (isLoading) return <div className="space-y-4"><Skeleton className="h-8 w-40" /><Skeleton className="h-40 rounded-2xl" /><Skeleton className="h-24 rounded-2xl" /></div>;
   if (isError || !data) return <p className="text-sm text-muted-foreground">This spot isn't available. <Link href="/" className="text-primary underline">Back to search</Link></p>;
 
-  const { spot, reviews: allReviews, mod } = data;
+  const { spot, reviews: allReviews, mod, fbo: fboRecs = [] } = data;
   const went = () => noteVisit({ id: spot.id, name: spot.name, icao: spot.icao });
   const myReview = me ? allReviews.find((r) => r.userId === me.id && r.status !== "rejected") : undefined; // one rating per member per place
   const reviews = allReviews.filter((r) => r.status === "live"); // the author's own unpublished ratings are listed but don't count
@@ -120,9 +148,11 @@ export default function SpotPage() {
           <div className="flex flex-wrap gap-1.5">{tags.map((t) => <span key={t} className="rounded-md bg-muted px-2 py-0.5 text-xs">{t}</span>)}</div>
         )}
         <p className="text-xs text-muted-foreground flex items-center gap-1.5 flex-wrap">Added by {spot.userId && crew.get(spot.userId) && !crew.get(spot.userId)!.anonymous
-            ? <Link href={`/crew/${spot.userId}`} className="underline-offset-2 hover:underline text-foreground" data-testid="link-spot-author">{spot.submittedBy}</Link> : (spot.submittedBy || "crew")}
+            ? <Link href={`/crew/${spot.userId}`} className="underline-offset-2 hover:underline text-foreground" data-testid="link-spot-author">{spot.submittedBy}</Link> : (spot.submittedBy || "crew")}{(spot as any).source === "fbo" && <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase">FBO</span>}
           {spot.userId && crew.get(spot.userId) && <TierChip tierId={crew.get(spot.userId)!.tierId} />}</p>
       </section>
+
+      {fboRecs.length > 0 && <FboRecs recs={fboRecs} />}
 
       <DirectionsButton place={spot} size="lg" testId="button-spot-directions" />
 

@@ -18,9 +18,10 @@ type Row = {
   id: number; slug: string; name: string; icao: string; airportName: string; status: string; createdAt: number; createdBy: string; publicUrl: string;
   lastActiveAt: number | null; lastLoginAt: number | null; usersActive: number; usersInvited: number; places: number; favorites: number; offersActive: number; intel: number;
   ads: number; adsActive: number; adImpressions: number; adClicks: number; views7: number; views30: number; qr30: number; devices30: number; edits24: number; prints: number; imports: number;
+  addedSpots: number; referrals: number; ownerEmail: string; signupRef: string; verified: boolean; signupSource: string;
   flags: string[]; idle: boolean;
 };
-type List = { adsServing: boolean; fboUrl: string; accounts: Row[] };
+type List = { adsServing: boolean; signupOpen: boolean; signupUrl: string; fboUrl: string; accounts: Row[] };
 
 export function FboAdminPanel({ api }: { api: AdmApi }) {
   const { adm, admGet } = api;
@@ -29,6 +30,7 @@ export function FboAdminPanel({ api }: { api: AdmApi }) {
   const [creating, setCreating] = useState(false);
   const { toast } = useToast();
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["/api/admin/fbo"] });
+  const signup = useMutation({ mutationFn: async (v: boolean) => (await adm("PUT", "/api/admin/fbo-settings", { signupOpen: v })).json(), onSuccess: refresh });
   const serving = useMutation({ mutationFn: async (v: boolean) => (await adm("PUT", "/api/admin/fbo-settings", { adsServing: v })).json(), onSuccess: refresh });
   if (open != null) return <FboDetail api={api} id={open} onBack={() => { setOpen(null); refresh(); }} />;
   const rows = data?.accounts || [];
@@ -38,9 +40,15 @@ export function FboAdminPanel({ api }: { api: AdmApi }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold">FBO portal <span className="ml-1 rounded bg-primary/20 px-1.5 py-0.5 text-[10px] font-bold uppercase">Beta</span></h2>
-          <p className="max-w-2xl text-xs text-muted-foreground">Invite-only. FBO logins are separate from crew accounts: they never earn points or appear on the leaderboard, and nothing in the crew app links to the portal. Sign-in: <a className="underline" href={data?.fboUrl} target="_blank" rel="noreferrer">{data?.fboUrl}</a></p>
+          <p className="max-w-2xl text-xs text-muted-foreground">FBO logins are separate from crew accounts: they never earn points or appear on the leaderboard, and nothing in the crew app links to the portal. Their picks are check marks on the shared listings. Sign-in: <a className="underline" href={data?.fboUrl} target="_blank" rel="noreferrer">{data?.fboUrl}</a></p>
         </div>
         <button className={btnPrimary} onClick={() => setCreating(true)} data-testid="button-fbo-create"><Plus className="h-4 w-4" />New FBO account</button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-card-border bg-card p-3">
+        <Switch checked={!!data?.signupOpen} onCheckedChange={(v) => signup.mutate(v)} data-testid="switch-fbo-signup" />
+        <div className="min-w-0 text-sm"><p className="font-medium">Open sign-up link</p><p className="text-xs text-muted-foreground">{data?.signupOpen ? <>On: any FBO can create an account at <a className="break-all underline" href={data?.signupUrl} target="_blank" rel="noreferrer" data-testid="link-fbo-signup-url">{data?.signupUrl}</a>. Its crew page publishes after the email is confirmed.</> : "Off: only accounts you create here can sign in."}</p></div>
+        <button className="ml-auto rounded-lg border border-border px-2.5 py-1 text-xs hover-elevate" onClick={() => data?.signupUrl && navigator.clipboard.writeText(data.signupUrl).catch(() => {})} data-testid="button-copy-signup-url">Copy link</button>
       </div>
 
       <div className="flex flex-wrap items-center gap-3 rounded-xl border border-card-border bg-card p-3">
@@ -59,16 +67,17 @@ export function FboAdminPanel({ api }: { api: AdmApi }) {
         <div className="overflow-x-auto rounded-xl border border-card-border bg-card">
           <table className="w-full min-w-[920px] text-sm">
             <thead className="border-b border-border text-left text-xs text-muted-foreground">
-              <tr>{["FBO", "Status", "People", "Last active", "Picks · fav · deals", "Ads (running) · imp · clicks", "Views 7d / 30d · QR", "Edits 24h", "Flags", ""].map((h) => <th key={h} className="px-3 py-2 font-medium">{h}</th>)}</tr>
+              <tr>{["FBO", "Status", "People", "Last active", "Picks · fav · deals", "Crew sign-ups", "Ads (running) · imp · clicks", "Views 7d / 30d · QR", "Edits 24h", "Flags", ""].map((h) => <th key={h} className="px-3 py-2 font-medium">{h}</th>)}</tr>
             </thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id} className="cursor-pointer border-b border-border last:border-0 align-top hover:bg-muted/40" onClick={() => setOpen(r.id)} data-testid={`row-fbo-${r.id}`}>
-                  <td className="px-3 py-2.5"><p className="font-medium">{r.name}</p><p className="text-xs text-muted-foreground">{r.icao} · /f/{r.slug}</p></td>
+                  <td className="px-3 py-2.5"><p className="font-medium">{r.name}</p><p className="text-xs text-muted-foreground">{r.icao} · /f/{r.slug}</p><p className="text-[11px] text-muted-foreground">{r.signupSource === "self" ? "Self sign-up" : "Admin invite"}{r.signupRef ? ` · via ${r.signupRef}` : ""}{r.ownerEmail ? ` · ${r.ownerEmail}` : ""}</p>{!r.verified && <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-400">Email not confirmed</p>}</td>
                   <td className="px-3 py-2.5"><span className={cn("rounded px-1.5 py-0.5 text-[11px] font-semibold", r.status === "active" ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" : "bg-destructive/15 text-destructive")}>{r.status === "active" ? "Active" : "Paused"}</span>{r.idle && <p className="mt-1 text-[11px] text-muted-foreground">Never signed in</p>}</td>
                   <td className="px-3 py-2.5 tabular">{r.usersActive}{r.usersInvited ? <span className="text-xs text-muted-foreground"> +{r.usersInvited} invited</span> : null}</td>
                   <td className="px-3 py-2.5 text-xs">{ago(r.lastActiveAt || r.lastLoginAt)}</td>
-                  <td className="px-3 py-2.5 tabular">{r.places} · {r.favorites} · {r.offersActive}<p className="text-[11px] text-muted-foreground">{r.intel} intel fields · {r.imports} imports</p></td>
+                  <td className="px-3 py-2.5 tabular">{r.places} · {r.favorites} · {r.offersActive}<p className="text-[11px] text-muted-foreground">{r.intel} intel fields · {r.imports} imports · {r.addedSpots} new listings</p></td>
+                  <td className="px-3 py-2.5 tabular">{r.referrals}</td>
                   <td className="px-3 py-2.5 tabular">{r.ads} ({r.adsActive}) · {r.adImpressions} · {r.adClicks}</td>
                   <td className="px-3 py-2.5 tabular">{r.views7} / {r.views30} · {r.qr30}<p className="text-[11px] text-muted-foreground">{r.prints} prints/downloads</p></td>
                   <td className={cn("px-3 py-2.5 tabular", r.edits24 > 100 && "font-semibold text-destructive")}>{r.edits24}</td>

@@ -88,6 +88,36 @@ export function Poster({ svg, name, icao, airport, url, favorites, offers }: { s
   );
 }
 
+/** US Letter sign for the pilot lounge: a self-serve kiosk crews can use without the desk. */
+export function LoungeSign({ svg, name, icao, airport, url, offers }: { svg: string; name: string; icao: string; airport: string; url: string; favorites: FboPlace[]; offers: number }) {
+  const steps = ["Open your phone camera", "Point it at the code", "Tap the link: no app or sign-in needed"];
+  return (
+    <div style={{ width: "8.5in", height: "11in", background: NAVY, color: "#fff", position: "relative", overflow: "hidden", fontFamily: '"General Sans", system-ui, sans-serif' }}>
+      <div style={{ padding: "0.55in 0.6in 0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "7pt", fontSize: "11pt", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase" }}><MiniLogo size={24} light />Wheelsdown</div>
+        <div style={{ background: GOLD, color: INK, fontWeight: 700, fontSize: "10.5pt", letterSpacing: "0.08em", textTransform: "uppercase", borderRadius: "999px", padding: "3pt 11pt" }}>Crew self-serve</div>
+      </div>
+      <div style={{ padding: "0.35in 0.6in 0" }}>
+        <div style={{ fontSize: "40pt", fontWeight: 700, lineHeight: 1.04 }}>Planning your layover?</div>
+        <div style={{ marginTop: "8pt", fontSize: "16pt", color: "#C9D1DE", lineHeight: 1.3 }}>Scan for {name}'s picks: where to eat, where to stay{offers ? ", crew discounts" : ""} and what crews rate near {icao}.</div>
+      </div>
+      <div style={{ display: "flex", justifyContent: "center", marginTop: "0.4in" }}>
+        <div style={{ background: "#fff", padding: "0.24in", borderRadius: "0.24in", border: `4pt solid ${GOLD}` }}><Qr svg={svg} size="4.3in" /></div>
+      </div>
+      <div style={{ display: "flex", justifyContent: "center", gap: "0.3in", marginTop: "0.4in" }}>
+        {steps.map((t, i) => (
+          <div key={t} style={{ width: "2.15in", display: "flex", gap: "7pt", alignItems: "flex-start", fontSize: "13pt", lineHeight: 1.25 }}>
+            <span style={{ flex: "0 0 auto", width: "20pt", height: "20pt", borderRadius: "999px", background: GOLD, color: INK, fontWeight: 700, display: "grid", placeItems: "center", fontSize: "11pt" }}>{i + 1}</span><span>{t}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ position: "absolute", left: "0.6in", right: "0.6in", bottom: "0.45in", borderTop: "1px solid rgba(255,255,255,.2)", paddingTop: "0.14in", display: "flex", justifyContent: "space-between", gap: "0.3in", fontSize: "10pt", color: "#C9D1DE" }}>
+        <span style={{ whiteSpace: "nowrap" }}>{shortUrl(url)}</span><span style={{ textAlign: "right" }}>{icao}{airport ? ` · ${airport}` : ""} · Recommendations provided by {name}</span>
+      </div>
+    </div>
+  );
+}
+
 function usePrintData() {
   const { me } = useMe();
   const { data: places } = useQuery<FboPlace[]>({ queryKey: ["/api/fbo/places"], queryFn: get("/api/fbo/places") });
@@ -152,6 +182,22 @@ export function QrPage() {
               <Link href="/print/poster" className={cn(btnPrimary, "mt-4")} data-testid="link-print-poster"><Printer className="h-4 w-4" />Print or save PDF</Link>
             </div>
           </Card>
+          <Card className="flex flex-col md:col-span-2 md:flex-row md:items-center md:gap-6">
+            <div className="flex justify-center md:order-2"><Scaled w={8.5} h={11} scale={0.3}><LoungeSign {...d} /></Scaled></div>
+            <div className="mt-3 flex-1 md:mt-0">
+              <p className="text-sm font-semibold">Pilot lounge self-serve sign</p>
+              <p className="text-xs text-muted-foreground">US Letter, dark, made to be read across the room. Put it on the lounge wall or a table tent so crews can help themselves when the desk is busy.</p>
+              <Link href="/print/lounge" className={cn(btnPrimary, "mt-4")} data-testid="link-print-lounge"><Printer className="h-4 w-4" />Print or save PDF</Link>
+              <div className="mt-4 rounded-lg border border-border p-3 text-xs text-muted-foreground">
+                <p className="font-semibold text-foreground">Have a spare tablet?</p>
+                <p className="mt-1">Open your kiosk page on it and leave it in the lounge. It shows your picks with a QR code at the top so crews can take the list with them, and it scrolls back to the top when nobody is using it.</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <a className={btn} href={me.account.kioskUrl} target="_blank" rel="noreferrer" onClick={() => logged("kiosk")} data-testid="link-kiosk"><ExternalLink className="h-4 w-4" />Open kiosk page</a>
+                  <button className={btn} onClick={async () => { try { await navigator.clipboard.writeText(me.account.kioskUrl); toast({ title: "Kiosk link copied" }); } catch { /* */ } }}><Copy className="h-4 w-4" />Copy kiosk link</button>
+                </div>
+              </div>
+            </div>
+          </Card>
         </div>
       </div>
     </>
@@ -172,6 +218,7 @@ const PAGE: Record<string, { size: string; w: number; h: number; label: string }
   card: { size: "3.5in 2in", w: 3.5, h: 2, label: "Business card" },
   sheet: { size: "letter", w: 8.5, h: 11, label: "Sheet of 10 cards" },
   poster: { size: "letter", w: 8.5, h: 11, label: "Counter sign" },
+  lounge: { size: "letter", w: 8.5, h: 11, label: "Pilot lounge sign" },
 };
 
 export function PrintPage({ kind }: { kind: string }) {
@@ -180,7 +227,7 @@ export function PrintPage({ kind }: { kind: string }) {
   const [cut, setCut] = useState(true);
   useEffect(() => { document.title = `${d.name} · ${PAGE[k].label}`; return () => { document.title = "Wheelsdown for FBOs"; }; }, [d.name, k]);
   const print = () => { api("POST", "/api/fbo/printed", { kind: k }).catch(() => {}); window.print(); };
-  const body = k === "card" ? <BusinessCard {...d} /> : k === "sheet" ? <CardSheet {...d} cut={cut} /> : <Poster {...d} />;
+  const body = k === "card" ? <BusinessCard {...d} /> : k === "sheet" ? <CardSheet {...d} cut={cut} /> : k === "lounge" ? <LoungeSign {...d} /> : <Poster {...d} />;
   return (
     <div className="min-h-screen bg-muted/40 print:bg-white">
       <style>{`@page { size: ${PAGE[k].size}; margin: 0; } @media print { html, body { background: #fff !important; } .print-area { box-shadow: none !important; margin: 0 !important; } * { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }`}</style>

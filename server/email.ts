@@ -5,7 +5,7 @@ export async function sendEmail(to: string, subject: string, text: string, html?
   const key = process.env.RESEND_API_KEY;
   const from = process.env.EMAIL_FROM || "Wheelsdown <onboarding@resend.dev>";
   if (!key) {
-    if (process.env.NODE_ENV !== "production") console.log(`[email:dev] to=${to} subject=${subject}\n${text}`);
+    if (process.env.NODE_ENV !== "production" || process.env.EMAIL_DEV_LOG === "1") console.log(`[email:dev] to=${to} subject=${subject}\n${text}`);
     else console.warn("[email] RESEND_API_KEY not set; email not sent");
     return false;
   }
