@@ -23,7 +23,7 @@ import { useAuth, useCrewIndex, TierChip } from "@/lib/auth";
 import { POINTS, publicName } from "@shared/tiers";
 
 
-type FboRec = { fbo: string; icao: string; url: string; note: string; crewRate: string; favorite: boolean; updatedAt: number; offers: { title: string; code: string; details: string; expiresOn: string }[] };
+type FboRec = { fbo: string; icao: string; url: string; note: string; crewRate: string; favorite: boolean; level?: "listed" | "recommended"; updatedAt: number; offers: { title: string; code: string; details: string; expiresOn: string }[] };
 /** FBOs that recommend this place. Provided by the FBO, kept apart from crew ratings and never counted in them. */
 function FboRecs({ recs }: { recs: FboRec[] }) {
   return (
@@ -31,7 +31,7 @@ function FboRecs({ recs }: { recs: FboRec[] }) {
       {recs.map((r, i) => (
         <div key={i} className="rounded-2xl border border-card-border bg-card p-4">
           <div className="flex items-center justify-between gap-2">
-            <p className="text-sm font-semibold">Recommended by {r.fbo}{r.favorite ? " · a desk favorite" : ""}</p>
+            <p className="text-sm font-semibold">{r.level === "listed" ? `Listed by ${r.fbo}` : `Recommended by ${r.fbo}`}{r.favorite ? " · a desk favorite" : ""}</p>
             <a href={r.url} target="_blank" rel="noopener noreferrer" className="shrink-0 text-xs font-medium text-primary" data-testid={`link-fbo-page-${i}`}>FBO picks</a>
           </div>
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Provided by the FBO at {r.icao}</p>
@@ -112,8 +112,8 @@ export default function SpotPage() {
           </span>
           {spot.goArounds > 0 && <GoAroundBadge count={spot.goArounds} />}
           {spot.source === "ai" && <AiAddedTag rated={!!spot.reviewCount} />}
-          {spot.source === "fbo" ? <FboPickTag by={spot.submittedBy} />
-            : fboRecs.length > 0 ? <>{spot.source !== "ai" && <PickTag ai={false} />}<FboRecTag names={fboRecs.slice(0, 3).map((r) => r.fbo)} n={fboRecs.length} /></> : null}
+          {(() => { const tag = fboRecs.length > 0 ? <FboRecTag names={fboRecs.slice(0, 3).map((r) => r.fbo)} n={fboRecs.length} recommended={fboRecs.some((r) => r.level !== "listed")} /> : null;
+            return spot.source === "fbo" ? <><FboPickTag by={spot.submittedBy} />{tag}</> : tag ? <>{spot.source !== "ai" && <PickTag ai={false} />}{tag}</> : null; })()}
           <button type="button" onClick={() => document.getElementById("rate")?.scrollIntoView({ behavior: "smooth", block: "center" })} className="text-xs font-medium text-primary" data-testid="button-jump-rate">Rate it</button>
         </div>
         <div className="mt-3"><CheckInButton spotId={spot.id} name={spot.name} /></div>

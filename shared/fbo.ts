@@ -58,6 +58,7 @@ export const FBO_IMPORT_COLUMNS: Record<string, string[]> = {
   crewRate: ["crewrate", "rate", "crewdiscount", "price", "pricing"],
   distance: ["distance", "miles", "drive", "drivetime", "minutes"],
   favorite: ["favorite", "favourite", "fav", "star", "starred", "top"],
+  level: ["level", "listing", "recommend", "recommended", "listorrecommend", "listonly"],
   code: ["code", "discountcode", "couponcode", "promocode", "coupon", "promo", "discount"],
   offer: ["offer", "deal", "discountdetails", "coupondetails", "offerdetails"],
   expires: ["expires", "expiration", "expiry", "expireson", "validuntil", "enddate"],
@@ -72,6 +73,18 @@ export function categoryFrom(v: string): FboCategory | null {
   if (/^(stay|hotel|motel|inn|lodg|resort|suite|accom|bnb|b&b)/.test(s) || /hotel|lodging|motel/.test(s)) return "stay";
   if (/^(eat|food|rest|dine|dining|cafe|coffee|bar|pub|grill|bistro|pizza|deli|bakery|brew|meal|lunch|breakfast|dinner)/.test(s) || /restaurant|food|dining/.test(s)) return "eat";
   if (/^(do|activity|activities|thing|fun|attraction|shop|gym|fitness|park|museum|golf|spa|tour)/.test(s)) return "do";
+  return null;
+}
+
+/** How an FBO stands behind a listing: "listed" = close and decent (List only), "recommended" = the better options (List and recommend). */
+export type FboLevel = "listed" | "recommended";
+export const FBO_LEVEL_LABEL: Record<FboLevel, string> = { listed: "List only", recommended: "List and recommend" };
+/** Spreadsheet value -> level. Blank means "use the default chosen at upload". */
+export function levelFrom(v: string): FboLevel | null {
+  const s = v.toLowerCase().trim();
+  if (!s) return null;
+  if (/^(n|no|false|0|list|listed|list only|listonly|basic)$/.test(s)) return "listed";
+  if (/^(y|yes|true|1|x|rec|recommend|recommended|list and recommend|top|best)$/.test(s)) return "recommended";
   return null;
 }
 
@@ -105,7 +118,7 @@ export function parseDelimited(text: string): string[][] {
 
 export type FboImportRow = {
   name: string; category: FboCategory | null; address: string; phone: string; website: string; notes: string;
-  crewRate: string; distance: string; favorite: boolean; code: string; offer: string; expires: string;
+  crewRate: string; distance: string; favorite: boolean; level: FboLevel | null; code: string; offer: string; expires: string;
 };
 
 /** Map a parsed sheet (first row = headers) onto import rows. `defaultCategory` fills rows with no category column. */
@@ -124,7 +137,7 @@ export function mapImport(table: string[][], defaultCategory: FboCategory | null
     name: get(r, "name"),
     category: idx.category != null ? categoryFrom(get(r, "category")) : defaultCategory,
     address: get(r, "address"), phone: get(r, "phone"), website: get(r, "website"), notes: get(r, "notes"),
-    crewRate: get(r, "crewRate"), distance: get(r, "distance"), favorite: truthy(get(r, "favorite")),
+    crewRate: get(r, "crewRate"), distance: get(r, "distance"), favorite: truthy(get(r, "favorite")), level: levelFrom(get(r, "level")),
     code: get(r, "code"), offer: get(r, "offer"), expires: get(r, "expires"),
   })).filter((r) => r.name || r.address);
   return { rows, matched, unknown };
@@ -143,8 +156,11 @@ export function nameLikeness(a: string, b: string): number {
   if (Math.min(ka.length, kb.length) >= 4 && (ka.includes(kb) || kb.includes(ka))) return 80;
   const wa = words(a), wb = new Set(words(b));
   if (!wa.length || !wb.size) return ka.slice(0, 5) === kb.slice(0, 5) ? 45 : 0;
-  const shared = wa.filter((w) => wb.has(w) || Array.from(wb).some((x) => x.length >= 5 && w.length >= 5 && (x.startsWith(w) || w.startsWith(x)))).length;
+  const hits = wa.filter((w) => wb.has(w) || Array.from(wb).some((x) => x.length >= 5 && w.length >= 5 && (x.startsWith(w) || w.startsWith(x))));
+  const shared = hits.length;
   if (!shared) return ka.slice(0, 5) === kb.slice(0, 5) ? 45 : 0;
+  // one common word only counts when it's a real name word ("Teterboro"), not "new" or "bay", and is half the name
+  if (shared === 1 && (hits[0].length < 5 || shared / Math.max(wa.length, wb.size) < 0.5)) return ka.slice(0, 5) === kb.slice(0, 5) ? 45 : 0;
   return Math.round(40 + 40 * (shared / Math.max(wa.length, wb.size)));
 }
 /** Listings that may already be the place being typed, best first. */
@@ -174,7 +190,7 @@ export type FboUser = { id: number; fboId: number; email: string; name: string; 
  *  The listing itself exists once; any number of FBOs (and crews) can stand behind it. `id` is the recommendation id. */
 export type FboPlace = {
   id: number; spotId: number; category: FboCategory; name: string; address: string; website: string; phone: string; notes: string;
-  crewRate: string; distance: string; favorite: boolean; sort: number; hidden: boolean; updatedAt: number; updatedBy: string;
+  crewRate: string; distance: string; favorite: boolean; level: FboLevel; sort: number; hidden: boolean; updatedAt: number; updatedBy: string;
 };
 /** A listing at the FBO's airport, as shown in the portal's checklist. `rec` is set when this FBO recommends it. */
 export type FboSpot = {

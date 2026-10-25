@@ -32,7 +32,8 @@ CREATE TABLE IF NOT EXISTS fbo_recs (id serial PRIMARY KEY, fbo_id integer NOT N
   created_at bigint NOT NULL DEFAULT 0, updated_at bigint NOT NULL DEFAULT 0, updated_by text NOT NULL DEFAULT '');
 CREATE UNIQUE INDEX IF NOT EXISTS fbo_recs_pair ON fbo_recs (fbo_id, spot_id);
 CREATE INDEX IF NOT EXISTS fbo_recs_spot_idx ON fbo_recs (spot_id);
-ALTER TABLE spots ADD COLUMN IF NOT EXISTS fbo_id integer
+ALTER TABLE spots ADD COLUMN IF NOT EXISTS fbo_id integer;
+ALTER TABLE fbo_recs ADD COLUMN IF NOT EXISTS level text NOT NULL DEFAULT 'recommended'
 `;
 
 export type SpotHelpers = {
@@ -60,16 +61,23 @@ function defaults(cat: FboCategory, costLevel: unknown, pace: unknown) {
   };
 }
 
+/** "listed" (List only) or "recommended" (List and recommend). A favorite star is the top tier of recommended. */
+const levelOf = (v: unknown, fallback: string) => (v === "listed" || v === "recommended" ? v : fallback === "listed" ? "listed" : "recommended");
 const recFields = (b: any, cur?: any) => {
   const pick = (k: string, col: string, n: number) => (b[k] != null ? clip(b[k], n) : cur ? cur[col] : "");
+  let level = levelOf(b.level, cur ? cur.level : "recommended");
+  let favorite = b.favorite != null ? (b.favorite ? 1 : 0) : cur ? num(cur.favorite) : 0;
+  if (b.favorite && b.level == null) level = "recommended"; // starring implies recommending
+  if (level === "listed") favorite = 0; // List only can't be a favorite
   return {
+    level,
     notes: pick("notes", "notes", FBO_LIMITS.notes), phone: pick("phone", "phone", 40), crewRate: pick("crewRate", "crew_rate", 80),
     distance: pick("distance", "distance", 40),
-    favorite: b.favorite != null ? (b.favorite ? 1 : 0) : cur ? num(cur.favorite) : 0,
+    favorite,
     hidden: b.hidden != null ? (b.hidden ? 1 : 0) : cur ? num(cur.hidden) : 0,
   };
 };
-const recOut = (r: any) => ({ id: num(r.id), notes: r.notes, phone: r.phone, crewRate: r.crew_rate, distance: r.distance, favorite: !!num(r.favorite),
+const recOut = (r: any) => ({ id: num(r.id), notes: r.notes, phone: r.phone, crewRate: r.crew_rate, distance: r.distance, favorite: !!num(r.favorite), level: levelOf(r.level, "recommended"),
   sort: num(r.sort), hidden: !!num(r.hidden), updatedAt: num(r.updated_at), updatedBy: r.updated_by });
 /** The flat "place" shape the rest of the portal (print, discounts) uses. */
 export const placeOut = (r: any) => ({ ...recOut(r), spotId: num(r.spot_id), category: r.category, name: r.name, address: r.address || "", website: r.website || "" });
@@ -81,33 +89,34 @@ export async function recsOf(fboId: number, live = false) {
       (SELECT AVG(v.rating) FROM reviews v WHERE v.spot_id = s.id AND v.status = 'live' AND v.rating > 0) AS avg
     FROM fbo_recs r JOIN spots s ON s.id = r.spot_id
     WHERE r.fbo_id = ${fboId} ${live ? sql`AND r.hidden = 0 AND s.status = 'live'` : sql``} AND s.status <> 'rejected'
-    ORDER BY s.category, r.favorite DESC, r.sort, lower(s.name)`);
+    ORDER BY s.category, r.favorite DESC, (r.level = 'recommended') DESC, r.sort, lower(s.name)`);
 }
 
 /** For crew search results: which listings verified FBOs recommend, so cards can say "FBO recommended". */
-export async function fboRecMap(spotIds: number[]): Promise<Map<number, { n: number; names: string[] }>> {
-  const m = new Map<number, { n: number; names: string[] }>();
+export type FboRecSummary = { n: number; names: string[]; rec: number };
+export async function fboRecMap(spotIds: number[]): Promise<Map<number, FboRecSummary>> {
+  const m = new Map<number, FboRecSummary>();
   if (!spotIds.length) return m;
-  const list = await rows(sql`SELECT r.spot_id, f.name FROM fbo_recs r JOIN fbo_accounts f ON f.id = r.fbo_id
-    WHERE r.hidden = 0 AND f.status = 'active' AND f.verified_at IS NOT NULL ORDER BY r.favorite DESC, r.updated_at DESC`).catch(() => [] as any[]);
+  const list = await rows(sql`SELECT r.spot_id, r.level, f.name FROM fbo_recs r JOIN fbo_accounts f ON f.id = r.fbo_id
+    WHERE r.hidden = 0 AND f.status = 'active' AND f.verified_at IS NOT NULL ORDER BY (r.level = 'recommended') DESC, r.favorite DESC, r.updated_at DESC`).catch(() => [] as any[]);
   const want = new Set(spotIds);
   for (const r of list) {
     const id = num(r.spot_id); if (!want.has(id)) continue;
-    const e = m.get(id) || { n: 0, names: [] }; e.n++; if (e.names.length < 3) e.names.push(String(r.name)); m.set(id, e);
+    const e = m.get(id) || { n: 0, names: [], rec: 0 }; e.n++; if (r.level !== "listed") e.rec++; if (e.names.length < 3) e.names.push(String(r.name)); m.set(id, e);
   }
   return m;
 }
 
 /** For the crew app's listing page: every active FBO that recommends this spot, with its note and live discounts. */
 export async function fboRecsForSpot(spotId: number, appUrl: string) {
-  const list = await rows(sql`SELECT r.id, r.notes, r.crew_rate, r.favorite, r.updated_at, f.id AS fbo_id, f.name, f.slug, f.icao
+  const list = await rows(sql`SELECT r.id, r.notes, r.crew_rate, r.favorite, r.level, r.updated_at, f.id AS fbo_id, f.name, f.slug, f.icao
     FROM fbo_recs r JOIN fbo_accounts f ON f.id = r.fbo_id
-    WHERE r.spot_id = ${spotId} AND r.hidden = 0 AND f.status = 'active' AND f.verified_at IS NOT NULL ORDER BY r.favorite DESC, r.updated_at DESC LIMIT 10`).catch(() => [] as any[]);
+    WHERE r.spot_id = ${spotId} AND r.hidden = 0 AND f.status = 'active' AND f.verified_at IS NOT NULL ORDER BY (r.level = 'recommended') DESC, r.favorite DESC, r.updated_at DESC LIMIT 10`).catch(() => [] as any[]);
   if (!list.length) return [];
   const today = new Date().toISOString().slice(0, 10);
   const offers = await rows(sql`SELECT * FROM fbo_offers WHERE place_id IN (${sql.join(list.map((r) => sql`${num(r.id)}`), sql`, `)}) AND active = 1`).catch(() => [] as any[]);
   return list.map((r) => ({
-    fbo: r.name, icao: r.icao, url: `${appUrl}/f/${r.slug}`, note: r.notes || "", crewRate: r.crew_rate || "", favorite: !!num(r.favorite), updatedAt: num(r.updated_at),
+    fbo: r.name, icao: r.icao, url: `${appUrl}/f/${r.slug}`, note: r.notes || "", crewRate: r.crew_rate || "", favorite: !!num(r.favorite), level: levelOf(r.level, "recommended"), updatedAt: num(r.updated_at),
     offers: offers.filter((o) => num(o.place_id) === num(r.id) && (!o.expires_on || o.expires_on >= today)).map((o) => ({ title: o.title, code: o.code, details: o.details, expiresOn: o.expires_on })),
   }));
 }
@@ -159,13 +168,13 @@ export function registerFboSpots(app: Express, o: { requireFbo: Mw; writeLimit: 
     const cur = await one(sql`SELECT * FROM fbo_recs WHERE fbo_id = ${id} AND spot_id = ${spotId}`);
     const r = recFields(b, cur);
     if (cur) {
-      return one(sql`UPDATE fbo_recs SET notes = ${r.notes}, phone = ${r.phone}, crew_rate = ${r.crewRate}, distance = ${r.distance}, favorite = ${r.favorite},
+      return one(sql`UPDATE fbo_recs SET notes = ${r.notes}, phone = ${r.phone}, crew_rate = ${r.crewRate}, distance = ${r.distance}, favorite = ${r.favorite}, level = ${r.level},
         hidden = ${r.hidden}, updated_at = ${now()}, updated_by = ${c.who(req)} WHERE id = ${num(cur.id)} RETURNING *`);
     }
     const n = await recCount(id);
     if (n >= FBO_LIMITS.places) throw Object.assign(new Error(`Accounts hold up to ${FBO_LIMITS.places} recommendations during the beta.`), { status: 400 });
-    return one(sql`INSERT INTO fbo_recs (fbo_id, spot_id, notes, phone, crew_rate, distance, favorite, hidden, sort, created_at, updated_at, updated_by)
-      VALUES (${id}, ${spotId}, ${r.notes}, ${r.phone}, ${r.crewRate}, ${r.distance}, ${r.favorite}, ${r.hidden}, ${n}, ${now()}, ${now()}, ${c.who(req)}) RETURNING *`);
+    return one(sql`INSERT INTO fbo_recs (fbo_id, spot_id, notes, phone, crew_rate, distance, favorite, level, hidden, sort, created_at, updated_at, updated_by)
+      VALUES (${id}, ${spotId}, ${r.notes}, ${r.phone}, ${r.crewRate}, ${r.distance}, ${r.favorite}, ${r.level}, ${r.hidden}, ${n}, ${now()}, ${now()}, ${c.who(req)}) RETURNING *`);
   }
   /** Live listings at the FBO's airport (and its own held ones) that it may recommend. */
   const candidates = async (req: Request) => {
@@ -216,7 +225,7 @@ export function registerFboSpots(app: Express, o: { requireFbo: Mw; writeLimit: 
       if (!ok) return res.status(404).json({ message: "That listing isn't at your airport." });
       const r = await addRec(req, spotId, req.body || {});
       const s = await one(sql`SELECT name FROM spots WHERE id = ${spotId}`);
-      await c.event(c.fid(req), "edit", c.who(req), `recommended ${s?.name}`); await c.touch(c.fid(req));
+      await c.event(c.fid(req), "edit", c.who(req), `${r.level === "listed" ? "listed" : "recommended"} ${s?.name}`); await c.touch(c.fid(req));
       res.json(recOut(r));
     } catch (e) { fail(res, e); }
   });
@@ -224,9 +233,9 @@ export function registerFboSpots(app: Express, o: { requireFbo: Mw; writeLimit: 
     const cur = await one(sql`SELECT * FROM fbo_recs WHERE id = ${Number(req.params.id)} AND fbo_id = ${c.fid(req)}`);
     if (!cur) return res.status(404).json({ message: "Not found" });
     const r = recFields(req.body || {}, cur);
-    const out = await one(sql`UPDATE fbo_recs SET notes = ${r.notes}, phone = ${r.phone}, crew_rate = ${r.crewRate}, distance = ${r.distance}, favorite = ${r.favorite},
+    const out = await one(sql`UPDATE fbo_recs SET notes = ${r.notes}, phone = ${r.phone}, crew_rate = ${r.crewRate}, distance = ${r.distance}, favorite = ${r.favorite}, level = ${r.level},
       hidden = ${r.hidden}, updated_at = ${now()}, updated_by = ${c.who(req)} WHERE id = ${num(cur.id)} RETURNING *`);
-    await c.event(c.fid(req), "edit", c.who(req), `updated recommendation #${num(cur.spot_id)}`); await c.touch(c.fid(req));
+    await c.event(c.fid(req), "edit", c.who(req), r.level !== cur.level ? `changed #${num(cur.spot_id)} to ${r.level === "listed" ? "List only" : "List and recommend"}` : `updated recommendation #${num(cur.spot_id)}`); await c.touch(c.fid(req));
     res.json(recOut(out));
   });
   // uncheck. A listing this FBO added that nobody else uses is withdrawn; anything crews rated stays for crews.
@@ -319,6 +328,8 @@ export function registerFboSpots(app: Express, o: { requireFbo: Mw; writeLimit: 
   app.post("/api/fbo/recs/bulk", requireFbo, writeLimit, async (req, res) => {
     const list: any[] = Array.isArray(req.body?.rows) ? req.body.rows : [];
     const mode = req.body?.mode === "update" ? "update" : "skip";
+    const defLevel = req.body?.level === "listed" ? "listed" : "recommended";
+    const lv = (raw: any) => (raw.level === "listed" || raw.level === "recommended" ? raw.level : raw.favorite ? "recommended" : defLevel);
     const dry = !!req.body?.dryRun;
     if (!list.length) return res.status(400).json({ message: "Nothing to import." });
     if (list.length > FBO_LIMITS.bulkRows) return res.status(400).json({ message: `Import up to ${FBO_LIMITS.bulkRows} rows at a time.` });
@@ -339,7 +350,7 @@ export function registerFboSpots(app: Express, o: { requireFbo: Mw; writeLimit: 
       if (already) {
         if (mode === "skip") { plan.push({ row: i + 1, action: "skip", name, match: dup!.name }); skipped++; continue; }
         plan.push({ row: i + 1, action: "update", name, match: dup!.name });
-        if (!dry) await addRec(req, num(dup!.id), { ...Object.fromEntries(Object.entries(raw).filter(([, v]) => v !== "" && v != null)), favorite: raw.favorite ? true : !!num(already.favorite) });
+        if (!dry) await addRec(req, num(dup!.id), { ...Object.fromEntries(Object.entries(raw).filter(([, v]) => v !== "" && v != null)), favorite: raw.favorite ? true : !!num(already.favorite), level: raw.level || (raw.favorite ? "recommended" : undefined) });
         updated++;
       } else {
         if (count >= FBO_LIMITS.places) { plan.push({ row: i + 1, action: "error", name, message: `Over the ${FBO_LIMITS.places}-recommendation limit` }); continue; }
@@ -353,7 +364,7 @@ export function registerFboSpots(app: Express, o: { requireFbo: Mw; writeLimit: 
         }
         count++;
         if (dry) continue;
-        const r = await addRec(req, spotId, raw);
+        const r = await addRec(req, spotId, { ...raw, level: lv(raw) });
         mine.set(spotId, r);
       }
       const code = clip(raw.code, 40), offer = clip(raw.offer, 200);

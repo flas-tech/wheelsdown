@@ -228,7 +228,7 @@ h2{font-size:17px;margin:26px 0 10px;display:flex;align-items:center;gap:8px}.co
 .card h3{margin:0;font-size:16px}.row{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
 .sub{color:var(--muted);font-size:13px;margin-top:2px}.notes{margin:8px 0 0}.links{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .links a{border:1px solid var(--line);border-radius:999px;padding:5px 11px;font-size:13px;text-decoration:none;font-weight:500}
-.star{color:#C98F00;font-weight:700;font-size:12px;white-space:nowrap}.chip{display:inline-block;background:var(--chip);border-radius:8px;padding:2px 8px;font-size:12px;font-weight:600;margin-top:6px}
+.star{color:#C98F00;font-weight:700;font-size:12px;white-space:nowrap}.star.rec{color:#0369A1}@media (prefers-color-scheme:dark){.star.rec{color:#7DD3FC}}h3.also{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:14px 0 6px}.chip{display:inline-block;background:var(--chip);border-radius:8px;padding:2px 8px;font-size:12px;font-weight:600;margin-top:6px}
 .offer{border:1.5px dashed var(--accent);border-radius:12px;padding:10px 12px;margin-top:10px}.offer b{display:block}.code{font:700 18px/1.2 ui-monospace,"JetBrains Mono",monospace;letter-spacing:.06em;user-select:all;-webkit-user-select:all;margin-top:4px}
 .small{font-size:12px;color:var(--muted)}.crew{font-size:12px;margin-top:8px;color:var(--muted)}.crew a{font-weight:600}
 .intel{display:grid;grid-template-columns:minmax(120px,170px) 1fr;gap:0;background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden}
@@ -286,13 +286,15 @@ async function renderPublic(slug: string, req: Request, res: Response) {
       p.phone ? `<a href="tel:${esc(p.phone.replace(/[^\d+]/g, ""))}">Call</a>` : "",
       p.website ? `<a href="${esc(p.website)}" rel="noopener nofollow" target="_blank">Website</a>` : "",
     ].filter(Boolean).join("");
-    return `<div class="card"><div class="row"><div><h3>${esc(p.name)}</h3>${p.address || p.distance ? `<div class="sub">${esc([p.address, p.distance].filter(Boolean).join(" · "))}</div>` : ""}</div>${num(p.favorite) ? `<span class="star">★ FBO favorite</span>` : ""}</div>
+    return `<div class="card"><div class="row"><div><h3>${esc(p.name)}</h3>${p.address || p.distance ? `<div class="sub">${esc([p.address, p.distance].filter(Boolean).join(" · "))}</div>` : ""}</div>${num(p.favorite) ? `<span class="star">★ FBO favorite</span>` : p.level !== "listed" ? `<span class="star rec">Recommended</span>` : ""}</div>
 ${p.crew_rate ? `<span class="chip">${esc(p.crew_rate)}</span>` : ""}${p.notes ? `<p class="notes">${esc(p.notes)}</p>` : ""}${(offersBy.get(num(p.id)) || []).map(offerHtml).join("")}${links ? `<div class="links">${links}</div>` : ""}${crewLine}</div>`;
   };
   const favs = places.filter((p) => num(p.favorite));
   const sections = FBO_CATEGORIES.map((cat) => {
     const list = places.filter((p) => p.category === cat && !num(p.favorite));
-    return list.length ? `<h2>${FBO_CAT_PLURAL[cat as FboCategory]} <span class="count">${list.length}</span></h2>${list.map(placeHtml).join("")}` : "";
+    const rec = list.filter((p) => p.level !== "listed"), listed = list.filter((p) => p.level === "listed");
+    return list.length ? `<h2>${FBO_CAT_PLURAL[cat as FboCategory]} <span class="count">${list.length}</span></h2>${rec.map(placeHtml).join("")}`
+      + (listed.length ? `<h3 class="also">${rec.length ? "Also nearby" : "Nearby"}</h3>${listed.map(placeHtml).join("")}` : "") : "";
   }).join("");
   const intelOrder = new Map(FBO_INTEL_FIELDS.map((x, i) => [x.key, i]));
   const intelRows = intel.filter((i) => FBO_INTEL_KEYS.has(i.field)).sort((a, b) => (intelOrder.get(a.field) ?? 0) - (intelOrder.get(b.field) ?? 0));

@@ -38,16 +38,24 @@ export function FboPickTag({ by, className }: { by?: string | null; className?: 
   );
 }
 
-/** A crew (or AI-added) listing that one or more FBOs at the airport recommend. */
-export function FboRecTag({ names, n, className }: { names?: string[]; n?: number; className?: string }) {
+/** FBOs at the airport stand behind this listing. recommended = at least one chose "List and recommend" (the better
+ *  options); otherwise they only listed it ("List only": close and decent). */
+export function FboRecTag({ names, n, recommended = true, className }: { names?: string[]; n?: number; recommended?: boolean; className?: string }) {
   const who = names?.length ? names.join(", ") + ((n ?? 0) > names.length ? ` and ${(n ?? 0) - names.length} more` : "") : "the FBO";
-  return (
+  return recommended ? (
     <span className={cn("inline-flex items-center gap-1 rounded-full border border-sky-500/50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700 dark:text-sky-300", className)}
-      title={`Recommended by ${who}`} data-testid="tag-fbo-rec">
+      title={`Recommended by ${who}: one of the better options near the field`} data-testid="tag-fbo-rec">
       <BadgeCheck className="h-3 w-3" />FBO recommended
+    </span>
+  ) : (
+    <span className={cn("inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground", className)}
+      title={`Listed by ${who}: close by and decent`} data-testid="tag-fbo-listed">
+      <Building2 className="h-3 w-3" />FBO listed
     </span>
   );
 }
+/** The FBO tag for a search card or spot page, from the fboRecs summary. */
+export const fboRecTagFor = (r?: { n: number; names: string[]; rec?: number } | null) => (r ? <FboRecTag names={r.names} n={r.n} recommended={(r.rec ?? r.n) > 0} /> : null);
 
 /** A listing added from an AI pick kept in a saved briefing. Says so until crews rate it. */
 export function AiAddedTag({ rated, className }: { rated?: boolean; className?: string }) {

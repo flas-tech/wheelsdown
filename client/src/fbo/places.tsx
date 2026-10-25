@@ -4,7 +4,7 @@ import { Plus, Upload, Star, Search, Download, FileSpreadsheet, ArrowLeft, Spark
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { FBO_CATEGORIES, FBO_CAT_LABEL, FBO_LIMITS, mapImport, parseDelimited, nameKey, similarListings, nameLikeness, type FboCategory, type FboSpot, type FboImportRow } from "@shared/fbo";
+import { FBO_CATEGORIES, FBO_CAT_LABEL, FBO_LIMITS, FBO_LEVEL_LABEL, type FboLevel, mapImport, parseDelimited, nameKey, similarListings, nameLikeness, type FboCategory, type FboSpot, type FboImportRow } from "@shared/fbo";
 import { api, get, fboQuery, ApiError } from "./api";
 import { Card, Empty, Field, PageHeader, Spinner, areaCls, btn, btnGhost, btnPrimary, inputCls, Counter } from "./ui";
 
@@ -17,6 +17,26 @@ const TABS: { id: FboCategory; label: string }[] = [{ id: "eat", label: "Restaur
 export const refreshSpots = () => { for (const k of ["/api/fbo/spots", "/api/fbo/places", "/api/fbo/stats"]) fboQuery.invalidateQueries({ queryKey: [k] }); };
 const stars = (s: FboSpot) => (s.crew.ratings ? `${(s.crew.avg ?? 0).toFixed(1)}★ · ${s.crew.ratings} crew rating${s.crew.ratings === 1 ? "" : "s"}` : "No crew ratings yet");
 const addedLabel = { you: "Added by you", crew: "Added by crews", fbo: "Added by an FBO" } as const;
+/** The two ways to stand behind a listing. List only = close and decent; List and recommend = the better options. */
+const LEVEL_HINT: Record<FboLevel, string> = { listed: "Close by and decent. Crews see it as FBO listed.", recommended: "One of the better options. Crews see it as FBO recommended." };
+function LevelBadge({ level }: { level: FboLevel }) {
+  return level === "recommended"
+    ? <span className="ml-2 rounded-full bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase text-sky-700 dark:text-sky-300" data-testid="badge-level-recommended">Recommended</span>
+    : <span className="ml-2 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-bold uppercase text-muted-foreground" data-testid="badge-level-listed">Listed</span>;
+}
+/** Two buttons: List only / List and recommend. `value` highlights the current choice. */
+function LevelChoice({ value, onPick, busy, id, size = "sm" }: { value?: FboLevel | null; onPick: (l: FboLevel) => void; busy?: boolean; id: string; size?: "sm" | "md" }) {
+  return (
+    <div className="inline-flex shrink-0 overflow-hidden rounded-lg border border-border" role="group" aria-label="List only or list and recommend">
+      {(["listed", "recommended"] as FboLevel[]).map((l) => (
+        <button key={l} type="button" disabled={busy} onClick={() => onPick(l)} aria-pressed={value === l} title={LEVEL_HINT[l]}
+          className={cn("whitespace-nowrap font-medium disabled:opacity-60", size === "sm" ? "px-2.5 py-1 text-xs" : "px-3 py-2 text-sm", l === "recommended" && "border-l border-border",
+            value === l ? (l === "recommended" ? "bg-sky-600 text-white" : "bg-foreground text-background") : "hover-elevate")}
+          data-testid={`button-level-${l}-${id}`}>{FBO_LEVEL_LABEL[l]}</button>
+      ))}
+    </div>
+  );
+}
 
 export function PlacesPage() {
   const { data, isLoading } = useQuery<SpotsResp>({ queryKey: ["/api/fbo/spots"], queryFn: get("/api/fbo/spots") });
@@ -28,13 +48,21 @@ export function PlacesPage() {
   const [importing, setImporting] = useState(false);
   const { toast } = useToast();
   const spots = data?.spots || [];
+  // add (with a level), change the level, or remove
   const check = useMutation({
-    mutationFn: (s: FboSpot) => (s.rec ? api("DELETE", `/api/fbo/recs/${s.rec.id}`) : api("POST", "/api/fbo/recs", { spotId: s.spotId })),
-    onSuccess: (_r, s) => { refreshSpots(); if (!s.rec) setOpen(s.spotId); toast({ title: s.rec ? `Removed ${s.name} from your picks` : data?.verified ? `${s.name} is on your crew page` : `${s.name} is checked`, description: !s.rec && !data?.verified ? "Your crew page goes live when you confirm your email." : undefined }); },
+    mutationFn: ({ s, level }: { s: FboSpot; level?: FboLevel }) => (level ? (s.rec ? api("PATCH", `/api/fbo/recs/${s.rec.id}`, { level }) : api("POST", "/api/fbo/recs", { spotId: s.spotId, level }))
+      : s.rec ? api("DELETE", `/api/fbo/recs/${s.rec.id}`) : Promise.resolve(null)),
+    onSuccess: (_r, { s, level }) => {
+      refreshSpots(); setChoosing(null);
+      if (level && s.rec) { toast({ title: level === "recommended" ? `${s.name} is now recommended` : `${s.name} is now listed only`, description: LEVEL_HINT[level] }); return; }
+      if (!s.rec) setOpen(s.spotId);
+      toast({ title: s.rec ? `Removed ${s.name} from your list` : data?.verified ? `${s.name} is on your crew page (${level === "listed" ? "listed" : "recommended"})` : `${s.name} is checked`, description: !s.rec && !data?.verified ? "Your crew page goes live when you confirm your email." : undefined });
+    },
     onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
   });
+  const [choosing, setChoosing] = useState<number | null>(null);
   const list = useMemo(() => spots.filter((s) => s.category === tab && (!only || s.rec) && (!q || `${s.name} ${s.address}`.toLowerCase().includes(q.toLowerCase()) || nameLikeness(q, s.name) >= 45))
-    .sort((a, b) => Number(!!b.rec) - Number(!!a.rec) || Number(!!b.rec?.favorite) - Number(!!a.rec?.favorite) || b.crew.ratings - a.crew.ratings || a.name.localeCompare(b.name)), [spots, tab, only, q]);
+    .sort((a, b) => Number(!!b.rec) - Number(!!a.rec) || Number(!!b.rec?.favorite) - Number(!!a.rec?.favorite) || Number(b.rec?.level === "recommended") - Number(a.rec?.level === "recommended") || b.crew.ratings - a.crew.ratings || a.name.localeCompare(b.name)), [spots, tab, only, q]);
   const counts = (c: FboCategory) => { const all = spots.filter((s) => s.category === c); return { all: all.length, mine: all.filter((s) => s.rec).length }; };
   const picks = spots.filter((s) => s.rec).length;
   const noMatch = q.trim().length >= 2 && !spots.some((s) => s.category === tab && nameKey(s.name) === nameKey(q));
@@ -42,7 +70,7 @@ export function PlacesPage() {
   return (
     <>
       <PageHeader title="Recommendations"
-        sub={<>Check the places your desk sends crews to. This is the same list crews use on Wheelsdown at {data?.icao || "your airport"}, so each place exists once and shows crew ratings next to your note. Not listed? Add it.</>}
+        sub={<>Pick the places your desk sends crews to. <b>List only</b> for spots that are close and decent, <b>List and recommend</b> for the better options. You can change it any time. This is the same list crews use on Wheelsdown at {data?.icao || "your airport"}, so each place exists once and shows crew ratings next to your note.</>}
         actions={<><button className={btn} onClick={() => setImporting(true)} data-testid="button-import"><Upload className="h-4 w-4" />Bulk upload</button><button className={btnPrimary} onClick={() => setAdding({})} data-testid="button-add-place"><Plus className="h-4 w-4" />Add a missing place</button></>} />
       {data && !data.verified && <div className="mb-3 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-sm" data-testid="banner-unverified">New places you add stay private until you confirm your email. Checking places that are already listed works right away.</div>}
       <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -64,8 +92,10 @@ export function PlacesPage() {
           <div className="max-h-[68vh] overflow-y-auto" data-testid="list-spots">
             {list.map((s) => (
               <SpotRow key={s.spotId} s={s} open={open === s.spotId} onToggleOpen={() => setOpen(open === s.spotId ? null : s.spotId)}
-                onCheck={() => { if (s.rec && (s.rec.notes || s.rec.crewRate) && !confirm(`Remove ${s.name} from your picks? Your note and crew rate for it will be deleted.`)) return; check.mutate(s); }}
-                onEditListing={() => setAdding({ spot: s })} busy={check.isPending && check.variables?.spotId === s.spotId} />
+                choosing={choosing === s.spotId} onChoose={() => setChoosing(choosing === s.spotId ? null : s.spotId)}
+                onLevel={(level) => check.mutate({ s, level })}
+                onRemove={() => { if ((s.rec?.notes || s.rec?.crewRate) && !confirm(`Remove ${s.name} from your list? Your note and crew rate for it will be deleted.`)) return; check.mutate({ s }); }}
+                onEditListing={() => setAdding({ spot: s })} busy={check.isPending && check.variables?.s.spotId === s.spotId} />
             ))}
             {!list.length && (
               <div className="p-6">
@@ -81,34 +111,49 @@ export function PlacesPage() {
           </div>
         </Card>
       )}
-      <p className="mt-3 text-xs text-muted-foreground">{picks} of {FBO_LIMITS.places} picks. Crew ratings come from Wheelsdown crews; your notes, crew rates and discounts are labeled as coming from your FBO.</p>
-      {adding && data && <AddDialog ctx={data} cat={adding.spot?.category || tab} name={adding.name} edit={adding.spot} onClose={() => setAdding(null)} onRecommend={(id) => { const s = spots.find((x) => x.spotId === id); if (s) { setTab(s.category); setQ(""); if (!s.rec) check.mutate(s); else setOpen(id); } }} />}
+      <p className="mt-3 text-xs text-muted-foreground">{picks} of {FBO_LIMITS.places} places ({spots.filter((s) => s.rec?.level === "recommended").length} recommended). Crew ratings come from Wheelsdown crews; your notes, crew rates and discounts are labeled as coming from your FBO.</p>
+      {adding && data && <AddDialog ctx={data} cat={adding.spot?.category || tab} name={adding.name} edit={adding.spot} onClose={() => setAdding(null)} onRecommend={(id, level) => { const s = spots.find((x) => x.spotId === id); if (s) { setTab(s.category); setQ(""); if (!s.rec || s.rec.level !== level) check.mutate({ s, level }); else setOpen(id); } }} />}
       {importing && <ImportDialog onClose={() => setImporting(false)} />}
     </>
   );
 }
 
-function SpotRow({ s, open, onToggleOpen, onCheck, onEditListing, busy }: { s: FboSpot; open: boolean; onToggleOpen: () => void; onCheck: () => void; onEditListing: () => void; busy: boolean }) {
+function SpotRow({ s, open, onToggleOpen, choosing, onChoose, onLevel, onRemove, onEditListing, busy }: { s: FboSpot; open: boolean; onToggleOpen: () => void; choosing: boolean; onChoose: () => void;
+  onLevel: (l: FboLevel) => void; onRemove: () => void; onEditListing: () => void; busy: boolean }) {
   const r = s.rec;
   return (
     <div className={cn("border-b border-border last:border-0", r && "bg-primary/[0.04]")} data-testid={`row-spot-${s.spotId}`}>
       <div className="flex items-start gap-3 px-3 py-3">
-        <button role="checkbox" aria-checked={!!r} aria-label={r ? `Remove ${s.name} from your picks` : `Recommend ${s.name}`} onClick={onCheck} disabled={busy}
+        <button role="checkbox" aria-checked={!!r} aria-label={r ? `Remove ${s.name} from your list` : `Add ${s.name} to your list`} onClick={r ? onRemove : onChoose} disabled={busy}
           className={cn("mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-md border-2", r ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/40 hover-elevate")} data-testid={`check-spot-${s.spotId}`}>
           {busy ? <Spinner className="h-3.5 w-3.5" /> : r ? <Check className="h-4 w-4" strokeWidth={3} /> : null}
         </button>
-        <button className="min-w-0 flex-1 text-left" onClick={r ? onToggleOpen : onCheck}>
+        <button className="min-w-0 flex-1 text-left" onClick={r ? onToggleOpen : onChoose}>
           <p className="font-medium">{s.name}
+            {r && <LevelBadge level={r.level} />}
             {r?.favorite && <Star className="ml-1.5 inline h-3.5 w-3.5 fill-primary text-primary" aria-label="FBO favorite" />}
             {r?.hidden && <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase text-muted-foreground">Hidden</span>}
             {s.status === "pending" && <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase text-muted-foreground">Waiting for email confirmation</span>}
           </p>
           <p className="truncate text-xs text-muted-foreground">{[s.address || "No address yet", s.miles != null ? `${s.miles.toFixed(1)} mi from the field` : ""].filter(Boolean).join(" · ")}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">{stars(s)} · {addedLabel[s.addedBy]}{s.otherFbos ? ` · also recommended by ${s.otherFbos} other FBO${s.otherFbos === 1 ? "" : "s"}` : ""}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">{stars(s)} · {addedLabel[s.addedBy]}{s.otherFbos ? ` · also on ${s.otherFbos === 1 ? "1 other FBO's list" : `${s.otherFbos} other FBOs' lists`}` : ""}</p>
           {r && !open && (r.crewRate || r.notes) && <p className="mt-1 truncate text-xs"><span className="font-medium">Your note:</span> {[r.crewRate, r.notes].filter(Boolean).join(" · ")}</p>}
         </button>
-        {r && <button className={btnGhost} onClick={onToggleOpen} aria-label={open ? "Close details" : "Edit your note"} data-testid={`button-expand-${s.spotId}`}>{open ? <ChevronUp className="h-4 w-4" /> : <><Pencil className="h-3.5 w-3.5" /><span className="hidden sm:inline">Note</span></>}</button>}
+        <div className="flex shrink-0 items-center gap-1">
+          {(r || !choosing) && <span className="hidden sm:inline-flex"><LevelChoice value={r?.level} onPick={onLevel} busy={busy} id={String(s.spotId)} /></span>}
+          {r && <button className={btnGhost} onClick={onToggleOpen} aria-label={open ? "Close details" : "Edit your note"} data-testid={`button-expand-${s.spotId}`}>{open ? <ChevronUp className="h-4 w-4" /> : <><Pencil className="h-3.5 w-3.5" /><span className="hidden lg:inline">Note</span></>}</button>}
+        </div>
       </div>
+      {r && <div className="-mt-1 px-3 pb-3 pl-12 sm:hidden"><LevelChoice value={r.level} onPick={onLevel} busy={busy} id={`m-${s.spotId}`} /></div>}
+      {!r && choosing && (
+        <div className="grid gap-2 border-t border-border/60 px-3 pb-3 pt-2.5 sm:grid-cols-2 sm:pl-12" data-testid={`choose-level-${s.spotId}`}>
+          {(["listed", "recommended"] as FboLevel[]).map((l) => (
+            <button key={l} type="button" disabled={busy} onClick={() => onLevel(l)} className={cn("rounded-lg border p-2.5 text-left hover-elevate", l === "recommended" ? "border-sky-500/60" : "border-border")} data-testid={`button-choose-${l}-${s.spotId}`}>
+              <span className="block text-sm font-semibold">{FBO_LEVEL_LABEL[l]}</span><span className="block text-xs text-muted-foreground">{LEVEL_HINT[l]}</span>
+            </button>
+          ))}
+        </div>
+      )}
       {r && open && <RecEditor s={s} onEditListing={onEditListing} />}
     </div>
   );
@@ -122,12 +167,12 @@ function RecEditor({ s, onEditListing }: { s: FboSpot; onEditListing: () => void
   const save = useMutation({ mutationFn: () => api("PATCH", `/api/fbo/recs/${r.id}`, f), onSuccess: () => { refreshSpots(); toast({ title: "Saved", description: "It's live on your crew page." }); }, onError: (e: Error) => toast({ title: e.message, variant: "destructive" }) });
   return (
     <form className="grid gap-3 border-t border-border/60 px-3 pb-4 pt-3 sm:grid-cols-2 sm:pl-12" onSubmit={(e) => { e.preventDefault(); save.mutate(); }}>
-      <Field label="Why your desk recommends it" className="sm:col-span-2" hint={<Counter value={f.notes} max={FBO_LIMITS.notes} />}><textarea className={areaCls} rows={2} value={f.notes} onChange={set("notes")} maxLength={FBO_LIMITS.notes} placeholder="e.g. Best breakfast near the field, ask for the crew table" data-testid={`input-rec-notes-${s.spotId}`} /></Field>
+      <Field label={r.level === "listed" ? "Note for crews" : "Why your desk recommends it"} className="sm:col-span-2" hint={<Counter value={f.notes} max={FBO_LIMITS.notes} />}><textarea className={areaCls} rows={2} value={f.notes} onChange={set("notes")} maxLength={FBO_LIMITS.notes} placeholder={r.level === "listed" ? "e.g. Quick and close, open until 10" : "e.g. Best breakfast near the field, ask for the crew table"} data-testid={`input-rec-notes-${s.spotId}`} /></Field>
       <Field label={s.category === "stay" ? "Crew rate" : "Price or crew perk"} hint={s.category === "stay" ? "e.g. Crew rate $139, shuttle included" : "e.g. Open late, delivers to the FBO"}><input className={inputCls} value={f.crewRate} onChange={set("crewRate")} maxLength={80} data-testid={`input-rec-rate-${s.spotId}`} /></Field>
       <Field label="Phone for crews"><input className={inputCls} value={f.phone} onChange={set("phone")} maxLength={40} inputMode="tel" /></Field>
       <Field label="Distance or drive time" hint="e.g. 5 min drive"><input className={inputCls} value={f.distance} onChange={set("distance")} maxLength={40} /></Field>
       <div className="flex flex-col justify-end gap-2 text-sm">
-        <label className="flex items-center gap-2"><input type="checkbox" checked={f.favorite} onChange={(e) => setF({ ...f, favorite: e.target.checked })} className="h-4 w-4 accent-[hsl(var(--primary))]" data-testid={`checkbox-rec-fav-${s.spotId}`} /><Star className="h-3.5 w-3.5" />Show in our favorites</label>
+        <label className="flex items-center gap-2"><input type="checkbox" checked={f.favorite} onChange={(e) => setF({ ...f, favorite: e.target.checked })} className="h-4 w-4 accent-[hsl(var(--primary))]" data-testid={`checkbox-rec-fav-${s.spotId}`} /><Star className="h-3.5 w-3.5" />Show in our favorites{r.level === "listed" ? " (also recommends it)" : ""}</label>
         <label className="flex items-center gap-2"><input type="checkbox" checked={f.hidden} onChange={(e) => setF({ ...f, hidden: e.target.checked })} className="h-4 w-4 accent-[hsl(var(--primary))]" /><EyeOff className="h-3.5 w-3.5" />Hide from my crew page for now</label>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2 sm:col-span-2">
@@ -143,10 +188,10 @@ type Hit = { ref: string; name: string; address: string; city: string; lat: numb
 type Dup = { spotId: number; name: string; address?: string };
 
 /** Add a place that isn't listed (or fix one this FBO added). Same steps crews use: find it on the map, let AI fill in the rest, review. */
-function AddDialog({ ctx, cat, name, edit, onClose, onRecommend }: { ctx: SpotsResp; cat: FboCategory; name?: string; edit?: FboSpot; onClose: () => void; onRecommend: (spotId: number) => void }) {
+function AddDialog({ ctx, cat, name, edit, onClose, onRecommend }: { ctx: SpotsResp; cat: FboCategory; name?: string; edit?: FboSpot; onClose: () => void; onRecommend: (spotId: number, level: FboLevel) => void }) {
   const [f, setF] = useState({ category: edit?.category || cat, name: edit?.name || name || "", address: edit?.address || "", website: edit?.website || "", description: edit?.description || "", crewTip: "",
     costLevel: (edit?.costLevel ?? null) as number | null, pace: (edit?.pace ?? null) as string | null, lat: null as number | null, lng: null as number | null, placeRef: null as string | null, tags: [] as string[],
-    notes: "", crewRate: "", favorite: false });
+    notes: "", crewRate: "", favorite: false, level: "recommended" as FboLevel });
   const [hits, setHits] = useState<Hit[]>([]);
   const [searching, setSearching] = useState(false);
   const [aiNote, setAiNote] = useState("");
@@ -182,8 +227,8 @@ function AddDialog({ ctx, cat, name, edit, onClose, onRecommend }: { ctx: SpotsR
   const save = useMutation({
     mutationFn: (force: boolean) => edit
       ? api("PATCH", `/api/fbo/spots/${edit.spotId}`, { category: f.category, name: f.name, address: f.address, website: f.website, description: f.description, costLevel: f.costLevel, pace: f.pace })
-      : api("POST", "/api/fbo/spots", { ...f, force, rec: { notes: f.notes, crewRate: f.crewRate, favorite: f.favorite } }),
-    onSuccess: (r: any) => { refreshSpots(); toast({ title: edit ? "Listing updated" : `${f.name} added`, description: edit ? undefined : r?.status === "pending" ? "It goes live when you confirm your email." : "It's checked and on your crew page." }); onClose(); },
+      : api("POST", "/api/fbo/spots", { ...f, force, rec: { notes: f.notes, crewRate: f.crewRate, favorite: f.level === "recommended" && f.favorite, level: f.level } }),
+    onSuccess: (r: any) => { refreshSpots(); toast({ title: edit ? "Listing updated" : `${f.name} added`, description: edit ? undefined : r?.status === "pending" ? "It goes live when you confirm your email." : f.level === "listed" ? "It's listed on your crew page." : "It's recommended on your crew page." }); onClose(); },
     onError: (e: any) => { if (e instanceof ApiError && e.status === 409 && e.body?.duplicate) { setDup(e.body.duplicate); return; } toast({ title: e.message, variant: "destructive" }); },
   });
   const pick = (h: Hit) => { setF({ ...f, name: h.name, address: [h.address, h.city].filter(Boolean).join(", "), website: f.website || h.website || "", lat: h.lat, lng: h.lng, placeRef: h.ref }); setHits([]); };
@@ -193,13 +238,14 @@ function AddDialog({ ctx, cat, name, edit, onClose, onRecommend }: { ctx: SpotsR
       <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{edit ? `Edit ${edit.name}` : "Add a place that isn't listed"}</DialogTitle>
-          <DialogDescription>{edit ? "Only listings your FBO added can be edited here." : "It's added to Wheelsdown once, for every crew and FBO at the airport, and checked as your pick."}</DialogDescription>
+          <DialogDescription>{edit ? "Only listings your FBO added can be edited here." : "It's added to Wheelsdown once, for every crew and FBO at the airport, and put on your list."}</DialogDescription>
         </DialogHeader>
         {(dup || local) && (
           <div className="rounded-lg border border-primary/50 bg-primary/10 p-3 text-sm" data-testid="box-duplicate">
-            <p><b>{(dup || local)!.name}</b> is already on Wheelsdown at {ctx.icao}{(dup?.address || local?.address) ? ` (${dup?.address || local?.address})` : ""}. Recommend that listing instead so crews see one place with all its ratings.</p>
+            <p><b>{(dup || local)!.name}</b> is already on Wheelsdown at {ctx.icao}{(dup?.address || local?.address) ? ` (${dup?.address || local?.address})` : ""}. Use that listing instead so crews see one place with all its ratings.</p>
             <div className="mt-2 flex flex-wrap gap-2">
-              <button className={btnPrimary} onClick={() => { onRecommend((dup || local)!.spotId); onClose(); }} data-testid="button-recommend-existing"><Check className="h-4 w-4" />Recommend the existing listing</button>
+              <button className={btn} onClick={() => { onRecommend((dup || local)!.spotId, "listed"); onClose(); }} data-testid="button-list-existing">List only</button>
+              <button className={btnPrimary} onClick={() => { onRecommend((dup || local)!.spotId, "recommended"); onClose(); }} data-testid="button-recommend-existing"><Check className="h-4 w-4" />List and recommend</button>
               {dup && <button className={btn} onClick={() => { setDup(null); save.mutate(true); }} data-testid="button-add-anyway">It's a different place, add mine</button>}
             </div>
           </div>
@@ -221,7 +267,7 @@ function AddDialog({ ctx, cat, name, edit, onClose, onRecommend }: { ctx: SpotsR
           {similar.length > 0 && !local && (
             <div className="rounded-lg border border-border bg-muted/40 p-3 sm:col-span-2" data-testid="box-similar">
               <p className="text-sm font-medium">Already on Wheelsdown at {ctx.icao}. Is it one of these?</p>
-              <p className="text-xs text-muted-foreground">Recommending the existing listing keeps one place with all its crew ratings.</p>
+              <p className="text-xs text-muted-foreground">Using the existing listing keeps one place with all its crew ratings.</p>
               <div className="mt-2 divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
                 {similar.map((s) => (
                   <div key={s.spotId} className="flex items-center gap-3 px-3 py-2" data-testid={`similar-${s.spotId}`}>
@@ -229,8 +275,8 @@ function AddDialog({ ctx, cat, name, edit, onClose, onRecommend }: { ctx: SpotsR
                       <p className="truncate text-sm font-medium">{s.name} <span className="text-xs font-normal text-muted-foreground">· {FBO_CAT_LABEL[s.category]}</span></p>
                       <p className="truncate text-xs text-muted-foreground">{[s.address, addedLabel[s.addedBy], stars(s)].filter(Boolean).join(" · ")}</p>
                     </div>
-                    {s.rec ? <span className="shrink-0 text-xs font-medium text-emerald-700 dark:text-emerald-300">Already your pick</span>
-                      : <button type="button" className={btn} onClick={() => { onRecommend(s.spotId); onClose(); }} data-testid={`button-recommend-similar-${s.spotId}`}><Check className="h-4 w-4" />Recommend this</button>}
+                    {s.rec ? <span className="shrink-0 text-xs font-medium text-emerald-700 dark:text-emerald-300">On your list ({s.rec.level === "recommended" ? "recommended" : "listed"})</span>
+                      : <LevelChoice onPick={(l) => { onRecommend(s.spotId, l); onClose(); }} id={`similar-${s.spotId}`} />}
                   </div>
                 ))}
               </div>
@@ -249,27 +295,37 @@ function AddDialog({ ctx, cat, name, edit, onClose, onRecommend }: { ctx: SpotsR
           {f.category === "eat" && <Field label="Pace"><select className={inputCls} value={f.pace || "both"} onChange={(e) => setF({ ...f, pace: e.target.value })}><option value="grab">Grab and go</option><option value="sit">Sit down</option><option value="both">Either</option></select></Field>}
           <Field label="Short description" className="sm:col-span-2" hint="What crews see on the listing"><textarea className={areaCls} rows={2} value={f.description} onChange={set("description")} maxLength={400} data-testid="input-place-description" /></Field>
           {!edit && <>
-            <p className="pt-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground sm:col-span-2">Your recommendation</p>
-            <Field label="Why your desk recommends it" className="sm:col-span-2" hint={<Counter value={f.notes} max={FBO_LIMITS.notes} />}><textarea className={areaCls} rows={2} value={f.notes} onChange={set("notes")} maxLength={FBO_LIMITS.notes} data-testid="input-place-notes" /></Field>
+            <p className="pt-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground sm:col-span-2">How crews see it</p>
+            <div className="grid gap-2 sm:col-span-2 sm:grid-cols-2" role="radiogroup">
+              {(["listed", "recommended"] as FboLevel[]).map((l) => (
+                <button key={l} type="button" role="radio" aria-checked={f.level === l} onClick={() => setF({ ...f, level: l })}
+                  className={cn("rounded-lg border-2 p-2.5 text-left", f.level === l ? (l === "recommended" ? "border-sky-600 bg-sky-500/10" : "border-foreground bg-muted/50") : "border-border hover-elevate")} data-testid={`radio-level-${l}`}>
+                  <span className="block text-sm font-semibold">{FBO_LEVEL_LABEL[l]}</span><span className="block text-xs text-muted-foreground">{LEVEL_HINT[l]}</span>
+                </button>
+              ))}
+            </div>
+            <Field label={f.level === "listed" ? "Note for crews" : "Why your desk recommends it"} className="sm:col-span-2" hint={<Counter value={f.notes} max={FBO_LIMITS.notes} />}><textarea className={areaCls} rows={2} value={f.notes} onChange={set("notes")} maxLength={FBO_LIMITS.notes} data-testid="input-place-notes" /></Field>
             <Field label={f.category === "stay" ? "Crew rate" : "Price or crew perk"}><input className={inputCls} value={f.crewRate} onChange={set("crewRate")} maxLength={80} data-testid="input-place-rate" /></Field>
-            <label className="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" checked={f.favorite} onChange={(e) => setF({ ...f, favorite: e.target.checked })} className="h-4 w-4 accent-[hsl(var(--primary))]" data-testid="checkbox-place-favorite" />Show in our favorites</label>
+            <label className={cn("flex items-center gap-2 self-end pb-2 text-sm", f.level === "listed" && "opacity-50")}><input type="checkbox" disabled={f.level === "listed"} checked={f.level === "recommended" && f.favorite} onChange={(e) => setF({ ...f, favorite: e.target.checked })} className="h-4 w-4 accent-[hsl(var(--primary))]" data-testid="checkbox-place-favorite" />Show in our favorites</label>
           </>}
-          <div className="flex justify-end gap-2 sm:col-span-2"><button type="button" className={btn} onClick={onClose}>Cancel</button><button className={btnPrimary} disabled={f.name.trim().length < 2 || save.isPending || !!local} data-testid="button-save-place">{save.isPending ? <Spinner /> : edit ? "Save listing" : "Add and recommend"}</button></div>
+          <div className="flex justify-end gap-2 sm:col-span-2"><button type="button" className={btn} onClick={onClose}>Cancel</button><button className={btnPrimary} disabled={f.name.trim().length < 2 || save.isPending || !!local} data-testid="button-save-place">{save.isPending ? <Spinner /> : edit ? "Save listing" : f.level === "listed" ? "Add and list" : "Add and recommend"}</button></div>
         </form>
       </DialogContent>
     </Dialog>
   );
 }
 
-const TEMPLATE = `Name,Category,Address,Phone,Website,Notes,Crew rate,Distance,Favorite,Discount code,Discount details,Expires
-Blue Ginger,Restaurant,5 Main St,555-0100,blueginger.example,Best sushi near the field,,5 min,yes,CREW10,10% off for crews,2026-12-31
-Hilton Garden Inn,Hotel,100 Airport Rd,555-0111,hilton.com,Free shuttle on request,Crew rate $139,2 mi,yes,,,
+const TEMPLATE = `Name,Category,Level,Address,Phone,Website,Notes,Crew rate,Distance,Favorite,Discount code,Discount details,Expires
+Blue Ginger,Restaurant,Recommend,5 Main St,555-0100,blueginger.example,Best sushi near the field,,5 min,yes,CREW10,10% off for crews,2026-12-31
+Hilton Garden Inn,Hotel,Recommend,100 Airport Rd,555-0111,hilton.com,Free shuttle on request,Crew rate $139,2 mi,yes,,,
+Corner Deli,Restaurant,List,12 Main St,555-0122,,Quick sandwiches,,3 min,,,,
 `;
 
 function ImportDialog({ onClose }: { onClose: () => void }) {
   const [text, setText] = useState("");
   const [fallback, setFallback] = useState<FboCategory | "">("");
   const [mode, setMode] = useState<"skip" | "update">("skip");
+  const [level, setLevel] = useState<FboLevel>("recommended");
   const [step, setStep] = useState<"input" | "preview" | "done">("input");
   const [result, setResult] = useState<any>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -279,15 +335,15 @@ function ImportDialog({ onClose }: { onClose: () => void }) {
   // the server matches each row against the listings already at the airport, so the preview shows exactly what will happen
   const [plan, setPlan] = useState<{ row: number; action: string; name: string; match?: string; message?: string }[] | null>(null);
   const preview = useMutation({
-    mutationFn: (m: "skip" | "update") => api<any>("POST", "/api/fbo/recs/bulk", { mode: m, rows: ok, dryRun: true }),
+    mutationFn: (m: "skip" | "update") => api<any>("POST", "/api/fbo/recs/bulk", { mode: m, level, rows: ok, dryRun: true }),
     onSuccess: (r) => { setPlan(r.plan); setStep("preview"); }, onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
   });
   const run = useMutation({
-    mutationFn: () => api("POST", "/api/fbo/recs/bulk", { mode, rows: ok }),
+    mutationFn: () => api("POST", "/api/fbo/recs/bulk", { mode, level, rows: ok }),
     onSuccess: (r) => { setResult(r); setStep("done"); refreshSpots(); fboQuery.invalidateQueries({ queryKey: ["/api/fbo/offers"] }); },
     onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
   });
-  const ACTION: Record<string, string> = { new: "New listing", link: "Already listed: recommend it", update: "Your pick: update note", skip: "Your pick: skip", error: "Can't import" };
+  const ACTION: Record<string, string> = { new: "New listing", link: "Already on Wheelsdown: add it", update: "On your list: update it", skip: "On your list: skip", error: "Can't import" };
   const onFile = async (file?: File) => {
     if (!file) return;
     if (/\.(xlsx|xls|numbers)$/i.test(file.name)) { toast({ title: "Save it as CSV first", description: "In Excel or Numbers: File > Save As (or Export) > CSV. Or copy the cells and paste them here.", variant: "destructive" }); return; }
@@ -310,11 +366,18 @@ function ImportDialog({ onClose }: { onClose: () => void }) {
             </div>
             <textarea className={cn(areaCls, "font-code text-xs")} rows={10} placeholder={"Name\tCategory\tAddress\tPhone\tWebsite\tNotes\nBlue Ginger\tRestaurant\t5 Main St\t555-0100\tblueginger.com\tBest sushi near the field"} value={text} onChange={(e) => setText(e.target.value)} data-testid="input-import-text" />
             <div className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
-              Columns we recognize: <b>Name</b>, <b>Category</b> (restaurant, hotel, thing to do), Address, Phone, Website, Notes, Crew rate, Distance, Favorite (yes/no), Discount code, Discount details, Expires. Other columns are ignored. Up to {FBO_LIMITS.bulkRows} rows at a time.
+              Columns we recognize: <b>Name</b>, <b>Category</b> (restaurant, hotel, thing to do), Level (list or recommend), Address, Phone, Website, Notes, Crew rate, Distance, Favorite (yes/no), Discount code, Discount details, Expires. Other columns are ignored. Up to {FBO_LIMITS.bulkRows} rows at a time.
             </div>
             {parsed && <p className="text-sm" data-testid="text-import-detected">Found {parsed.rows.length} rows. Matched columns: {Object.values(parsed.matched).join(", ") || "none"}{parsed.unknown.length ? <span className="text-muted-foreground"> · ignored: {parsed.unknown.join(", ")}</span> : null}</p>}
             {parsed && !parsed.matched.category && (
               <Field label="No category column found. Import every row as:"><select className={cn(inputCls, "w-56")} value={fallback} onChange={(e) => setFallback(e.target.value as any)} data-testid="select-import-fallback"><option value="">Choose…</option>{FBO_CATEGORIES.map((c) => <option key={c} value={c}>{FBO_CAT_LABEL[c]}s</option>)}</select></Field>
+            )}
+            {parsed && (
+              <Field label={parsed.matched.level ? "Rows with a blank Level:" : "Add every row as:"}>
+                <select className={cn(inputCls, "w-56")} value={level} onChange={(e) => setLevel(e.target.value as FboLevel)} data-testid="select-import-level">
+                  <option value="recommended">List and recommend</option><option value="listed">List only</option>
+                </select>
+              </Field>
             )}
             {parsed && !parsed.matched.name && <p className="text-sm text-destructive">We need a column called Name (or Business, Restaurant, Hotel).</p>}
             <div className="flex justify-end gap-2"><button className={btn} onClick={onClose}>Cancel</button><button className={btnPrimary} disabled={!parsed?.rows.length || !parsed.matched.name} onClick={() => preview.mutate(mode)} data-testid="button-preview">{preview.isPending ? <Spinner /> : "Preview"}</button></div>
@@ -330,14 +393,14 @@ function ImportDialog({ onClose }: { onClose: () => void }) {
             </div>
             <div className="max-h-[50vh] overflow-auto rounded-lg border border-border">
               <table className="w-full text-xs">
-                <thead className="sticky top-0 bg-muted text-left"><tr>{["", "Name", "Type", "Address", "Crew rate", "Fav", "Discount"].map((h) => <th key={h} className="px-2 py-1.5 font-medium">{h}</th>)}</tr></thead>
+                <thead className="sticky top-0 bg-muted text-left"><tr>{["", "Name", "Type", "Level", "Address", "Crew rate", "Fav", "Discount"].map((h) => <th key={h} className="px-2 py-1.5 font-medium">{h}</th>)}</tr></thead>
                 <tbody>
                   {ok.map((r, i) => {
                     const p = plan?.[i]; const s = p ? (ACTION[p.action] + (p.match && p.match !== r.name ? ` (${p.match})` : "") + (p.message ? `: ${p.message}` : "")) : "…";
                     return (
                       <tr key={i} className="border-t border-border">
                         <td className="whitespace-nowrap px-2 py-1.5"><span className={cn("rounded px-1.5 py-0.5 text-[10px] font-semibold", p?.action === "new" ? "bg-primary/20" : p?.action === "error" ? "bg-destructive/15 text-destructive" : "bg-muted")}>{s}</span></td>
-                        <td className="px-2 py-1.5 font-medium">{r.name}</td><td className="px-2 py-1.5">{r.category ? FBO_CAT_LABEL[r.category] : "—"}</td>
+                        <td className="px-2 py-1.5 font-medium">{r.name}</td><td className="px-2 py-1.5">{r.category ? FBO_CAT_LABEL[r.category] : "—"}</td><td className="whitespace-nowrap px-2 py-1.5">{(r.level || (r.favorite ? "recommended" : level)) === "listed" ? "List only" : "Recommend"}</td>
                         <td className="px-2 py-1.5 text-muted-foreground">{r.address}</td><td className="px-2 py-1.5">{r.crewRate}</td><td className="px-2 py-1.5">{r.favorite ? "★" : ""}</td>
                         <td className="px-2 py-1.5">{[r.code, r.offer].filter(Boolean).join(" · ")}</td>
                       </tr>
@@ -352,7 +415,7 @@ function ImportDialog({ onClose }: { onClose: () => void }) {
         )}
         {step === "done" && result && (
           <div className="space-y-3">
-            <p className="text-sm" data-testid="text-import-result"><b>{result.added}</b> new listings added, <b>{result.linked}</b> existing listings recommended, <b>{result.updated}</b> notes updated, <b>{result.skipped}</b> skipped{result.offers ? <>, <b>{result.offers}</b> discounts created</> : null}. They're checked on your list and live on your crew page.</p>
+            <p className="text-sm" data-testid="text-import-result"><b>{result.added}</b> new listings added, <b>{result.linked}</b> existing listings recommended, <b>{result.updated}</b> updated, <b>{result.skipped}</b> skipped{result.offers ? <>, <b>{result.offers}</b> discounts created</> : null}. They're on your list and live on your crew page. Switch any of them between List only and List and recommend from the list.</p>
             {result.errors?.length > 0 && <ul className="list-disc pl-5 text-xs text-destructive">{result.errors.slice(0, 20).map((e: any) => <li key={e.row}>Row {e.row}: {e.message}</li>)}</ul>}
             <div className="flex justify-end"><button className={btnPrimary} onClick={onClose}>Done</button></div>
           </div>
