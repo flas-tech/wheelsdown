@@ -217,7 +217,7 @@ function pageShell(title: string, body: string, desc = "", tail = "") {
 :root{--bg:#F8F6F1;--fg:#141B2D;--muted:#5B6474;--card:#fff;--line:#E2E5EA;--accent:#F5B700;--accent-fg:#141B2D;--chip:#FFF6D6}
 @media (prefers-color-scheme:dark){:root{--bg:#0B1222;--fg:#EEF1F6;--muted:#9AA4B5;--card:#131C30;--line:#24304A;--chip:#2A2410}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 "General Sans",system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
-a{color:inherit}.wrap{max-width:720px;margin:0 auto;padding:16px 16px 48px}
+a{color:inherit}.wrap{max-width:720px;margin:0 auto;padding:16px 16px 48px;padding-top:calc(16px + env(safe-area-inset-top,0px));padding-left:calc(16px + env(safe-area-inset-left,0px));padding-right:calc(16px + env(safe-area-inset-right,0px));padding-bottom:calc(48px + env(safe-area-inset-bottom,0px))}
 .top{display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px;text-decoration:none;padding:4px 0 14px}
 .bar{display:flex;align-items:center;gap:12px}.back{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);background:var(--card);border-radius:999px;padding:6px 12px 6px 9px;margin-bottom:14px;font-size:14px;font-weight:600;text-decoration:none;color:inherit}.back[hidden]{display:none}
 .hero{background:#0B1222;color:#fff;border-radius:18px;padding:20px;margin-bottom:16px}
