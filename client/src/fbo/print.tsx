@@ -9,6 +9,7 @@ import { FBO_CAT_LABEL, type FboPlace } from "@shared/fbo";
 import { api, get } from "./api";
 import { useMe } from "./App";
 import { Card, PageHeader, btn, btnPrimary } from "./ui";
+import { useBack } from "./nav";
 
 const NAVY = "#0B1222", GOLD = "#F5B700", INK = "#141B2D";
 
@@ -225,6 +226,7 @@ export function PrintPage({ kind }: { kind: string }) {
   const k = PAGE[kind] ? kind : "card";
   const d = usePrintData();
   const [cut, setCut] = useState(true);
+  const back = useBack();
   useEffect(() => { document.title = `${d.name} · ${PAGE[k].label}`; return () => { document.title = "Wheelsdown for FBOs"; }; }, [d.name, k]);
   const print = () => { api("POST", "/api/fbo/printed", { kind: k }).catch(() => {}); window.print(); };
   const body = k === "card" ? <BusinessCard {...d} /> : k === "sheet" ? <CardSheet {...d} cut={cut} /> : k === "lounge" ? <LoungeSign {...d} /> : <Poster {...d} />;
@@ -232,7 +234,7 @@ export function PrintPage({ kind }: { kind: string }) {
     <div className="min-h-screen bg-muted/40 print:bg-white">
       <style>{`@page { size: ${PAGE[k].size}; margin: 0; } @media print { html, body { background: #fff !important; } .print-area { box-shadow: none !important; margin: 0 !important; } * { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }`}</style>
       <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b border-border bg-background px-4 py-3 print:hidden">
-        <Link href="/qr" className={btn}><ArrowLeft className="h-4 w-4" />Back</Link>
+        <button onClick={() => back("/qr")} className={btn} data-testid="button-print-back"><ArrowLeft className="h-4 w-4" />Back to QR &amp; print</button>
         <p className="text-sm font-semibold">{PAGE[k].label}</p>
         {k === "sheet" && <label className="ml-2 flex items-center gap-2 text-sm"><input type="checkbox" checked={cut} onChange={(e) => setCut(e.target.checked)} className="h-4 w-4" />Cut lines (plain paper)</label>}
         <div className="ml-auto flex items-center gap-3">

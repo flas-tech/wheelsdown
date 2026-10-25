@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Router, Switch, Route, Link, useLocation, useRoute } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
-import { LayoutDashboard, UtensilsCrossed, TicketPercent, ClipboardList, Megaphone, QrCode, Users, Building2, LogOut, UserCog, ExternalLink } from "lucide-react";
+import { LogOut, UserCog, ExternalLink, ArrowLeft, ChevronRight, Printer, Menu, X } from "lucide-react";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -17,6 +17,7 @@ import { AdsPage } from "./ads";
 import { QrPage, PrintPage } from "./print";
 import { TeamPage, ProfilePage, AccountPage } from "./team";
 import { Welcome } from "./welcome";
+import { NAV, NAV_GROUPS, navItemFor, useBack, backLabel, useTrackNav } from "./nav";
 
 const useHashPath = (): [string, (to: string, opts?: { replace?: boolean }) => void] => { const [loc, nav] = useHashLocation(); return [loc.split("?")[0], nav as any]; };
 
@@ -51,6 +52,7 @@ function Gate() {
   const [isVerify, vparams] = useRoute("/verify/:token");
   const [isSignup] = useRoute("/signup");
   const [welcome, setWelcome] = useState(false);
+  useTrackNav();
   const { data: me, isLoading, error } = useQuery<Me>({ queryKey: ["/api/fbo/me", token], queryFn: get("/api/fbo/me"), enabled: !!token });
   const signedIn = (t: string) => { setFboToken(t); fboQuery.clear(); setToken(t); window.location.hash = "#/"; };
   const signOut = async () => { try { await api("POST", "/api/fbo/logout"); } catch { /* */ } setFboToken(""); fboQuery.clear(); setToken(""); window.location.hash = "#/"; };
@@ -209,78 +211,147 @@ function InviteForm({ token, onDone }: { token: string; onDone: (t: string) => v
 }
 
 // ------------------------------------------------------------- signed-in shell
-const NAV = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/places", label: "Recommendations", icon: UtensilsCrossed },
-  { to: "/offers", label: "Discounts", icon: TicketPercent },
-  { to: "/intel", label: "FBO intel", icon: ClipboardList },
-  { to: "/ads", label: "Ads", icon: Megaphone },
-  { to: "/qr", label: "QR & print", icon: QrCode },
-  { to: "/team", label: "Team", icon: Users },
-  { to: "/profile", label: "FBO profile", icon: Building2 },
-];
+function Brand() {
+  return <div className="flex items-center gap-2 font-semibold"><Logo className="h-7 w-7" />Wheelsdown <span className="rounded-md bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground">FBO</span></div>;
+}
 
 function Shell() {
   const { me, signOut } = useMe();
   const [loc] = useLocation();
+  const [more, setMore] = useState(false);
+  useEffect(() => setMore(false), [loc]);
   const active = (to: string) => (to === "/" ? loc === "/" : loc.startsWith(to));
+  const item = navItemFor(loc);
+  const back = useBack();
+  const isHome = loc === "/";
+  const TABS = ["/", "/places", "/offers", "/qr"].map((t) => NAV.find((n) => n.to === t)!);
+  const moreActive = !TABS.some((t) => active(t.to));
   return (
-    <div className="min-h-screen bg-background lg:grid lg:grid-cols-[232px_1fr]">
+    <div className="min-h-screen bg-background lg:grid lg:grid-cols-[248px_1fr]">
+      {/* desktop sidebar */}
       <aside className="sticky top-0 hidden h-screen flex-col border-r border-border bg-sidebar px-3 py-4 lg:flex">
-        <div className="flex items-center gap-2 px-2 font-semibold"><Logo className="h-7 w-7" />Wheelsdown <span className="rounded-md bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground">FBO</span></div>
-        <div className="mt-4 rounded-lg border border-sidebar-border bg-card px-3 py-2">
+        <Link href="/" className="rounded-lg px-2 py-1 hover-elevate" data-testid="link-brand"><Brand /></Link>
+        <Link href="/profile" className="mt-3 block rounded-lg border border-sidebar-border bg-card px-3 py-2 hover-elevate" data-testid="link-fbo-card">
           <p className="truncate text-sm font-semibold" data-testid="text-fbo-name">{me.account.name}</p>
           <p className="truncate text-xs text-muted-foreground">{me.account.icao}{me.account.airportName ? ` · ${me.account.airportName}` : ""}</p>
-        </div>
-        <nav className="mt-4 flex-1 space-y-0.5">
-          {NAV.map((n) => (
-            <Link key={n.to} href={n.to} className={cn("flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm hover-elevate", active(n.to) ? "bg-sidebar-accent font-semibold" : "text-muted-foreground")} data-testid={`nav-${n.to.slice(1) || "home"}`}>
-              <n.icon className="h-4 w-4" />{n.label}
-            </Link>
+          <p className={cn("mt-1 inline-flex items-center gap-1 text-[11px] font-medium", me.account.verified ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400")}>
+            <span className={cn("h-1.5 w-1.5 rounded-full", me.account.verified ? "bg-emerald-500" : "bg-amber-500")} />{me.account.verified ? "Crew page live" : "Not published yet"}
+          </p>
+        </Link>
+        <nav className="no-scrollbar mt-3 flex-1 space-y-3 overflow-y-auto" aria-label="FBO portal">
+          {NAV_GROUPS.map((g) => (
+            <div key={g.label || "home"}>
+              {g.label && <p className="px-2.5 pb-1 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground/80">{g.label}</p>}
+              <div className="space-y-0.5">
+                {g.items.map((n) => (
+                  <Link key={n.to} href={n.to} aria-current={active(n.to) ? "page" : undefined} title={n.hint}
+                    className={cn("relative flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm hover-elevate", active(n.to) ? "bg-sidebar-accent font-semibold text-foreground" : "text-muted-foreground")} data-testid={`nav-${n.to.slice(1) || "home"}`}>
+                    {active(n.to) && <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-primary" />}
+                    <n.icon className="h-4 w-4 shrink-0" />{n.label}
+                  </Link>
+                ))}
+              </div>
+            </div>
           ))}
         </nav>
-        <a href={me.account.publicUrl} target="_blank" rel="noreferrer" className="mb-2 flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-muted-foreground hover-elevate" data-testid="link-public-page"><ExternalLink className="h-4 w-4" />View crew page</a>
+        <a href={me.account.publicUrl} target="_blank" rel="noreferrer" className="mb-2 mt-2 flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-muted-foreground hover-elevate" data-testid="link-public-page"><ExternalLink className="h-4 w-4" />View crew page</a>
         <div className="flex items-center justify-between border-t border-sidebar-border pt-3">
-          <Link href="/account" className="min-w-0 rounded-lg px-2 py-1 hover-elevate" data-testid="link-account">
+          <Link href="/account" className={cn("min-w-0 rounded-lg px-2 py-1 hover-elevate", active("/account") && "bg-sidebar-accent")} data-testid="link-account">
             <p className="truncate text-sm font-medium">{me.user.name || me.user.email}</p>
-            <p className="text-[11px] capitalize text-muted-foreground">{me.user.role}</p>
+            <p className="text-[11px] text-muted-foreground"><span className="capitalize">{me.user.role}</span> · My login</p>
           </Link>
-          <div className="flex items-center"><ThemeToggle /><button onClick={signOut} aria-label="Sign out" className="grid h-9 w-9 place-items-center rounded-full text-muted-foreground hover-elevate" data-testid="button-signout"><LogOut className="h-4 w-4" /></button></div>
+          <div className="flex items-center"><ThemeToggle /><button onClick={signOut} aria-label="Sign out" title="Sign out" className="grid h-9 w-9 place-items-center rounded-full text-muted-foreground hover-elevate" data-testid="button-signout"><LogOut className="h-4 w-4" /></button></div>
         </div>
       </aside>
 
-      {/* phone / tablet header */}
-      <header className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur lg:hidden" style={{ paddingTop: "env(safe-area-inset-top)" }}>
-        <div className="flex h-12 items-center justify-between px-3">
-          <div className="flex min-w-0 items-center gap-2"><Logo className="h-6 w-6 shrink-0" /><span className="truncate text-sm font-semibold">{me.account.name}</span><span className="text-xs text-muted-foreground">{me.account.icao}</span></div>
-          <div className="flex items-center"><ThemeToggle /><Link href="/account" aria-label="My login" className="grid h-9 w-9 place-items-center rounded-full text-muted-foreground hover-elevate"><UserCog className="h-4 w-4" /></Link><button onClick={signOut} aria-label="Sign out" className="grid h-9 w-9 place-items-center rounded-full text-muted-foreground hover-elevate"><LogOut className="h-4 w-4" /></button></div>
-        </div>
-        <nav className="no-scrollbar flex gap-1 overflow-x-auto px-2 pb-2">
-          {NAV.map((n) => (
-            <Link key={n.to} href={n.to} className={cn("flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs hover-elevate", active(n.to) ? "bg-primary font-semibold text-primary-foreground" : "border border-border text-muted-foreground")}>
-              <n.icon className="h-3.5 w-3.5" />{n.label}
+      <div className="min-w-0">
+        {/* top bar: back button + breadcrumb on desktop, title bar on phones */}
+        <header className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur" style={{ paddingTop: "env(safe-area-inset-top)" }}>
+          <div className="mx-auto flex h-14 max-w-6xl items-center gap-2 px-3 sm:px-6 lg:px-10">
+            {isHome ? (
+              <Link href="/" className="lg:hidden"><Brand /></Link>
+            ) : (
+              <button onClick={() => back()} className="inline-flex h-9 shrink-0 items-center gap-1 rounded-lg border border-border bg-card pl-2 pr-3 text-sm font-medium hover-elevate" aria-label={`Back to ${backLabel(loc)}`} data-testid="button-back">
+                <ArrowLeft className="h-4 w-4" /><span className="hidden sm:inline">{backLabel(loc)}</span><span className="sm:hidden">Back</span>
+              </button>
+            )}
+            <nav aria-label="Breadcrumb" className="hidden min-w-0 items-center gap-1.5 text-sm text-muted-foreground lg:flex">
+              {!isHome && <><Link href="/" className="rounded px-1 hover-elevate">Dashboard</Link><ChevronRight className="h-3.5 w-3.5" /></>}
+              <span className="truncate font-medium text-foreground" data-testid="text-crumb">{item?.label ?? "Dashboard"}</span>
+            </nav>
+            {!isHome && <span className="min-w-0 truncate text-sm font-semibold lg:hidden" data-testid="text-mobile-title">{item?.label}</span>}
+            <div className="ml-auto flex items-center gap-1.5">
+              <a href={me.account.publicUrl} target="_blank" rel="noreferrer" className="hidden h-9 items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-sm font-medium hover-elevate sm:inline-flex lg:hidden" data-testid="link-public-top"><ExternalLink className="h-4 w-4" />Crew page</a>
+              {!active("/qr") && <Link href="/qr" className="hidden h-9 items-center gap-1.5 rounded-lg taxi-sign px-3 text-sm font-semibold hover-elevate sm:inline-flex" data-testid="link-print-top"><Printer className="h-4 w-4" />Print QR</Link>}
+              <span className="lg:hidden"><ThemeToggle /></span>
+            </div>
+          </div>
+        </header>
+
+        <main className="px-4 pb-28 pt-5 sm:px-6 lg:px-10 lg:pb-10 lg:pt-7">
+          <div className="mx-auto max-w-6xl">
+            {!me.account.verified && <VerifyBanner />}
+            <Switch>
+              <Route path="/" component={DashboardPage} />
+              <Route path="/places" component={PlacesPage} />
+              <Route path="/offers" component={OffersPage} />
+              <Route path="/intel" component={IntelPage} />
+              <Route path="/ads" component={AdsPage} />
+              <Route path="/qr" component={QrPage} />
+              <Route path="/team" component={TeamPage} />
+              <Route path="/profile" component={ProfilePage} />
+              <Route path="/account" component={AccountPage} />
+              <Route><p className="text-sm text-muted-foreground">Page not found. <Link href="/" className="underline">Back to the dashboard</Link></p></Route>
+            </Switch>
+          </div>
+        </main>
+      </div>
+
+      {/* phone / tablet bottom tabs */}
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 backdrop-blur lg:hidden print:hidden" style={{ paddingBottom: "env(safe-area-inset-bottom)" }} aria-label="FBO portal">
+        <div className="mx-auto grid max-w-xl grid-cols-5">
+          {TABS.map((n) => (
+            <Link key={n.to} href={n.to} aria-current={active(n.to) ? "page" : undefined} className={cn("flex flex-col items-center gap-0.5 py-2 text-[11px]", active(n.to) ? "font-semibold text-foreground" : "text-muted-foreground")} data-testid={`tab-${n.to.slice(1) || "home"}`}>
+              <span className={cn("grid h-7 w-12 place-items-center rounded-full", active(n.to) && "bg-primary text-primary-foreground")}><n.icon className="h-[18px] w-[18px]" /></span>{n.short}
             </Link>
           ))}
-        </nav>
-      </header>
-
-      <main className="min-w-0 px-4 py-5 sm:px-6 lg:px-10 lg:py-8">
-        <div className="mx-auto max-w-6xl">
-          {!me.account.verified && <VerifyBanner />}
-          <Switch>
-            <Route path="/" component={DashboardPage} />
-            <Route path="/places" component={PlacesPage} />
-            <Route path="/offers" component={OffersPage} />
-            <Route path="/intel" component={IntelPage} />
-            <Route path="/ads" component={AdsPage} />
-            <Route path="/qr" component={QrPage} />
-            <Route path="/team" component={TeamPage} />
-            <Route path="/profile" component={ProfilePage} />
-            <Route path="/account" component={AccountPage} />
-            <Route><p className="text-sm text-muted-foreground">Page not found. <Link href="/" className="underline">Back to the dashboard</Link></p></Route>
-          </Switch>
+          <button onClick={() => setMore(true)} className={cn("flex flex-col items-center gap-0.5 py-2 text-[11px]", moreActive ? "font-semibold text-foreground" : "text-muted-foreground")} data-testid="tab-more">
+            <span className={cn("grid h-7 w-12 place-items-center rounded-full", moreActive && "bg-primary text-primary-foreground")}><Menu className="h-[18px] w-[18px]" /></span>More
+          </button>
         </div>
-      </main>
+      </nav>
+
+      {more && (
+        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="More">
+          <button className="absolute inset-0 bg-black/40" aria-label="Close menu" onClick={() => setMore(false)} />
+          <div className="absolute inset-x-0 bottom-0 max-h-[85vh] overflow-y-auto rounded-t-2xl border-t border-border bg-background px-4 pt-3" style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 16px)" }}>
+            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-border" />
+            <div className="mb-3 flex items-center justify-between">
+              <div className="min-w-0"><p className="truncate font-semibold">{me.account.name}</p><p className="text-xs text-muted-foreground">{me.account.icao} · {me.user.name || me.user.email}</p></div>
+              <button onClick={() => setMore(false)} aria-label="Close" className="grid h-9 w-9 place-items-center rounded-full hover-elevate"><X className="h-4 w-4" /></button>
+            </div>
+            {NAV_GROUPS.filter((g) => g.label).map((g) => (
+              <div key={g.label} className="mb-3">
+                <p className="pb-1 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground/80">{g.label}</p>
+                <div className="overflow-hidden rounded-xl border border-card-border bg-card">
+                  {g.items.map((n) => (
+                    <Link key={n.to} href={n.to} className={cn("flex items-center gap-3 border-b border-border px-3 py-3 last:border-0 hover-elevate", active(n.to) && "bg-sidebar-accent")} data-testid={`more-${n.to.slice(1)}`}>
+                      <n.icon className="h-[18px] w-[18px] text-muted-foreground" />
+                      <span className="min-w-0 flex-1"><span className="block text-sm font-medium">{n.label}</span><span className="block truncate text-xs text-muted-foreground">{n.hint}</span></span>
+                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            ))}
+            <div className="overflow-hidden rounded-xl border border-card-border bg-card">
+              <a href={me.account.publicUrl} target="_blank" rel="noreferrer" className="flex items-center gap-3 border-b border-border px-3 py-3 text-sm font-medium hover-elevate"><ExternalLink className="h-[18px] w-[18px] text-muted-foreground" />View crew page</a>
+              <Link href="/account" className="flex items-center gap-3 border-b border-border px-3 py-3 text-sm font-medium hover-elevate" data-testid="more-account"><UserCog className="h-[18px] w-[18px] text-muted-foreground" />My login</Link>
+              <button onClick={signOut} className="flex w-full items-center gap-3 px-3 py-3 text-left text-sm font-medium text-destructive hover-elevate" data-testid="more-signout"><LogOut className="h-[18px] w-[18px]" />Sign out</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
