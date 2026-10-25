@@ -16,7 +16,7 @@ import { PROGRAMS, programOf, type ProgramId } from "@shared/loyalty";
 import { VisitReminder } from "@/lib/visits";
 import { useTrip } from "@/lib/experience";
 import { TodayCard } from "./todayCard";
-import { AiAddedTag, FboPickTag, fboRecTagFor, PickTag, AiPicksPanel, MoreAiPlaces, ProgramChip, useMyPrograms } from "@/lib/aiPicks";
+import { AiAddedTag, fboRecTagFor, PickTag, AiPicksPanel, MoreAiPlaces, ProgramChip, useMyPrograms } from "@/lib/aiPicks";
 import { getPosition, type NearAirport } from "@/lib/geo";
 import { useToast } from "@/hooks/use-toast";
 import { trustScore } from "@shared/vetting";
@@ -650,7 +650,7 @@ export function SpotCard({ spot }: { spot: SpotWithStats }) {
         </div>
       </div>
       <p className="mt-1.5 text-sm text-muted-foreground line-clamp-2">{spot.description}</p>
-      <div className="mt-2.5 flex flex-wrap items-center gap-2">{spot.source === "ai" && <AiAddedTag rated={!!spot.reviewCount} />}{spot.source === "fbo" ? <><FboPickTag by={spot.submittedBy} />{fboRecTagFor(spot.fboRecs)}</> : spot.fboRecs ? <>{spot.source !== "ai" && <PickTag ai={false} />}{fboRecTagFor(spot.fboRecs)}</> : null}<VetBadge vet={spot.vet} />{spot.goArounds > 0 && <GoAroundBadge count={spot.goArounds} />}</div>
+      <div className="mt-2.5 flex flex-wrap items-center gap-2">{spot.source === "ai" && <AiAddedTag rated={!!spot.reviewCount} />}{spot.source === "fbo" ? fboRecTagFor(spot.fboRecs) : spot.fboRecs ? <>{spot.source !== "ai" && <PickTag ai={false} />}{fboRecTagFor(spot.fboRecs)}</> : null}<VetBadge vet={spot.vet} />{spot.goArounds > 0 && <GoAroundBadge count={spot.goArounds} />}</div>
       <div className="mt-2.5 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           {spot.reviewCount > 0 ? (

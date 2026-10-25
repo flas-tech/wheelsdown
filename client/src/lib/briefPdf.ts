@@ -20,6 +20,7 @@ export type BriefStopFull = {
 export type AiPick = SpotWithStats & { ai: { meal: "breakfast" | "lunch" | "dinner" | null; sources: string[]; createdAt: number; draft?: boolean; extra?: boolean; focus?: string; foods?: string[]; acts?: string[]; slot?: { cat: string; meal?: string } } };
 export const isAi = (s: SpotWithStats): s is AiPick => s.id < 0 || !!(s as any).ai;
 /** A listing made from an AI pick kept in a saved briefing: a real listing (positive id), marked "AI added" until crews rate it. */
+const fboLevel = (s: SpotWithStats) => (s.fboRecs ? ((s.fboRecs.rec ?? s.fboRecs.n) > 0 ? "recommended" : "listed") : null);
 export const isAiAdded = (s: SpotWithStats) => s.id > 0 && (s as any).source === "ai";
 /** Dashed ring on the map, the number badge and the PDF: AI picks, and AI-added listings no crew has rated yet. */
 export const looksAi = (s: SpotWithStats) => isAi(s) || (isAiAdded(s) && !s.reviewCount);
@@ -221,13 +222,16 @@ export async function buildBriefPdf(b: BriefFull, opts: { appUrl: string; prepar
       { // CREW PICK / AI PICK tag
         const added = isAiAdded(spot);
         const fbo = !ai && !added && (spot as any).source === "fbo";
-        const tag = ai ? "AI PICK" : added ? "AI ADDED" : fbo ? "FBO PICK" : "CREW PICK";
+        const lvl = fbo ? fboLevel(spot) : null;
+        const tag = ai ? "AI PICK" : added ? "AI ADDED" : fbo ? (lvl === "recommended" ? "FBO RECOMMENDED" : lvl === "listed" ? "FBO LISTED" : "") : "CREW PICK";
+        if (tag) {
         doc.setFont("helvetica", "bold"); doc.setFontSize(6.5);
         const tw = doc.getTextWidth(tag) + 8;
-        if (ai || added) doc.setFillColor(124, 58, 237); else if (fbo) doc.setFillColor(2, 132, 199); else doc.setFillColor(5, 150, 105);
+        if (ai || added) doc.setFillColor(124, 58, 237); else if (fbo) { if (lvl === "recommended") doc.setFillColor(2, 132, 199); else doc.setFillColor(100, 116, 139); } else doc.setFillColor(5, 150, 105);
         doc.roundedRect(nx, yy - 8.5, tw, 11, 2, 2, "F");
         doc.setTextColor(255, 255, 255); doc.text(tag, nx + tw / 2, yy - 0.8, { align: "center" });
         nx += tw + 6; doc.setFontSize(11.5); doc.setTextColor(...navy);
+        }
       }
       const nmLines = doc.splitTextToSize(nm, CW - 150 - (nx - M - 26)) as string[];
       doc.text(nmLines.length > 1 ? nmLines[0].replace(/[\s,.-]+$/, "") + "..." : nmLines[0], nx, yy);

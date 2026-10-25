@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AiAddedTag, FboPickTag, FboRecTag, PickTag } from "@/lib/aiPicks";
+import { AiAddedTag, FboRecTag, PickTag } from "@/lib/aiPicks";
 import { noteVisit, clearVisit } from "@/lib/visits";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useRoute } from "wouter";
@@ -113,7 +113,7 @@ export default function SpotPage() {
           {spot.goArounds > 0 && <GoAroundBadge count={spot.goArounds} />}
           {spot.source === "ai" && <AiAddedTag rated={!!spot.reviewCount} />}
           {(() => { const tag = fboRecs.length > 0 ? <FboRecTag names={fboRecs.slice(0, 3).map((r) => r.fbo)} n={fboRecs.length} recommended={fboRecs.some((r) => r.level !== "listed")} /> : null;
-            return spot.source === "fbo" ? <><FboPickTag by={spot.submittedBy} />{tag}</> : tag ? <>{spot.source !== "ai" && <PickTag ai={false} />}{tag}</> : null; })()}
+            return spot.source === "fbo" ? tag : tag ? <>{spot.source !== "ai" && <PickTag ai={false} />}{tag}</> : null; })()}
           <button type="button" onClick={() => document.getElementById("rate")?.scrollIntoView({ behavior: "smooth", block: "center" })} className="text-xs font-medium text-primary" data-testid="button-jump-rate">Rate it</button>
         </div>
         <div className="mt-3"><CheckInButton spotId={spot.id} name={spot.name} /></div>

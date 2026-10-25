@@ -54,6 +54,8 @@ export function FboRecTag({ names, n, recommended = true, className }: { names?:
     </span>
   );
 }
+/** "recommended" / "listed" when FBOs at the airport have this place on their list, else null. */
+export const fboLevel = (s: { fboRecs?: { n: number; rec?: number } | null }) => (s.fboRecs ? ((s.fboRecs.rec ?? s.fboRecs.n) > 0 ? "recommended" : "listed") : null);
 /** The FBO tag for a search card or spot page, from the fboRecs summary. */
 export const fboRecTagFor = (r?: { n: number; names: string[]; rec?: number } | null) => (r ? <FboRecTag names={r.names} n={r.n} recommended={(r.rec ?? r.n) > 0} /> : null);
 

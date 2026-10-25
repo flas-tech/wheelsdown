@@ -596,7 +596,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const ai = { ai: await aiSpotsForUser(b.userId) };
     for (const st of stops) {
       const airport = (await storage.resolveCode(st.icao)) || (refAirport(st.icao) as any) || null;
-      const all = airport?.icao ? await storage.searchSpots([airport.icao], false, "", ai) : [];
+      const found = airport?.icao ? await storage.searchSpots([airport.icao], false, "", ai) : [];
+      const recs = await fboRecMap(found.map((s: any) => s.id)).catch(() => new Map());
+      const all = recs.size ? found.map((s: any) => (recs.has(s.id) ? { ...s, fboRecs: recs.get(s.id) } : s)) : found;
       const byId = new Map(all.map((s) => [s.id, s]));
       const picks = withFavorites(st.picks, all, favs).map((i) => byId.get(i)).filter(Boolean) as SpotWithStats[];
       const fill = airport?.icao ? await fillStop(airport.icao, st.layover, st.nights, picks, all, airport, st.ai ?? pref === "ai", st.aiAdd || [], programs, st.aiHide || []).catch(() => ({ aiPicks: [], aiStatus: "failed" as const, aiSlots: [], aiMore: [], aiMoreStatus: "idle" as const })) : { aiPicks: [], aiStatus: "none" as const, aiSlots: [], aiMore: [], aiMoreStatus: "idle" as const };
