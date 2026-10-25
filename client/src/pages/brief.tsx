@@ -24,6 +24,7 @@ import { buildBriefPdf, shareOrDownload, stopPins, groupPins, PICK_GROUPS, layov
 import { errText } from "./add";
 import { PickTag, AiAddedTag, fboRecTagFor, isFboAdded, FindMore, aiAddHref } from "@/lib/aiPicks";
 import { useTrip } from "@/lib/experience";
+import { FboCard } from "@/lib/fboCard";
 import { crewUpHref, fmtArrive, sheetWords } from "@/lib/tripNav";
 import { TripSheetTop, CrewPlanRows, CrewPlansSection } from "./tripHome";
 import type { Meetup } from "@shared/layover";
@@ -605,6 +606,7 @@ function StopSection({ stop, index, onRemove, onAddPick, onMove, onReorder, onRe
         </div>
       )}
 
+      {(stop.fbos || []).map((f) => <FboCard key={f.id} f={f} />)}
       {stop.sponsor && (
         <a href={stop.sponsor.url || "#"} target="_blank" rel="noopener noreferrer sponsored" className="block rounded-xl bg-muted/60 px-3 py-2 text-xs hover-elevate" data-testid={`sponsor-${index}`}>
           <span className="font-semibold uppercase tracking-wide text-[10px] text-muted-foreground mr-2">Sponsored</span>
@@ -818,6 +820,7 @@ export function SharedBriefPage() {
             <AiNote stop={st} />
             <ol className="space-y-2">{numbered.map(({ n, spot }) => <PickRow key={spot.id} n={n} spot={spot} count={numbered.length} readOnly favorite={(st.favoriteIds || []).includes(spot.id)} />)}</ol>
             {numbered.length === 0 && st.aiStatus !== "pending" && <p className="text-sm text-muted-foreground">No picks for this stop.</p>}
+            {(st.fbos || []).map((f) => <FboCard key={f.id} f={f} />)}
             {st.sponsor && (
               <a href={st.sponsor.url || "#"} target="_blank" rel="noopener noreferrer sponsored" className="block rounded-xl bg-muted/60 px-3 py-2 text-xs hover-elevate">
                 <span className="font-semibold uppercase tracking-wide text-[10px] text-muted-foreground mr-2">Sponsored</span>

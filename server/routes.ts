@@ -27,6 +27,7 @@ import { registerLayover } from "./layover";
 import { registerLounge } from "./lounge";
 import { registerFbo, fboHiddenAdIds, recordFboReferral, fboPublicName } from "./fbo";
 import { fboRecsForSpot, fboRecMap } from "./fboSpots";
+import { registerFboCards, fbosAt, fboCardsOpenFor } from "./fboCards";
 import { registerMyCrew, requestFromInvite, forgetMember } from "./mycrew";
 import { registerPush, forgetPush } from "./push";
 import { registerDm, forgetDm } from "./dm";
@@ -594,6 +595,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const programs = await programsOf(b.userId);
     const out = [];
     const ai = { ai: await aiSpotsForUser(b.userId) };
+    // participating FBOs (FBOs with a live Wheelsdown account) at each stop's airport, if the owner sees them
+    const fboCards = (await fboCardsOpenFor(b.userId)) ? await fbosAt(stops.map((st) => (refAirport(st.icao) as any)?.icao || st.icao), "brief").catch(() => new Map()) : new Map();
     for (const st of stops) {
       const airport = (await storage.resolveCode(st.icao)) || (refAirport(st.icao) as any) || null;
       const found = airport?.icao ? await storage.searchSpots([airport.icao], false, "", ai) : [];
@@ -608,6 +611,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         favoriteIds: all.filter((s) => favs.has(s.id)).map((s) => s.id),
         candidates: withCandidates ? all : undefined,
         sponsor: await sponsorFor(airport?.icao || st.icao.toUpperCase()),
+        fbos: fboCards.get(airport?.icao || st.icao.toUpperCase()) || [],
       });
     }
     return { id: b.id, title: b.title, shareToken: b.shareToken, createdAt: b.createdAt, updatedAt: b.updatedAt, stops: out };
@@ -721,6 +725,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   registerLayover(app, { userOf, isSuperAdmin }); // Layover Today, Crew Up, Rate a spot: admins only until layover_audience = members
   registerMyCrew(app, { userOf, isSuperAdmin, requireAdmin, requireUser }); // My Crew + launch switch (experience_audience) + member messages
   registerPush(app, { userOf, isSuperAdmin, requireAdmin, requireUser });
+  registerFboCards(app, { userOf, isSuperAdmin, requireAdmin }); // participating FBO cards on briefs and Crew Up (fbo_cards_audience: admins until opened)
   registerDm(app, { userOf, isSuperAdmin, requireAdmin }); // private messages, end-to-end encrypted (dm_audience: admins until opened)
   registerTrip(app, { userOf, isSuperAdmin, requireAdmin, requireUser }); // 4-tab nav, Home trip card, AI-added listings (trip_audience: admins until opened) // push notifications (push_audience: admins until opened)
   registerModFix(app, { requireAdmin, requireUser, ensureAirport: (c) => ensureAirport(c), byAdmin });

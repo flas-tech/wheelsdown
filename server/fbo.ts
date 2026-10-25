@@ -258,7 +258,8 @@ async function renderPublic(slug: string, req: Request, res: Response) {
   const kiosk = String(req.query.kiosk || "") === "1";
   // count the visit (bots, previews and admin requests are skipped); one row per device per day per source
   if (!untracked(req)) {
-    const src = kiosk ? "kiosk" : String(req.query.s || "") === "qr" ? "qr" : "link";
+    const sq = String(req.query.s || "");
+    const src = kiosk ? "kiosk" : ["qr", "brief", "crewup", "pdf"].includes(sq) ? sq : "link"; // brief / crewup / pdf: the FBO card on a trip sheet or Crew Up plan
     const vid = sha(SALT + String(req.ip || "") + String(req.get("user-agent") || "") + dayKey()).slice(0, 24);
     db().execute(sql`INSERT INTO fbo_views (fbo_id, day, src, vid, n) VALUES (${fboId}, ${dayKey()}, ${src}, ${vid}, 1)
       ON CONFLICT (fbo_id, day, src, vid) DO UPDATE SET n = fbo_views.n + 1`).catch(() => {});

@@ -9,6 +9,7 @@ import { useAuth } from "@/lib/auth";
 import { CrewAvatar } from "@/lib/aircraft";
 import { PreviewBadge, PreviewGate, errMsg, left } from "@/lib/preview";
 import { ThreadButton } from "@/lib/dm";
+import { useFbosAt, FboCard, FboLine } from "@/lib/fboCard";
 import { InviteCrewCard, useMyCrew } from "@/lib/mycrew";
 import { markCrewUpSeen } from "@/lib/tabDots";
 import { crewUpHref, crewUpPrefill, fmtArrive, type TripResp, type TripStop } from "@/lib/tripNav";
@@ -133,6 +134,7 @@ function MeetupBoard() {
                     <Plus className="h-4 w-4" />Make another plan at <span className="font-code">{data.icao}</span>
                   </button>
                 ) : <Compose key={`${data.icao}-${pre.date}-${pre.time}-${pre.hours}`} d={data} pre={pre} onPosted={() => { setMore(false); setPre({ date: null, time: null, hours: null }); }} />}
+              <FbosHere icao={data.icao} />
               {!trip && <CrewHere d={data} />}
             </>}
           {!trip && data.crewElsewhere.length > 0 && (
@@ -148,9 +150,22 @@ function MeetupBoard() {
   );
 }
 
+/** Participating FBOs (live Wheelsdown accounts) at the airport you're planning at. */
+function FbosHere({ icao }: { icao: string }) {
+  const fbos = useFbosAt([icao])[icao] || [];
+  if (!fbos.length) return null;
+  return (
+    <section className="space-y-2" data-testid="section-meetup-fbos">
+      <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">FBO{fbos.length > 1 ? "s" : ""} on Wheelsdown at <span className="font-code">{icao}</span></h2>
+      {fbos.map((f) => <FboCard key={f.id} f={f} />)}
+    </section>
+  );
+}
+
 /** Four-tab preview: every live plan you can see, yours and your crew's, soonest first. */
 function YourPlans({ plans, loading, focus, onNew }: { plans: Meetup[]; loading: boolean; focus: number | null; onNew: () => void }) {
   const ref = useRef<HTMLLIElement>(null);
+  const fbos = useFbosAt(plans.map((m) => m.icao));
   useEffect(() => { if (focus && ref.current) ref.current.scrollIntoView({ block: "center", behavior: "smooth" }); }, [focus, plans.length]);
   if (loading) return <div className="grid place-items-center py-16 text-muted-foreground"><Loader2 className="h-6 w-6 animate-spin" /></div>;
   if (!plans.length) return (
@@ -163,6 +178,7 @@ function YourPlans({ plans, loading, focus, onNew }: { plans: Meetup[]; loading:
       {plans.map((m) => (
         <li key={m.id} ref={m.id === focus ? ref : undefined} className={cn("rounded-2xl", m.id === focus && "ring-2 ring-primary ring-offset-2 ring-offset-background")} data-testid={`plan-${m.id}`}>
           {m.mine ? <Posted mine={m} /> : <Other m={m} showIcao />}
+          {(fbos[m.icao] || []).map((f) => <FboLine key={f.id} f={f} />)}
         </li>
       ))}
     </ul>

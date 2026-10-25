@@ -440,6 +440,7 @@ function TripCardAdmin({ adminOnly, admin }: { adminOnly: boolean; admin: boolea
       </div>
       {admin && <TripSwitch />}
       {admin && <><p className="mt-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Private messages</p><DmSwitch /></>}
+      {admin && <><p className="mt-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">FBOs on trip sheets and Crew Up</p><FboCardsSwitch /></>}
       {admin && <><p className="mt-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Earlier switch: My Crew, Crew Up, Lounge</p><LaunchSwitch /></>}
     </section>
   );
@@ -463,6 +464,28 @@ function TripSwitch() {
     <div className="mt-3 flex items-start justify-between gap-3 border-t border-dashed border-border pt-3" data-testid="row-trip-switch">
       <span><span className="block text-xs font-semibold">Open to members</span><span className="block text-[11px] text-muted-foreground">{live ? "On: members have Home, four tabs and AI-added listings." : "Off: only admins see it."} {q.data.aiSpots} AI-added listing{q.data.aiSpots === 1 ? "" : "s"}, {q.data.aiRated} rated by crew.</span></span>
       <Switch checked={live} disabled={m.isPending} onCheckedChange={(v) => { if (window.confirm(v ? "Open Home, the four tabs and AI-added listings to all members?" : "Put members back on the current navigation and hide AI-added listings from them?")) m.mutate(v ? "members" : "admins"); }} data-testid="switch-trip" aria-label="Open the four tabs to members" />
+    </div>
+  );
+}
+
+/** Admins: show participating FBOs (live portal accounts) on members' trip sheets and Crew Up plans (app_settings fbo_cards_audience). */
+function FboCardsSwitch() {
+  const { toast } = useToast();
+  const q = useQuery<{ audience: "admins" | "members"; fbos: number; airports: number }>({ queryKey: ["/api/admin/fbo-cards"], queryFn: async () => (await apiRequest("GET", "/api/admin/fbo-cards")).json(), retry: false });
+  const m = useMutation({
+    mutationFn: async (audience: "admins" | "members") => (await apiRequest("PUT", "/api/admin/fbo-cards", { audience })).json(),
+    onSuccess: (r: { audience: string }) => {
+      for (const k of ["/api/admin/fbo-cards", "/api/fbos-at", "/api/briefings"]) queryClient.invalidateQueries({ queryKey: [k] });
+      toast({ title: r.audience === "members" ? "FBO cards open to members" : "FBO cards back to admins only", description: r.audience === "members" ? "Members see participating FBOs on trip sheets and Crew Up." : "Only admins see FBO cards." });
+    },
+    onError: (e: Error) => toast({ title: "Couldn't change it", description: e.message, variant: "destructive" }),
+  });
+  if (!q.data) return null;
+  const live = q.data.audience === "members";
+  return (
+    <div className="mt-1 flex items-start justify-between gap-3 pt-1" data-testid="row-fbo-cards-switch">
+      <span><span className="block text-xs font-semibold">Open to members</span><span className="block text-[11px] text-muted-foreground">{live ? "On: members see FBO cards." : "Off: only admins see FBO cards."} {q.data.fbos} live FBO{q.data.fbos === 1 ? "" : "s"} at {q.data.airports} airport{q.data.airports === 1 ? "" : "s"}.</span></span>
+      <Switch checked={live} disabled={m.isPending} onCheckedChange={(v) => { if (window.confirm(v ? "Show participating FBOs to all members?" : "Hide FBO cards from members?")) m.mutate(v ? "members" : "admins"); }} data-testid="switch-fbo-cards" aria-label="Show FBO cards to members" />
     </div>
   );
 }

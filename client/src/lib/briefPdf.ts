@@ -10,6 +10,8 @@ export type Sponsor = { id: number; advertiser: string; headline: string; url: s
 export type BriefStopFull = {
   icao: string; layover: string; nights?: number; arriveDate?: string | null; arriveTime?: string | null; airport: (Airport & { lat?: number | null; lon?: number | null }) | null;
   picks: SpotWithStats[]; candidates?: SpotWithStats[]; sponsor: Sponsor; favoriteIds?: number[];
+  /** Participating FBOs (live Wheelsdown accounts) at this airport; info is the FBO's own. */
+  fbos?: import("@/lib/fboCard").FboCardData[];
   /** AI picks filling slots no crew listing covers (negative ids). */
   aiPicks?: AiPick[]; aiStatus?: "ready" | "pending" | "off" | "failed" | "none" | "offer"; ai?: boolean; aiSlots?: { cat: string; meal?: string }[];
   /** "Pick more": AI picks the owner added, the others still available, and whether a find-more run is going. */
@@ -264,6 +266,25 @@ export async function buildBriefPdf(b: BriefFull, opts: { appUrl: string; prepar
         doc.textWithLink("Crew reviews on Wheelsdown", M + 26, yy, { url: link });
       }
       yy += 18;
+    }
+
+    // participating FBOs at this airport (their own info from the FBO portal)
+    for (const f of s.fbos || []) {
+      const lines = [
+        ...(f.phone ? [`Phone: ${f.phone}`] : []),
+        ...f.intel.map((x) => `${x.label}: ${x.value}`),
+        ...f.offers.map((o) => `Crew deal: ${o.title}${o.code ? ` (code ${o.code})` : ""}`),
+      ].map((t) => doc.splitTextToSize(clean(t), CW - 20)[0] as string).slice(0, 6);
+      const need = 46 + lines.length * 11;
+      if (yy + need > H - 90) { footer(page); doc.addPage(); page++; brandBar(); yy = 64; }
+      doc.setFillColor(255, 250, 230); doc.setDrawColor(245, 183, 0); doc.roundedRect(M, yy - 12, CW, need - 6, 4, 4, "FD");
+      doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(...slate); doc.text(`FBO ON WHEELSDOWN - ${s.icao}`, M + 10, yy);
+      doc.setFontSize(11); doc.setTextColor(...navy); doc.text(clean(f.name), M + 10, yy + 13);
+      doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(51, 65, 85);
+      let ly = yy + 25;
+      for (const t of lines) { doc.text(t, M + 10, ly); ly += 11; }
+      doc.setTextColor(37, 99, 235); doc.setFontSize(8); doc.textWithLink("FBO page and their crew picks", M + 10, ly, { url: new URL(f.url.replace("?s=brief", "?s=pdf"), opts.appUrl).href });
+      yy += need + 4;
     }
 
     // one sponsor line per stop

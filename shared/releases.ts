@@ -2,6 +2,12 @@
 export type Release = { date: string; sha?: string; title: string; notes: string[] };
 
 export const RELEASES: Release[] = [
+  { date: "2026-10-25", title: "Admin preview: participating FBOs on trip sheets and Crew Up plans", notes: [
+    "An FBO with a live Wheelsdown account (active, email confirmed) now shows as an FBO on Wheelsdown card on every trip sheet stop at its airport (in the app, the shared link and the PDF), on the New plan tab of Crew Up for that airport, and as a one-line link under each Crew Up plan there.",
+    "The card uses only what the FBO entered in its portal: up to 4 desk/crew details (hours, crew car, fees, after-hours, lounge...), live crew deals with codes, a Call button and a link to its crew page with how many places it recommends. Visits from it count in the FBO's page views as brief, crewup or pdf.",
+    "Shown on every sheet when it's opened, so sheets made before an FBO joined pick it up too. A shared sheet follows its owner's access.",
+    "Gated by fbo_cards_audience (default admins). Members see no change until it's opened in Settings > Admin preview > FBOs on trip sheets and Crew Up. Rollback: switch back to admins; redeploy fbb9260 if needed.",
+  ] },
   { date: "2026-10-22", title: "Version 1.17: private messages open to members; FAQ and What's new", notes: [
     "dm_audience set to members (Oct 22). What's new 17 (trip layout): private messages, Crew Up threads, private alerts.",
     "FAQ (Crew section): How do I send a private message?, Who can read my messages?, Why can't I read some older messages?",
