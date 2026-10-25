@@ -4,7 +4,7 @@ import { Plus, Upload, Star, Search, Download, FileSpreadsheet, ArrowLeft, Spark
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { FBO_CATEGORIES, FBO_CAT_LABEL, FBO_LIMITS, mapImport, parseDelimited, nameKey, type FboCategory, type FboSpot, type FboImportRow } from "@shared/fbo";
+import { FBO_CATEGORIES, FBO_CAT_LABEL, FBO_LIMITS, mapImport, parseDelimited, nameKey, similarListings, nameLikeness, type FboCategory, type FboSpot, type FboImportRow } from "@shared/fbo";
 import { api, get, fboQuery, ApiError } from "./api";
 import { Card, Empty, Field, PageHeader, Spinner, areaCls, btn, btnGhost, btnPrimary, inputCls, Counter } from "./ui";
 
@@ -33,7 +33,7 @@ export function PlacesPage() {
     onSuccess: (_r, s) => { refreshSpots(); if (!s.rec) setOpen(s.spotId); toast({ title: s.rec ? `Removed ${s.name} from your picks` : data?.verified ? `${s.name} is on your crew page` : `${s.name} is checked`, description: !s.rec && !data?.verified ? "Your crew page goes live when you confirm your email." : undefined }); },
     onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
   });
-  const list = useMemo(() => spots.filter((s) => s.category === tab && (!only || s.rec) && (!q || `${s.name} ${s.address}`.toLowerCase().includes(q.toLowerCase())))
+  const list = useMemo(() => spots.filter((s) => s.category === tab && (!only || s.rec) && (!q || `${s.name} ${s.address}`.toLowerCase().includes(q.toLowerCase()) || nameLikeness(q, s.name) >= 45))
     .sort((a, b) => Number(!!b.rec) - Number(!!a.rec) || Number(!!b.rec?.favorite) - Number(!!a.rec?.favorite) || b.crew.ratings - a.crew.ratings || a.name.localeCompare(b.name)), [spots, tab, only, q]);
   const counts = (c: FboCategory) => { const all = spots.filter((s) => s.category === c); return { all: all.length, mine: all.filter((s) => s.rec).length }; };
   const picks = spots.filter((s) => s.rec).length;
@@ -155,6 +155,10 @@ function AddDialog({ ctx, cat, name, edit, onClose, onRecommend }: { ctx: SpotsR
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
   // already on the list? (exact name match within this category)
   const local = useMemo(() => (edit ? null : (fboQuery.getQueryData<SpotsResp>(["/api/fbo/spots"])?.spots || []).find((s) => s.category === f.category && f.name.trim().length > 2 && nameKey(s.name) === nameKey(f.name))), [f.name, f.category, edit]);
+  // listings that may be the same place (any type), so the FBO recommends the existing one instead of adding a copy
+  const allSpots = fboQuery.getQueryData<SpotsResp>(["/api/fbo/spots"])?.spots || [];
+  const similar = useMemo(() => (edit ? [] : similarListings(f.name, allSpots).filter((s) => s.spotId !== local?.spotId && s.spotId !== dup?.spotId)), [f.name, edit, local, dup, allSpots.length]);
+  const listedAs = (h: Hit) => allSpots.find((s) => nameLikeness(h.name, s.name) >= 80);
   useEffect(() => {
     if (edit || f.name.trim().length < 3 || ctx.lat == null || f.placeRef) { setHits([]); return; }
     const t = setTimeout(async () => {
@@ -206,13 +210,32 @@ function AddDialog({ ctx, cat, name, edit, onClose, onRecommend }: { ctx: SpotsR
             <input className={inputCls} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value, placeRef: null })} maxLength={120} required autoFocus data-testid="input-place-name" />
             {(hits.length > 0 || searching) && !local && (
               <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-64 overflow-y-auto rounded-lg border border-border bg-popover shadow-lg">
-                {searching && !hits.length ? <p className="px-3 py-2 text-xs text-muted-foreground">Looking on the map…</p> : hits.map((h) => (
-                  <button type="button" key={h.ref} onClick={() => pick(h)} className="flex w-full items-start gap-2 px-3 py-2 text-left text-sm hover-elevate" data-testid={`hit-${h.ref}`}>
-                    <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" /><span><span className="font-medium">{h.name}</span><span className="block text-xs text-muted-foreground">{[h.address, h.city].filter(Boolean).join(", ")}</span></span>
-                  </button>))}
+                {searching && !hits.length ? <p className="px-3 py-2 text-xs text-muted-foreground">Looking on the map…</p> : hits.map((h) => { const on = listedAs(h); return (
+                  <button type="button" key={h.ref} onClick={() => { if (on) { setDup({ spotId: on.spotId, name: on.name, address: on.address }); setHits([]); } else pick(h); }} className="flex w-full items-start gap-2 px-3 py-2 text-left text-sm hover-elevate" data-testid={`hit-${h.ref}`}>
+                    <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1"><span className="font-medium">{h.name}</span><span className="block text-xs text-muted-foreground">{[h.address, h.city].filter(Boolean).join(", ")}</span></span>
+                    {on && <span className="shrink-0 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-700 dark:text-emerald-300">On Wheelsdown</span>}
+                  </button>); })}
               </div>
             )}
           </Field>
+          {similar.length > 0 && !local && (
+            <div className="rounded-lg border border-border bg-muted/40 p-3 sm:col-span-2" data-testid="box-similar">
+              <p className="text-sm font-medium">Already on Wheelsdown at {ctx.icao}. Is it one of these?</p>
+              <p className="text-xs text-muted-foreground">Recommending the existing listing keeps one place with all its crew ratings.</p>
+              <div className="mt-2 divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+                {similar.map((s) => (
+                  <div key={s.spotId} className="flex items-center gap-3 px-3 py-2" data-testid={`similar-${s.spotId}`}>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{s.name} <span className="text-xs font-normal text-muted-foreground">· {FBO_CAT_LABEL[s.category]}</span></p>
+                      <p className="truncate text-xs text-muted-foreground">{[s.address, addedLabel[s.addedBy], stars(s)].filter(Boolean).join(" · ")}</p>
+                    </div>
+                    {s.rec ? <span className="shrink-0 text-xs font-medium text-emerald-700 dark:text-emerald-300">Already your pick</span>
+                      : <button type="button" className={btn} onClick={() => { onRecommend(s.spotId); onClose(); }} data-testid={`button-recommend-similar-${s.spotId}`}><Check className="h-4 w-4" />Recommend this</button>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {!edit && ctx.aiEnabled && (
             <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
               <button type="button" className={btn} disabled={f.name.trim().length < 2 || ai.isPending} onClick={() => { setAiNote(""); ai.mutate(); }} data-testid="button-ai-lookup">{ai.isPending ? <Spinner /> : <Sparkles className="h-4 w-4" />}{ai.isPending ? "Looking it up (up to a minute)…" : "AI look it up"}</button>

@@ -84,6 +84,20 @@ export async function recsOf(fboId: number, live = false) {
     ORDER BY s.category, r.favorite DESC, r.sort, lower(s.name)`);
 }
 
+/** For crew search results: which listings verified FBOs recommend, so cards can say "FBO recommended". */
+export async function fboRecMap(spotIds: number[]): Promise<Map<number, { n: number; names: string[] }>> {
+  const m = new Map<number, { n: number; names: string[] }>();
+  if (!spotIds.length) return m;
+  const list = await rows(sql`SELECT r.spot_id, f.name FROM fbo_recs r JOIN fbo_accounts f ON f.id = r.fbo_id
+    WHERE r.hidden = 0 AND f.status = 'active' AND f.verified_at IS NOT NULL ORDER BY r.favorite DESC, r.updated_at DESC`).catch(() => [] as any[]);
+  const want = new Set(spotIds);
+  for (const r of list) {
+    const id = num(r.spot_id); if (!want.has(id)) continue;
+    const e = m.get(id) || { n: 0, names: [] }; e.n++; if (e.names.length < 3) e.names.push(String(r.name)); m.set(id, e);
+  }
+  return m;
+}
+
 /** For the crew app's listing page: every active FBO that recommends this spot, with its note and live discounts. */
 export async function fboRecsForSpot(spotId: number, appUrl: string) {
   const list = await rows(sql`SELECT r.id, r.notes, r.crew_rate, r.favorite, r.updated_at, f.id AS fbo_id, f.name, f.slug, f.icao

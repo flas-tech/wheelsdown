@@ -6,7 +6,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { Link } from "wouter";
-import { Building2, Check, ExternalLink, Hotel, Loader2, MapPin, Plus, Sparkles, Users } from "lucide-react";
+import { BadgeCheck, Building2, Check, ExternalLink, Hotel, Loader2, MapPin, Plus, Sparkles, Users } from "lucide-react";
 import type { SpotWithStats } from "@shared/schema";
 import { MEAL_LABEL } from "@shared/briefing";
 import { costRange, costText } from "@shared/cost";
@@ -34,6 +34,17 @@ export function FboPickTag({ by, className }: { by?: string | null; className?: 
     <span className={cn("inline-flex items-center gap-1 rounded-full bg-sky-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700 dark:text-sky-300", className)}
       title={`Added by ${by || "the FBO"} at this airport. Ratings come from crews.`} data-testid="tag-fbo-pick">
       <Building2 className="h-3 w-3" />FBO pick
+    </span>
+  );
+}
+
+/** A crew (or AI-added) listing that one or more FBOs at the airport recommend. */
+export function FboRecTag({ names, n, className }: { names?: string[]; n?: number; className?: string }) {
+  const who = names?.length ? names.join(", ") + ((n ?? 0) > names.length ? ` and ${(n ?? 0) - names.length} more` : "") : "the FBO";
+  return (
+    <span className={cn("inline-flex items-center gap-1 rounded-full border border-sky-500/50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700 dark:text-sky-300", className)}
+      title={`Recommended by ${who}`} data-testid="tag-fbo-rec">
+      <BadgeCheck className="h-3 w-3" />FBO recommended
     </span>
   );
 }

@@ -133,6 +133,26 @@ export function mapImport(table: string[][], defaultCategory: FboCategory | null
 /** Normalized name for matching an FBO pick to an existing crew listing at the same airport. */
 export const nameKey = (s: string) => s.toLowerCase().replace(/&/g, "and").replace(/\b(the|restaurant|hotel|inn|bar|grill|cafe)\b/g, "").replace(/[^a-z0-9]/g, "");
 
+const STOP = new Set(["the", "and", "of", "at", "a", "an", "restaurant", "hotel", "inn", "bar", "grill", "cafe", "kitchen", "suites", "by", "co", "llc"]);
+const words = (s: string) => s.toLowerCase().replace(/&/g, " and ").replace(/['\u2019]/g, "").split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !STOP.has(w));
+/** 0-100 likeness of two business names: 100 same name, 80 one contains the other, else shared distinctive words. */
+export function nameLikeness(a: string, b: string): number {
+  const ka = nameKey(a), kb = nameKey(b);
+  if (ka.length < 3 || kb.length < 3) return 0;
+  if (ka === kb) return 100;
+  if (Math.min(ka.length, kb.length) >= 4 && (ka.includes(kb) || kb.includes(ka))) return 80;
+  const wa = words(a), wb = new Set(words(b));
+  if (!wa.length || !wb.size) return ka.slice(0, 5) === kb.slice(0, 5) ? 45 : 0;
+  const shared = wa.filter((w) => wb.has(w) || Array.from(wb).some((x) => x.length >= 5 && w.length >= 5 && (x.startsWith(w) || w.startsWith(x)))).length;
+  if (!shared) return ka.slice(0, 5) === kb.slice(0, 5) ? 45 : 0;
+  return Math.round(40 + 40 * (shared / Math.max(wa.length, wb.size)));
+}
+/** Listings that may already be the place being typed, best first. */
+export function similarListings<T extends { name: string }>(name: string, list: T[], max = 4, min = 45): T[] {
+  if (name.trim().length < 3) return [];
+  return list.map((s) => ({ s, n: nameLikeness(name, s.name) })).filter((x) => x.n >= min).sort((x, y) => y.n - x.n).slice(0, max).map((x) => x.s);
+}
+
 /** YYYY-MM-DD from common date spellings ("12/31/2026", "2026-12-31"); "" when unreadable. */
 export function isoDate(v: string): string {
   const s = v.trim();

@@ -26,7 +26,7 @@ import { registerSimilar } from "./similar";
 import { registerLayover } from "./layover";
 import { registerLounge } from "./lounge";
 import { registerFbo, fboHiddenAdIds, recordFboReferral, fboPublicName } from "./fbo";
-import { fboRecsForSpot } from "./fboSpots";
+import { fboRecsForSpot, fboRecMap } from "./fboSpots";
 import { registerMyCrew, requestFromInvite, forgetMember } from "./mycrew";
 import { registerPush, forgetPush } from "./push";
 import { registerDm, forgetDm } from "./dm";
@@ -265,7 +265,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const ai = { ai: await aiSpotsFor(req) };
     const results = codes.length ? (icaos.length ? await storage.searchSpots(icaos, false, v, ai) : []) : await storage.searchSpots([], false, v, ai);
     if (codes.length) { track(req, "search"); for (const i of Array.from(new Set(icaos))) track(req, "search_airport", i); }
-    res.json({ legs, spots: results });
+    const recs = await fboRecMap(results.map((s: any) => s.id)).catch(() => new Map());
+    res.json({ legs, spots: recs.size ? results.map((s: any) => (recs.has(s.id) ? { ...s, fboRecs: recs.get(s.id) } : s)) : results });
   });
 
   app.get("/api/highlights", async (req, res) => {

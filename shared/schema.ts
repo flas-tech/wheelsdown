@@ -121,6 +121,8 @@ export type SpotWithStats = Spot & {
   cost: number | null; costVotes: number;
   /** ratings of 0 ("Go around": avoid this place) */
   goArounds: number;
+  /** verified FBOs at the airport that recommend this listing (search results only) */
+  fboRecs?: { n: number; names: string[] };
 };
 
 /** A rating of 0 means "Go around": the crew member says avoid this place. */
