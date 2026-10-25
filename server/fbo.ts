@@ -219,6 +219,7 @@ function pageShell(title: string, body: string, desc = "", tail = "") {
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 "General Sans",system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
 a{color:inherit}.wrap{max-width:720px;margin:0 auto;padding:16px 16px 48px}
 .top{display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px;text-decoration:none;padding:4px 0 14px}
+.bar{display:flex;align-items:center;gap:12px}.back{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);background:var(--card);border-radius:999px;padding:6px 12px 6px 9px;margin-bottom:14px;font-size:14px;font-weight:600;text-decoration:none;color:inherit}.back[hidden]{display:none}
 .hero{background:#0B1222;color:#fff;border-radius:18px;padding:20px;margin-bottom:16px}
 .hero h1{margin:4px 0 2px;font-size:26px;line-height:1.15}.hero .ap{color:#C9D1DE;font-size:14px}.eyebrow{display:inline-block;background:var(--accent);color:#141B2D;font-weight:700;font-size:11px;letter-spacing:.06em;text-transform:uppercase;border-radius:999px;padding:3px 9px}
 .hero .meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.hero .meta a{background:rgba(255,255,255,.1);border-radius:999px;padding:6px 12px;text-decoration:none;font-size:14px}
@@ -307,7 +308,13 @@ ${p.crew_rate ? `<span class="chip">${esc(p.crew_rate)}</span>` : ""}${p.notes ?
   const nudge = `<div class="nudge"><b>Crews: this list gets better with you.</b> Tried one of these? Rate it. Know a spot that's missing? <a href="${add}"${tgt}>Add it</a>.</div>`;
   const joinBox = `<section class="join"><h2>Help the next crew at ${esc(f.icao)}</h2><p class="sub">Wheelsdown is the free layover guide built by crews. Rate the places you try, save favorites, and add the spots that aren't listed yet.</p>
 <a class="cta" href="${join}"${tgt}>Create a free crew account</a><a class="cta2" href="${add}"${tgt}>Add a spot near ${esc(f.icao)}</a></section>`;
-  const body = `${kioskBar}<a class="top" href="${APP_URL()}/"${tgt}>${LOGO}Wheelsdown</a>
+  // Back to Wheelsdown: to the listing the crew came from (?from=<spot id>), else back in history when they came from the app.
+  // Kiosks and QR scans have nowhere to go back to, so the button only shows when there is.
+  const from = Number(req.query.from);
+  const backHref = Number.isInteger(from) && from > 0 ? `${APP_URL()}/#/spot/${from}` : `${APP_URL()}/`;
+  const back = kiosk ? "" : `<a class="back" id="wd-back" href="${esc(backHref)}"${from > 0 ? "" : " hidden"} data-testid="link-back"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>Back</a>`;
+  const backJs = kiosk ? "" : `<script>(function(){var b=document.getElementById("wd-back");if(!b)return;var r="";try{r=new URL(document.referrer).origin}catch(e){}var same=r&&(r===location.origin||r===${JSON.stringify(new URL(APP_URL()).origin)});if(same){b.hidden=false;if(history.length>1){b.addEventListener("click",function(e){e.preventDefault();history.back()})}}})()</script>`;
+  const body = `${kioskBar}<div class="bar">${back}<a class="top" href="${APP_URL()}/"${tgt}>${LOGO}Wheelsdown</a></div>
 <section class="hero"><span class="eyebrow">Crew picks from the FBO</span><h1>${fbo}</h1><div class="ap">${esc(f.icao)}${ap ? " · " + esc(ap.name) + (ap.city ? ", " + esc(ap.city) : "") : ""}</div>
 ${f.about ? `<p>${esc(f.about)}</p>` : ""}<div class="meta">${f.phone ? `<a href="tel:${esc(String(f.phone).replace(/[^\d+]/g, ""))}">Call the desk</a>` : ""}${f.website ? `<a href="${esc(f.website)}" rel="noopener" target="_blank">Website</a>` : ""}${f.address ? `<a href="https://maps.apple.com/?q=${encodeURIComponent(f.name + ", " + f.address)}" rel="noopener">Directions</a>` : ""}</div></section>
 <p class="label">Recommendations, notes and discounts on this page are provided by ${fbo}. Crew ratings come from Wheelsdown crews.</p>
@@ -321,7 +328,7 @@ ${joinBox}
 <a class="cta2" href="${APP_URL()}/#/map?route=${encodeURIComponent(f.icao)}&${ref}"${tgt}>See everything crews rate at ${esc(f.icao)}</a>
 <p class="foot">Discounts and offers are honored by the business or ${fbo}, not Wheelsdown. Rates can change; confirm when you book.<br>What to do when you get wheels down.</p>`;
   const idle = kiosk ? `<script>(function(){var t;function r(){clearTimeout(t);t=setTimeout(function(){window.scrollTo({top:0,behavior:"smooth"})},90000)}["touchstart","scroll","click","keydown"].forEach(function(e){addEventListener(e,r,{passive:true})});r();setTimeout(function(){location.reload()},1800000)})()</script>` : "";
-  res.type("html").send(pageShell(`${f.name} crew picks · ${f.icao} · Wheelsdown`, body, `Restaurant and hotel recommendations and crew discounts from ${f.name} at ${f.icao}.`, idle));
+  res.type("html").send(pageShell(`${f.name} crew picks · ${f.icao} · Wheelsdown`, body, `Restaurant and hotel recommendations and crew discounts from ${f.name} at ${f.icao}.`, idle + backJs));
 }
 
 // ---------------------------------------------------------------- routes

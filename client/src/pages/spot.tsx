@@ -25,14 +25,14 @@ import { POINTS, publicName } from "@shared/tiers";
 
 type FboRec = { fbo: string; icao: string; url: string; note: string; crewRate: string; favorite: boolean; level?: "listed" | "recommended"; updatedAt: number; offers: { title: string; code: string; details: string; expiresOn: string }[] };
 /** FBOs that recommend this place. Provided by the FBO, kept apart from crew ratings and never counted in them. */
-function FboRecs({ recs }: { recs: FboRec[] }) {
+function FboRecs({ recs, spotId }: { recs: FboRec[]; spotId: number }) {
   return (
     <section className="space-y-2" data-testid="section-fbo-recs">
       {recs.map((r, i) => (
         <div key={i} className="rounded-2xl border border-card-border bg-card p-4">
           <div className="flex items-center justify-between gap-2">
             <p className="text-sm font-semibold">{r.level === "listed" ? `Listed by ${r.fbo}` : `Recommended by ${r.fbo}`}{r.favorite ? " · a desk favorite" : ""}</p>
-            <a href={r.url} target="_blank" rel="noopener noreferrer" className="shrink-0 text-xs font-medium text-primary" data-testid={`link-fbo-page-${i}`}>FBO picks</a>
+            <a href={`${r.url}?from=${spotId}`} className="shrink-0 text-xs font-medium text-primary" data-testid={`link-fbo-page-${i}`}>FBO picks</a>
           </div>
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Provided by the FBO at {r.icao}</p>
           {r.crewRate && <p className="mt-2 inline-block rounded-md bg-primary/15 px-2 py-0.5 text-xs font-medium">{r.crewRate}</p>}
@@ -154,7 +154,7 @@ export default function SpotPage() {
           {spot.userId && crew.get(spot.userId) && <TierChip tierId={crew.get(spot.userId)!.tierId} />}</p>
       </section>
 
-      {fboRecs.length > 0 && <FboRecs recs={fboRecs} />}
+      {fboRecs.length > 0 && <FboRecs recs={fboRecs} spotId={spot.id} />}
 
       <DirectionsButton place={spot} size="lg" testId="button-spot-directions" />
 
