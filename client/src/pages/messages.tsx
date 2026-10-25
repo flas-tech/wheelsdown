@@ -2,8 +2,9 @@
 // text is encrypted and decrypted on this device (lib/dmCrypto.ts); the server only ever has ciphertext.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useRoute } from "wouter";
-import { ArrowLeft, Loader2, Lock, MessageCircle, Send, ShieldCheck, Users } from "lucide-react";
+import { Link, useLocation, useRoute } from "wouter";
+import { ArrowLeft, Loader2, Lock, MessageCircle, Send, ShieldCheck, Trash2, Users } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
@@ -42,6 +43,53 @@ export default function MessagesPage() {
   return <Gate>{isThread ? <Thread id={Number(params!.id)} /> : <Inbox />}</Gate>;
 }
 
+/** Delete a conversation for you, after a confirm. Others in it keep their copy. */
+function DeleteThread({ c, onDone, variant = "icon" }: { c: DmConversation; onDone?: () => void; variant?: "icon" | "text" }) {
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const others = c.kind === "crewup" ? "Everyone else on the plan keeps their copy." : `${c.people[0]?.name || "The other person"} keeps their copy.`;
+  async function go() {
+    setBusy(true);
+    try {
+      await apiRequest("POST", `/api/dm/conversations/${c.id}/delete`, {});
+      queryClient.removeQueries({ queryKey: ["/api/dm/conversations", c.id] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/dm/conversations"], exact: true });
+      queryClient.invalidateQueries({ queryKey: ["/api/dm/unread"] });
+      setOpen(false); toast({ title: "Conversation deleted" }); onDone?.();
+    } catch { toast({ title: "Couldn't delete that", description: "Try again in a moment.", variant: "destructive" }); }
+    finally { setBusy(false); }
+  }
+  return (
+    <>
+      {variant === "icon" ? (
+        <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen(true); }} aria-label={`Delete conversation: ${convTitle(c)}`}
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-destructive" data-testid={`button-delete-conv-${c.id}`}>
+          <Trash2 className="h-4 w-4" />
+        </button>
+      ) : (
+        <button type="button" onClick={() => setOpen(true)} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-destructive" data-testid="button-delete-thread">
+          <Trash2 className="h-4 w-4" />Delete
+        </button>
+      )}
+      <AlertDialog open={open} onOpenChange={setOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this conversation?</AlertDialogTitle>
+            <AlertDialogDescription>It comes off your Messages and its history is erased for you on every device. {others} If someone writes again, it comes back with only the new messages.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy} data-testid="button-delete-cancel">Keep it</AlertDialogCancel>
+            <AlertDialogAction onClick={(e) => { e.preventDefault(); void go(); }} disabled={busy} className="bg-destructive text-destructive-foreground hover:bg-destructive/90" data-testid="button-delete-confirm">
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
 function Inbox() {
   const { data, isLoading } = useQuery<{ conversations: DmConversation[] }>({ queryKey: ["/api/dm/conversations"], refetchInterval: 20_000 });
   useDmDevice(); // set this device up while you look
@@ -59,8 +107,8 @@ function Inbox() {
       ) : (
         <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-card-border bg-card">
           {list.map((c) => (
-            <li key={c.id}>
-              <Link href={`/messages/${c.id}`} className="flex items-center gap-3 p-3.5 hover-elevate" data-testid={`row-conv-${c.id}`}>
+            <li key={c.id} className="flex items-center pr-2">
+              <Link href={`/messages/${c.id}`} className="flex min-w-0 flex-1 items-center gap-3 p-3.5 hover-elevate" data-testid={`row-conv-${c.id}`}>
                 <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-full", c.kind === "crewup" ? "bg-primary/15 text-primary" : "bg-muted")}>
                   {c.kind === "crewup" ? <Users className="h-5 w-5" /> : <span className="text-sm font-semibold">{(c.people[0]?.name || "?").slice(0, 1)}</span>}
                 </span>
@@ -73,6 +121,7 @@ function Inbox() {
                   {c.unread && <span className="h-2.5 w-2.5 rounded-full bg-red-500" aria-label="Unread" data-testid={`dot-conv-${c.id}`} />}
                 </span>
               </Link>
+              <DeleteThread c={c} />
             </li>
           ))}
         </ul>
@@ -83,6 +132,7 @@ function Inbox() {
 
 function Thread({ id }: { id: number }) {
   const { me } = useAuth();
+  const [, navigate] = useLocation();
   const { toast } = useToast();
   const { device, ready, error } = useDmDevice();
   const key = ["/api/dm/conversations", id, device?.deviceId ?? 0];
@@ -152,7 +202,10 @@ function Thread({ id }: { id: number }) {
   return (
     <div className="flex min-h-[60dvh] flex-col gap-3" data-testid="page-thread">
       <header className="space-y-1">
-        <Link href="/messages" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground" data-testid="link-thread-back"><ArrowLeft className="h-4 w-4" />Messages</Link>
+        <div className="flex items-center justify-between gap-2">
+          <Link href="/messages" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground" data-testid="link-thread-back"><ArrowLeft className="h-4 w-4" />Messages</Link>
+          {c && <DeleteThread c={c} variant="text" onDone={() => navigate("/messages")} />}
+        </div>
         <h1 className="text-lg font-semibold leading-tight" data-testid="text-thread-title">{c ? convTitle(c) : "…"}</h1>
         {c?.kind === "crewup" && <p className="text-xs text-muted-foreground">{c.people.length ? `With ${c.people.map((p) => p.name).join(", ")}` : "Only you so far"}{c.meetup && <> · <Link href={`/meetup?icao=${c.meetup.icao}&plan=${c.meetup.id}`} className="text-primary underline">See the plan</Link></>}</p>}
         <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground"><Lock className="mt-0.5 h-3 w-3 shrink-0" />{PRIVATE_NOTE}

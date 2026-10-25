@@ -51,6 +51,7 @@ export async function ensureDmTables() {
     ct text NOT NULL, iv text NOT NULL, eph text NOT NULL, sig text NOT NULL, created_at bigint NOT NULL DEFAULT 0)`);
   await db().execute(sql`CREATE INDEX IF NOT EXISTS dm_messages_conv_idx ON dm_messages (conv_id, id)`);
   await db().execute(sql`CREATE TABLE IF NOT EXISTS dm_keys (message_id integer NOT NULL, device_id integer NOT NULL, wrapped text NOT NULL, iv text NOT NULL, PRIMARY KEY (message_id, device_id))`);
+  await db().execute(sql`ALTER TABLE dm_members ADD COLUMN IF NOT EXISTS cleared_at bigint NOT NULL DEFAULT 0`);
   await db().execute(sql`INSERT INTO app_settings (key, value) VALUES ('dm_audience', 'admins') ON CONFLICT (key) DO NOTHING`);
 }
 
@@ -112,7 +113,7 @@ export function registerDm(app: Express, o: { userOf: (req: Request) => Promise<
   }
   async function memberIds(convId: number) { return (await rows(sql`SELECT user_id FROM dm_members WHERE conv_id = ${convId}`)).map((r) => num(r.user_id)); }
   async function myConv(convId: number, uid: number) {
-    return (await rows(sql`SELECT c.*, m.last_read, m.hidden FROM dm_conversations c JOIN dm_members m ON m.conv_id = c.id AND m.user_id = ${uid} WHERE c.id = ${convId}`))[0];
+    return (await rows(sql`SELECT c.*, m.last_read, m.hidden, m.cleared_at FROM dm_conversations c JOIN dm_members m ON m.conv_id = c.id AND m.user_id = ${uid} WHERE c.id = ${convId}`))[0];
   }
   async function canSend(c: any, uid: number, others: number[]) {
     if (c.kind === "direct") return others.length === 1 && (await areCrew(uid, others[0]));
@@ -246,7 +247,7 @@ export function registerDm(app: Express, o: { userOf: (req: Request) => Promise<
     const c = await myConv(id, u.id);
     if (!c) return res.status(404).json({ message: "Not found" });
     const lim = DM_RULES.pageSize;
-    const msgs = await rows(sql`SELECT * FROM dm_messages WHERE conv_id = ${id} ${before ? sql`AND id < ${before}` : sql``} ORDER BY id DESC LIMIT ${lim + 1}`);
+    const msgs = await rows(sql`SELECT * FROM dm_messages WHERE conv_id = ${id} AND created_at > ${num(c.cleared_at)} ${before ? sql`AND id < ${before}` : sql``} ORDER BY id DESC LIMIT ${lim + 1}`);
     const more = msgs.length > lim; const page = msgs.slice(0, lim).reverse();
     const keys = page.length && dev ? await rows(sql`SELECT message_id, wrapped, iv FROM dm_keys WHERE device_id = ${dev} AND message_id IN (${inList(page.map((m) => num(m.id)))})
       AND device_id IN (SELECT id FROM dm_devices WHERE user_id = ${u.id})`) : [];
@@ -287,6 +288,7 @@ export function registerDm(app: Express, o: { userOf: (req: Request) => Promise<
     await db().execute(sql`INSERT INTO dm_keys (message_id, device_id, wrapped, iv) VALUES ${sql.join(p.data.keys.map((k) => sql`(${mid}, ${k.deviceId}, ${k.wrapped}, ${k.iv})`), sql`, `)}`);
     await db().execute(sql`UPDATE dm_conversations SET last_at = ${now}, last_from = ${u.id} WHERE id = ${id}`);
     await db().execute(sql`UPDATE dm_members SET last_read = ${now}, hidden = false WHERE conv_id = ${id} AND user_id = ${u.id}`);
+    await db().execute(sql`UPDATE dm_members SET hidden = false WHERE conv_id = ${id} AND user_id <> ${u.id} AND hidden = true`); // a new message brings it back for anyone who deleted it
     await db().execute(sql`UPDATE dm_devices SET last_seen = ${now} WHERE id = ${p.data.deviceId}`);
     res.status(201).json({ id: mid, createdAt: now });
     // a heads-up with no message text (the server doesn't have it)
@@ -296,6 +298,22 @@ export function registerDm(app: Express, o: { userOf: (req: Request) => Promise<
   });
   app.post("/api/dm/conversations/:id/read", gate, async (req, res) => {
     await db().execute(sql`UPDATE dm_members SET last_read = GREATEST(last_read, ${Date.now()}) WHERE conv_id = ${pid(req)} AND user_id = ${me(req).id}`);
+    res.json({ ok: true });
+  });
+  /** Delete it for you: off your list, and its history is gone for you (your devices' keys are dropped). Others keep their copy.
+   *  If someone writes again it comes back with only the new messages. Messages everyone has deleted are removed for good. */
+  app.post("/api/dm/conversations/:id/delete", gate, writeLimit, async (req, res) => {
+    const u = me(req), id = pid(req), now = Date.now();
+    const c = await myConv(id, u.id);
+    if (!c) return res.status(404).json({ message: "Not found" });
+    await db().execute(sql`UPDATE dm_members SET hidden = true, cleared_at = ${now}, last_read = GREATEST(last_read, ${now}) WHERE conv_id = ${id} AND user_id = ${u.id}`);
+    await db().execute(sql`DELETE FROM dm_keys WHERE device_id IN (SELECT id FROM dm_devices WHERE user_id = ${u.id})
+      AND message_id IN (SELECT id FROM dm_messages WHERE conv_id = ${id} AND created_at <= ${now})`);
+    const floor = num((await rows(sql`SELECT MIN(cleared_at) AS f FROM dm_members WHERE conv_id = ${id}`))[0]?.f);
+    if (floor > 0) {
+      await db().execute(sql`DELETE FROM dm_keys WHERE message_id IN (SELECT id FROM dm_messages WHERE conv_id = ${id} AND created_at <= ${floor})`);
+      await db().execute(sql`DELETE FROM dm_messages WHERE conv_id = ${id} AND created_at <= ${floor}`);
+    }
     res.json({ ok: true });
   });
   /** Hide it from your list until someone writes again. */
