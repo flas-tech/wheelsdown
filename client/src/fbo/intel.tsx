@@ -5,7 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { FBO_INTEL_FIELDS, FBO_LIMITS, type FboIntel } from "@shared/fbo";
 import { api, get, fboQuery } from "./api";
 import { useMe } from "./App";
-import { Card, PageHeader, Spinner, areaCls, btnPrimary, fmtDate } from "./ui";
+import { Card, PageHeader, Spinner, areaCls, btnPrimary, fmtDate, Counter } from "./ui";
 
 export function IntelPage() {
   const { me } = useMe();
@@ -33,7 +33,8 @@ export function IntelPage() {
               {FBO_INTEL_FIELDS.filter((x) => x.group === g).map((x) => (
                 <label key={x.key} className="block space-y-1">
                   <span className="flex items-baseline justify-between gap-2 text-xs font-medium text-muted-foreground"><span>{x.label}</span>{data?.[x.key]?.updatedAt ? <span className="text-[11px] font-normal">Updated {fmtDate(data[x.key].updatedAt)}{data[x.key].updatedBy ? ` by ${data[x.key].updatedBy}` : ""}</span> : null}</span>
-                  <textarea className={areaCls} rows={2} value={f[x.key] || ""} maxLength={FBO_LIMITS.intel} placeholder={x.hint} onChange={(e) => setF({ ...f, [x.key]: e.target.value })} data-testid={`input-intel-${x.key}`} />
+                  <textarea className={areaCls} rows={Math.min(10, Math.max(2, (f[x.key] || "").split("\n").length + Math.floor((f[x.key] || "").length / 60)))} value={f[x.key] || ""} maxLength={FBO_LIMITS.intel} placeholder={x.hint} onChange={(e) => setF({ ...f, [x.key]: e.target.value })} data-testid={`input-intel-${x.key}`} />
+                  {(f[x.key] || "").length > 200 && <span className="flex justify-end"><Counter value={f[x.key] || ""} max={FBO_LIMITS.intel} /></span>}
                 </label>
               ))}
             </div>

@@ -25,7 +25,7 @@ export const FBO_LIMITS = {
   notes: 600,
   short: 160,
   about: 600,
-  intel: 300,
+  intel: 1500,
   passwordMin: 10,
 };
 
