@@ -6,7 +6,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { Link } from "wouter";
-import { Check, ExternalLink, Hotel, Loader2, MapPin, Plus, Sparkles, Users } from "lucide-react";
+import { Building2, Check, ExternalLink, Hotel, Loader2, MapPin, Plus, Sparkles, Users } from "lucide-react";
 import type { SpotWithStats } from "@shared/schema";
 import { MEAL_LABEL } from "@shared/briefing";
 import { costRange, costText } from "@shared/cost";
@@ -24,6 +24,17 @@ export function PickTag({ ai, className }: { ai: boolean; className?: string }) 
     <span className={cn("inline-flex items-center gap-1 rounded-full bg-violet-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-700 dark:text-violet-300", className)} title="Suggested by AI because no crew has listed a place here yet" data-testid="tag-ai-pick"><Sparkles className="h-3 w-3" />AI pick</span>
   ) : (
     <span className={cn("inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-300", className)} title="Listed and rated by crews" data-testid="tag-crew-pick"><Users className="h-3 w-3" />Crew pick</span>
+  );
+}
+
+/** A listing added by the FBO at the airport through the FBO portal. Ratings on it still come only from crews. */
+export const isFboAdded = (s: { source?: string | null; id?: number }) => (s as any).source === "fbo";
+export function FboPickTag({ by, className }: { by?: string | null; className?: string }) {
+  return (
+    <span className={cn("inline-flex items-center gap-1 rounded-full bg-sky-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700 dark:text-sky-300", className)}
+      title={`Added by ${by || "the FBO"} at this airport. Ratings come from crews.`} data-testid="tag-fbo-pick">
+      <Building2 className="h-3 w-3" />FBO pick
+    </span>
   );
 }
 

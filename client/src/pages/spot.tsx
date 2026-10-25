@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AiAddedTag } from "@/lib/aiPicks";
+import { AiAddedTag, FboPickTag } from "@/lib/aiPicks";
 import { noteVisit, clearVisit } from "@/lib/visits";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useRoute } from "wouter";
@@ -112,6 +112,7 @@ export default function SpotPage() {
           </span>
           {spot.goArounds > 0 && <GoAroundBadge count={spot.goArounds} />}
           {spot.source === "ai" && <AiAddedTag rated={!!spot.reviewCount} />}
+          {spot.source === "fbo" && <FboPickTag by={spot.submittedBy} />}
           <button type="button" onClick={() => document.getElementById("rate")?.scrollIntoView({ behavior: "smooth", block: "center" })} className="text-xs font-medium text-primary" data-testid="button-jump-rate">Rate it</button>
         </div>
         <div className="mt-3"><CheckInButton spotId={spot.id} name={spot.name} /></div>
@@ -148,7 +149,7 @@ export default function SpotPage() {
           <div className="flex flex-wrap gap-1.5">{tags.map((t) => <span key={t} className="rounded-md bg-muted px-2 py-0.5 text-xs">{t}</span>)}</div>
         )}
         <p className="text-xs text-muted-foreground flex items-center gap-1.5 flex-wrap">Added by {spot.userId && crew.get(spot.userId) && !crew.get(spot.userId)!.anonymous
-            ? <Link href={`/crew/${spot.userId}`} className="underline-offset-2 hover:underline text-foreground" data-testid="link-spot-author">{spot.submittedBy}</Link> : (spot.submittedBy || "crew")}{(spot as any).source === "fbo" && <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase">FBO</span>}
+            ? <Link href={`/crew/${spot.userId}`} className="underline-offset-2 hover:underline text-foreground" data-testid="link-spot-author">{spot.submittedBy}</Link> : `${spot.submittedBy || "crew"}${(spot as any).source === "fbo" ? `, the FBO at ${spot.icao}` : ""}`}
           {spot.userId && crew.get(spot.userId) && <TierChip tierId={crew.get(spot.userId)!.tierId} />}</p>
       </section>
 

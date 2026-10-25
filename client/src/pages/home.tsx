@@ -16,7 +16,7 @@ import { PROGRAMS, programOf, type ProgramId } from "@shared/loyalty";
 import { VisitReminder } from "@/lib/visits";
 import { useTrip } from "@/lib/experience";
 import { TodayCard } from "./todayCard";
-import { AiAddedTag, AiPicksPanel, MoreAiPlaces, ProgramChip, useMyPrograms } from "@/lib/aiPicks";
+import { AiAddedTag, FboPickTag, AiPicksPanel, MoreAiPlaces, ProgramChip, useMyPrograms } from "@/lib/aiPicks";
 import { getPosition, type NearAirport } from "@/lib/geo";
 import { useToast } from "@/hooks/use-toast";
 import { trustScore } from "@shared/vetting";
@@ -38,7 +38,7 @@ type SearchState = {
   sort: "trusted" | "rating" | "close" | "new";
   vettedOnly: boolean;
   /** All, crew-rated listings only, or only listings AI added from briefings (the filter shows when any are in the results) */
-  source: "all" | "crew" | "ai";
+  source: "all" | "crew" | "fbo" | "ai";
   /** true = user chose to scroll through everything instead of searching a route */
   browse: boolean;
   /** results as a list or on the map */
@@ -248,7 +248,9 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
   }
 
   const myPrograms = useMyPrograms();
-  const hasAi = (data?.spots || []).some((x) => x.source === "ai") || s.source !== "all";
+  const hasAi = (data?.spots || []).some((x) => x.source === "ai" || x.source === "fbo") || s.source !== "all";
+  const hasAiOnly = (data?.spots || []).some((x) => x.source === "ai") || s.source === "ai";
+  const hasFbo = (data?.spots || []).some((x) => x.source === "fbo") || s.source === "fbo";
   const filtered = useMemo(() => {
     let list = (data?.spots || []).filter((x) => x.category === cat);
     if (showTime && bucket) list = list.filter((x) => totalMinutes(x) <= bucket.max);
@@ -256,7 +258,8 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
     if (showCost && budget != null) list = list.filter((x) => x.cost != null && x.cost <= budget);
     if (s.vettedOnly) list = list.filter((x) => x.vet.level === "vetted");
     if (s.source === "ai") list = list.filter((x) => x.source === "ai");
-    if (s.source === "crew") list = list.filter((x) => x.source !== "ai");
+    if (s.source === "crew") list = list.filter((x) => x.source !== "ai" && x.source !== "fbo");
+    if (s.source === "fbo") list = list.filter((x) => x.source === "fbo");
     if (showPace && s.food) list = list.filter((x) => cuisinesOf(x).includes(s.food!));
     if (showTime && s.act) list = list.filter((x) => activitiesOf(x).includes(s.act!));
     if (showRewards && s.rewards) list = list.filter((x) => programOf(x) === s.rewards);
@@ -415,7 +418,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
       {hasAi && (
         <div className="flex items-center gap-1.5" role="group" aria-label="Who added it" data-testid="filter-source">
           <span className="mr-1 text-xs text-muted-foreground">Show</span>
-          {([["all", "All"], ["crew", "Crew added"], ["ai", "AI added"]] as const).map(([v, label]) => (
+          {([["all", "All"], ["crew", "Crew added"], ...(hasFbo ? [["fbo", "FBO picks"]] as const : []), ...(hasAiOnly ? [["ai", "AI added"]] as const : [])] as const).map(([v, label]) => (
             <Chip key={v} active={s.source === v} onClick={() => set({ source: v })} className="text-xs" testId={`chip-source-${v}`}>{label}</Chip>
           ))}
         </div>
@@ -647,7 +650,7 @@ export function SpotCard({ spot }: { spot: SpotWithStats }) {
         </div>
       </div>
       <p className="mt-1.5 text-sm text-muted-foreground line-clamp-2">{spot.description}</p>
-      <div className="mt-2.5 flex flex-wrap items-center gap-2">{spot.source === "ai" && <AiAddedTag rated={!!spot.reviewCount} />}<VetBadge vet={spot.vet} />{spot.goArounds > 0 && <GoAroundBadge count={spot.goArounds} />}</div>
+      <div className="mt-2.5 flex flex-wrap items-center gap-2">{spot.source === "ai" && <AiAddedTag rated={!!spot.reviewCount} />}{spot.source === "fbo" && <FboPickTag by={spot.submittedBy} />}<VetBadge vet={spot.vet} />{spot.goArounds > 0 && <GoAroundBadge count={spot.goArounds} />}</div>
       <div className="mt-2.5 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           {spot.reviewCount > 0 ? (

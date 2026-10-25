@@ -22,7 +22,7 @@ import { PdfPreviewDialog } from "@/lib/pdfPreview";
 import { drawStaticMap, PIN_COLORS } from "@/lib/staticMap";
 import { buildBriefPdf, shareOrDownload, stopPins, groupPins, PICK_GROUPS, layoverText, routeText, CAT_NAMES, isAi, isAiAdded, looksAi, aiReason, type AiPick, type BriefFull, type BriefStopFull } from "@/lib/briefPdf";
 import { errText } from "./add";
-import { PickTag, AiAddedTag, FindMore, aiAddHref } from "@/lib/aiPicks";
+import { PickTag, AiAddedTag, FboPickTag, isFboAdded, FindMore, aiAddHref } from "@/lib/aiPicks";
 import { useTrip } from "@/lib/experience";
 import { crewUpHref, fmtArrive, sheetWords } from "@/lib/tripNav";
 import { TripSheetTop, CrewPlanRows, CrewPlansSection } from "./tripHome";
@@ -748,7 +748,7 @@ function PickRow({ n, spot, count, onRemove, onUp, onDown, busy, readOnly, favor
             {spot.category !== "fbo" && (!ai || spot.cost != null) && <span className="shrink-0 text-right"><span className="block font-code text-xs font-bold text-primary">{costText(spot)}</span>{spot.cost != null && spot.cost > 0 && <span className="block text-[10px] text-muted-foreground whitespace-nowrap">{costRange(spot.category, spot.cost)}</span>}</span>}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
-            {isAiAdded(spot) ? <AiAddedTag rated={!!spot.reviewCount} /> : <PickTag ai={ai} />}
+            {isAiAdded(spot) ? <AiAddedTag rated={!!spot.reviewCount} /> : !ai && isFboAdded(spot) ? <FboPickTag by={spot.submittedBy} /> : <PickTag ai={ai} />}
             {ai && <ReasonChip spot={spot as AiPick} />}
             {meal && !(ai && (spot as AiPick).ai.slot?.meal === meal && !(spot as AiPick).ai.extra) && <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold" data-testid={`text-meal-${-spot.id}`}>{MEAL_LABEL[meal]}</span>}
           </div>

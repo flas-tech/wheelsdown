@@ -220,10 +220,11 @@ export async function buildBriefPdf(b: BriefFull, opts: { appUrl: string; prepar
       }
       { // CREW PICK / AI PICK tag
         const added = isAiAdded(spot);
-        const tag = ai ? "AI PICK" : added ? "AI ADDED" : "CREW PICK";
+        const fbo = !ai && !added && (spot as any).source === "fbo";
+        const tag = ai ? "AI PICK" : added ? "AI ADDED" : fbo ? "FBO PICK" : "CREW PICK";
         doc.setFont("helvetica", "bold"); doc.setFontSize(6.5);
         const tw = doc.getTextWidth(tag) + 8;
-        if (ai || added) doc.setFillColor(124, 58, 237); else doc.setFillColor(5, 150, 105);
+        if (ai || added) doc.setFillColor(124, 58, 237); else if (fbo) doc.setFillColor(2, 132, 199); else doc.setFillColor(5, 150, 105);
         doc.roundedRect(nx, yy - 8.5, tw, 11, 2, 2, "F");
         doc.setTextColor(255, 255, 255); doc.text(tag, nx + tw / 2, yy - 0.8, { align: "center" });
         nx += tw + 6; doc.setFontSize(11.5); doc.setTextColor(...navy);
