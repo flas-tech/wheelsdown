@@ -148,7 +148,7 @@ export async function buildBriefPdf(b: BriefFull, opts: { appUrl: string; prepar
   y += 8;
   if (y > H - 80) { footer(page); doc.addPage(); page++; brandBar(); y = 70; }
   doc.setFontSize(8.5); doc.setTextColor(...slate);
-  doc.text(doc.splitTextToSize("Picks come from crew ratings, up/down vetting and crew-reported prices on Wheelsdown. Favorites saved by the crew member who built this briefing are always included. Each stop page lists the picks in map order with the top crew tip. CREW PICK means a crew member listed and rated it. AI PICK means AI suggested it because no crew has listed a place for that meal or slot yet: check hours before you go.", CW), M, y);
+  doc.text(doc.splitTextToSize("Picks come from crew ratings, up/down vetting and crew-reported prices on Wheelsdown. Favorites saved by the crew member who built this briefing are always included. Each stop page lists the picks in map order with the top crew tip. CREW PICK means a crew member listed and rated it. AI PICK means AI suggested it because no crew has listed a place for that meal or slot yet: check hours before you go. FBO RECOMMENDED means the FBO at that airport recommends it; FBO LISTED means it is on their list of nearby places.", CW), M, y);
   footer(page);
 
   // ---------- one page per stop ----------
@@ -221,19 +221,21 @@ export async function buildBriefPdf(b: BriefFull, opts: { appUrl: string; prepar
         doc.setTextColor(255, 255, 255); doc.text("FAVORITE", nx + fw / 2, yy - 0.8, { align: "center" });
         nx += fw + 6; doc.setFontSize(11.5); doc.setTextColor(...navy);
       }
-      { // CREW PICK / AI PICK tag
+      { // CREW PICK / AI PICK tag, plus FBO LISTED / FBO RECOMMENDED when an FBO at the field lists it
         const added = isAiAdded(spot);
         const fbo = !ai && !added && (spot as any).source === "fbo";
-        const lvl = fbo ? fboLevel(spot) : null;
-        const tag = ai ? "AI PICK" : added ? "AI ADDED" : fbo ? (lvl === "recommended" ? "FBO RECOMMENDED" : lvl === "listed" ? "FBO LISTED" : "") : "CREW PICK";
-        if (tag) {
-        doc.setFont("helvetica", "bold"); doc.setFontSize(6.5);
-        const tw = doc.getTextWidth(tag) + 8;
-        if (ai || added) doc.setFillColor(124, 58, 237); else if (fbo) { if (lvl === "recommended") doc.setFillColor(2, 132, 199); else doc.setFillColor(100, 116, 139); } else doc.setFillColor(5, 150, 105);
-        doc.roundedRect(nx, yy - 8.5, tw, 11, 2, 2, "F");
-        doc.setTextColor(255, 255, 255); doc.text(tag, nx + tw / 2, yy - 0.8, { align: "center" });
-        nx += tw + 6; doc.setFontSize(11.5); doc.setTextColor(...navy);
-        }
+        const lvl = !ai ? fboLevel(spot) : null;
+        const pill = (tag: string, rgb: [number, number, number]) => {
+          doc.setFont("helvetica", "bold"); doc.setFontSize(6.5);
+          const tw = doc.getTextWidth(tag) + 8;
+          doc.setFillColor(...rgb); doc.roundedRect(nx, yy - 8.5, tw, 11, 2, 2, "F");
+          doc.setTextColor(255, 255, 255); doc.text(tag, nx + tw / 2, yy - 0.8, { align: "center" });
+          nx += tw + 6; doc.setFontSize(11.5); doc.setTextColor(...navy);
+        };
+        if (ai || added) pill(ai ? "AI PICK" : "AI ADDED", [124, 58, 237]);
+        else if (!fbo) pill("CREW PICK", [5, 150, 105]);
+        if (lvl === "recommended") pill("FBO RECOMMENDED", [2, 132, 199]);
+        else if (lvl === "listed") pill("FBO LISTED", [100, 116, 139]);
       }
       const nmLines = doc.splitTextToSize(nm, CW - 150 - (nx - M - 26)) as string[];
       doc.text(nmLines.length > 1 ? nmLines[0].replace(/[\s,.-]+$/, "") + "..." : nmLines[0], nx, yy);

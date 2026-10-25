@@ -751,6 +751,7 @@ function PickRow({ n, spot, count, onRemove, onUp, onDown, busy, readOnly, favor
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
             {isAiAdded(spot) ? <AiAddedTag rated={!!spot.reviewCount} /> : !ai && isFboAdded(spot) ? fboRecTagFor(spot.fboRecs) : <PickTag ai={ai} />}
+            {!ai && !isFboAdded(spot) && fboRecTagFor(spot.fboRecs)}
             {ai && <ReasonChip spot={spot as AiPick} />}
             {meal && !(ai && (spot as AiPick).ai.slot?.meal === meal && !(spot as AiPick).ai.extra) && <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold" data-testid={`text-meal-${-spot.id}`}>{MEAL_LABEL[meal]}</span>}
           </div>
