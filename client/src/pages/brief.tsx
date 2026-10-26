@@ -626,14 +626,31 @@ const newFinds = (stop: BriefStopFull, q: AiSearch) => {
 
 function AiFindRow({ m, busy, onAdd, testId, fresh }: { m: AiPick; busy: boolean; onAdd: () => void; testId?: string; fresh?: boolean }) {
   const checking = !!(m as any).ai?.draft;
+  // tap the name to look at the place first (crew feedback #44, lost in the grouped layout; Joe, Oct 26); only + adds it
+  const [open, setOpen] = useState(false);
+  const site = (m as any).website as string | undefined;
   return (
-    <div className={cn("flex items-center gap-2", fresh && "wd-pop")} data-testid={testId}>
-      <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-1.5"><span className="truncate text-xs font-semibold">{m.name}</span>
-          {fresh && <span className="shrink-0 rounded-full bg-violet-600 px-1.5 text-[9px] font-bold uppercase tracking-wide text-white">{checking ? "Checking" : "New"}</span>}</span>
-        <span className="block truncate text-[11px] text-muted-foreground">{[m.milesFromField != null ? `${m.milesFromField} mi` : "", m.description || ""].filter(Boolean).join(" · ")}</span>
-      </span>
-      <button type="button" onClick={onAdd} disabled={busy} aria-label={`Add ${m.name}`} className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border hover-elevate disabled:opacity-50" data-testid={testId ? `${testId}-add` : undefined}><Plus className="h-4 w-4" /></button>
+    <div className={cn("rounded-lg", fresh && "wd-pop", open && "bg-muted/50")} data-testid={testId}>
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className="min-w-0 flex-1 rounded-lg px-1 py-1 text-left hover-elevate" data-testid={testId ? `${testId}-peek` : undefined}>
+          <span className="flex items-center gap-1.5"><span className="truncate text-xs font-semibold">{m.name}</span>
+            {fresh && <span className="shrink-0 rounded-full bg-violet-600 px-1.5 text-[9px] font-bold uppercase tracking-wide text-white">{checking ? "Checking" : "New"}</span>}
+            <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} /></span>
+          <span className={cn("block text-[11px] text-muted-foreground", open ? "whitespace-normal" : "truncate")}>{[m.milesFromField != null ? `${m.milesFromField} mi` : "", m.cost != null ? costText(m) : "", open ? "" : m.description || ""].filter(Boolean).join(" · ")}</span>
+        </button>
+        <button type="button" onClick={onAdd} disabled={busy} aria-label={`Add ${m.name}`} className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border hover-elevate disabled:opacity-50" data-testid={testId ? `${testId}-add` : undefined}><Plus className="h-4 w-4" /></button>
+      </div>
+      {open && (
+        <div className="space-y-2 px-1 pb-2 pt-1 text-xs" data-testid={testId ? `${testId}-preview` : undefined}>
+          {m.description && <p className="text-muted-foreground">{m.description}</p>}
+          {m.address && <p className="flex items-start gap-1 text-muted-foreground"><MapPin className="mt-0.5 h-3 w-3 shrink-0" />{m.address}</p>}
+          <div className="flex flex-wrap items-center gap-3">
+            <DirectionsButton place={m} visitHref={aiAddHref(m)} testId={testId ? `${testId}-directions` : undefined} />
+            {site && <a href={site} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"><ExternalLink className="h-3 w-3" />Website</a>}
+          </div>
+          <button type="button" onClick={() => { onAdd(); setOpen(false); }} disabled={busy} className="inline-flex h-9 items-center gap-1.5 rounded-full taxi-sign px-4 text-xs font-semibold hover-elevate disabled:opacity-50" data-testid={testId ? `${testId}-confirm` : undefined}><Plus className="h-3.5 w-3.5" />Add to trip sheet</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -891,12 +908,12 @@ function NumBadge({ n, spot, className }: { n: number; spot: SpotWithStats; clas
   const c = PIN_COLORS[spot.category as keyof typeof PIN_COLORS];
   return looksAi(spot)
     ? <span className={cn("grid h-6 w-6 shrink-0 place-items-center rounded-full border-2 border-dashed bg-background text-[11px] font-bold", className)} style={{ borderColor: c, color: c }} title={isAi(spot) ? "AI pick" : "AI added, no crew ratings yet"} data-testid={`badge-ai-${n}`}>{n}</span>
-    : <span className={cn("grid h-6 w-6 shrink-0 place-items-center rounded-full text-[11px] font-bold text-white", className)} style={{ background: c }} title="Crew pick" data-testid={`badge-crew-${n}`}>{n}</span>;
+    : <span className={cn("grid h-6 w-6 shrink-0 place-items-center rounded-full text-[11px] font-bold text-white", className)} style={{ background: c }} title="Crew added" data-testid={`badge-crew-${n}`}>{n}</span>;
 }
 function PickLegend() {
   return (
     <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground" data-testid="text-pick-legend">
-      <span className="inline-flex items-center gap-1.5"><span className="h-3.5 w-3.5 rounded-full bg-muted-foreground/70" />Crew pick</span>
+      <span className="inline-flex items-center gap-1.5"><span className="h-3.5 w-3.5 rounded-full bg-muted-foreground/70" />Crew added</span>
       <span className="inline-flex items-center gap-1.5"><span className="h-3.5 w-3.5 rounded-full border-2 border-dashed border-muted-foreground/70" />AI pick</span>
     </p>
   );

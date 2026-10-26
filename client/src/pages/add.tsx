@@ -507,11 +507,18 @@ function PlaceAutocomplete({ value, onChange, onPick, anchor, category, here, fi
   const atField: PlaceHit | null = category === "fbo" && mode === "search" && field && value.trim().length >= 3 && !busy && !hits.some(fieldHit)
     ? { ref: `field:${code}`, name: value.trim(), address: "", city: "", lat: field.lat, lng: field.lng, kind: `at ${code}` } : null;
 
+  // iPhone: the suggestions open below the field, under the keyboard. Move the field near the top of the
+  // screen so the list shows (Joe, Oct 26).
+  const liftAboveKeyboard = () => {
+    if (!window.matchMedia?.("(max-width: 640px)").matches) return;
+    setTimeout(() => box.current?.scrollIntoView({ block: "start", behavior: "smooth" }), 350);
+  };
+
   return (
-    <div ref={box} className="relative">
+    <div ref={box} className="relative scroll-mt-20">
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-        <input value={value} onChange={(e) => { onChange(e.target.value); setMode("search"); setOpen(true); }} onFocus={() => setOpen(true)}
+        <input value={value} onChange={(e) => { onChange(e.target.value); setMode("search"); setOpen(true); }} onFocus={() => { setOpen(true); liftAboveKeyboard(); }}
           placeholder={placeholder} autoComplete="off" data-testid="input-add-name" className={cn(inputCls, "pl-9 pr-9")} />
         {busy && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />}
       </div>
@@ -531,7 +538,7 @@ function PlaceAutocomplete({ value, onChange, onPick, anchor, category, here, fi
       )}
       {!anchor && <p className="mt-1.5 text-[11px] text-muted-foreground">Enter the airport (or use your location) to get name suggestions.</p>}
       {open && (hits.length > 0 || note || atField) && (
-        <div className="absolute z-30 mt-1 w-full rounded-xl border border-border bg-popover shadow-xl overflow-hidden" data-testid="list-place-hits">
+        <div className="absolute z-30 mt-1 max-h-[45vh] w-full overflow-y-auto overscroll-contain rounded-xl border border-border bg-popover shadow-xl" data-testid="list-place-hits">
           {mode === "nearby" && <p className="px-3 pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{nearLabel}</p>}
           {hits.map((h) => (
             <button type="button" key={h.ref} onClick={() => { onPick(h); setOpen(false); }} data-testid={`button-place-${h.ref}`}

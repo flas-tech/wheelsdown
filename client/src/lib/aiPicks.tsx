@@ -1,7 +1,7 @@
 import { noteVisit } from "@/lib/visits";
 import { focusLabel, isFocus, focusCategory } from "@shared/focus";
 import { ACTIVITIES } from "@shared/activities";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -18,12 +18,12 @@ import { cn } from "@/lib/utils";
 import { DirectionsButton } from "@/lib/directions";
 import type { AiPick } from "@/lib/briefPdf";
 
-/** "Crew pick" (listed and rated by crews) or "AI pick" (suggested where no crew has listed anything yet). */
+/** "Crew added" (listed by a crew member; matches the Show filter, and is not the Crew-vetted badge) or "AI pick" (suggested where no crew has listed anything yet). */
 export function PickTag({ ai, className }: { ai: boolean; className?: string }) {
   return ai ? (
     <span className={cn("inline-flex items-center gap-1 rounded-full bg-violet-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-700 dark:text-violet-300", className)} title="Suggested by AI because no crew has listed a place here yet" data-testid="tag-ai-pick"><Sparkles className="h-3 w-3" />AI pick</span>
   ) : (
-    <span className={cn("inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-300", className)} title="Listed and rated by crews" data-testid="tag-crew-pick"><Users className="h-3 w-3" />Crew pick</span>
+    <span className={cn("inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-300", className)} title="Added by a crew member. Crew-vetted is the separate badge for places crews have upvoted" data-testid="tag-crew-pick"><Users className="h-3 w-3" />Crew added</span>
   );
 }
 
@@ -78,7 +78,7 @@ export function ProgramChip({ spot }: { spot: Pick<SpotWithStats, "category" | "
   return <span className={cn("rounded-md px-1.5 py-0.5 text-[11px] font-medium leading-4", yours ? "bg-sky-600 text-white" : "bg-sky-500/10 text-sky-800 dark:text-sky-300")} title={yours ? "One of your hotel programs" : undefined} data-testid={`text-program-${spot.id}`}>{programShort(p)}{yours ? " · yours" : ""}</span>;
 }
 
-function AiCard({ spot }: { spot: AiPick }) {
+export function AiCard({ spot }: { spot: AiPick }) {
   const M = CAT_META[spot.category as keyof typeof CAT_META];
   // OpenStreetMap places come with exact coordinates, so Maps opens on the right spot even without an address
   const maps = `https://maps.apple.com/?q=${encodeURIComponent(spot.name + (spot.address ? " " + spot.address : ""))}${spot.lat != null && spot.lng != null ? `&ll=${spot.lat},${spot.lng}` : ""}`;
@@ -112,6 +112,25 @@ function AiCard({ spot }: { spot: AiPick }) {
       <FirstRateNote />
     </article>
   );
+}
+
+/** AI picks the user has already asked for at these fields (read from the query cache, never fetched here),
+ *  so the search map can pin them next to crew listings (Joe, Oct 26). */
+export function useCachedAiPicks(icaos: string[], category: string, program?: ProgramId | null): AiPick[] {
+  const [tick, setTick] = useState(0);
+  useEffect(() => queryClient.getQueryCache().subscribe((e) => { if (String(e.query.queryKey[0]).startsWith("/api/ai-picks?")) setTick((t) => t + 1); }), []);
+  const want = icaos.join(",");
+  return useMemo(() => {
+    const set = new Set(icaos), seen = new Set<number>(), out: AiPick[] = [];
+    for (const q of queryClient.getQueryCache().findAll({ predicate: (q) => String(q.queryKey[0]).startsWith("/api/ai-picks?") })) {
+      const u = new URLSearchParams(String(q.queryKey[0]).split("?")[1] || "");
+      if (!set.has(u.get("icao") || "") || u.get("cat") !== category) continue;
+      const d = q.state.data as { picks?: AiPick[] } | undefined;
+      for (const p of d?.picks || []) if (!seen.has(p.id) && p.lat != null && p.lng != null && (!program || programOf(p) === program)) { seen.add(p.id); out.push(p); }
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tick, want, category, program]);
 }
 
 /** Add-a-spot link prefilled from an AI pick; the id lets the server credit the first-to-rate bonus. */

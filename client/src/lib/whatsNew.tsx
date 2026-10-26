@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { Settings, BadgeCheck, Contact, LayoutGrid, MessagesSquare, Trash2, Users, MapPinned, PanelBottom, ArrowUpDown, BellRing, CircleHelp, ClipboardCheck, Compass, Flame, ListPlus, RefreshCw, Sparkles, Star, Undo2, Navigation, Eye, PlusCircle, UserMinus, CalendarDays } from "lucide-react";
+import { Settings, BadgeCheck, Contact, LayoutGrid, MessagesSquare, Trash2, Users, MapPinned, PanelBottom, ArrowUpDown, BellRing, CircleHelp, ClipboardCheck, Compass, Flame, ListPlus, RefreshCw, Sparkles, Star, Undo2, Navigation, Eye, PlusCircle, UserMinus, CalendarDays, PlaneLanding } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -23,6 +23,15 @@ type DevFeature = "lounge";
 const PUBLIC_FEATURES = new Set<DevFeature>([]);
 
 const ALL_RELEASES: Release[] = [
+  {
+    id: 18, date: "October 26, 2026", trip: true,
+    items: [
+      { icon: PlaneLanding, title: "FBOs on your trip sheets", body: "When an FBO at one of your stops is on Wheelsdown, its card shows on that stop: facility intel, any crew deals and a link to the places it recommends. It's on Crew Up plans and the PDF too.", to: "/brief" },
+      { icon: Eye, title: "Look before you add", body: "In a trip sheet box, tap an AI find to see its description, address, directions and website first. Tap + or Add to trip sheet when you want it.", to: "/brief" },
+      { icon: MapPinned, title: "AI picks on the map", body: "On Home, AI picks you asked for now show on the map next to crew listings, with a violet ring so you can tell them apart.", to: "/" },
+      { icon: Trash2, title: "Delete a conversation", body: "In Messages, delete a conversation from your own phone. The other person keeps their copy, and a new message starts it again from that point." , to: "/messages" },
+    ],
+  },
   {
     id: 17, date: "October 22, 2026", trip: true,
     items: [

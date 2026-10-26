@@ -26,9 +26,10 @@ function spotIcon(s: SpotWithStats, selected: boolean) {
   const color = MAP_COLORS[s.category as Category] || "#475569";
   const avoid = (s as any).goArounds > 0 && (s as any).goArounds * 2 >= s.reviewCount; // most crews say go around
   const size = selected ? 40 : 30;
+  const ai = s.id < 0; // AI pick: violet ring so it never reads as crew-vetted
   return L.divIcon({
     className: "wd-pin",
-    html: `<div style="width:${size}px;height:${size}px;background:${color};border:2.5px solid ${avoid ? "#F97316" : "#fff"};border-radius:999px 999px 999px 4px;transform:rotate(-45deg);display:grid;place-items:center;box-shadow:0 2px 6px rgba(11,18,34,.35)${selected ? ",0 0 0 4px rgba(249,184,6,.55)" : ""}"><div style="transform:rotate(45deg);display:grid;place-items:center">${glyph(s.category as Category)}</div></div>`,
+    html: `<div style="width:${size}px;height:${size}px;background:${color};border:2.5px ${ai ? "dashed #7C3AED" : `solid ${avoid ? "#F97316" : "#fff"}`};opacity:${ai ? .92 : 1};border-radius:999px 999px 999px 4px;transform:rotate(-45deg);display:grid;place-items:center;box-shadow:0 2px 6px rgba(11,18,34,.35)${selected ? ",0 0 0 4px rgba(249,184,6,.55)" : ""}"><div style="transform:rotate(45deg);display:grid;place-items:center">${glyph(s.category as Category)}</div></div>`,
     iconSize: [size, size], iconAnchor: [size / 2, size], popupAnchor: [0, -size],
   });
 }

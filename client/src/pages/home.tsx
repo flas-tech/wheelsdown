@@ -16,7 +16,7 @@ import { PROGRAMS, programOf, type ProgramId } from "@shared/loyalty";
 import { VisitReminder } from "@/lib/visits";
 import { useTrip } from "@/lib/experience";
 import { TodayCard } from "./todayCard";
-import { AiAddedTag, fboRecTagFor, PickTag, AiPicksPanel, MoreAiPlaces, ProgramChip, useMyPrograms } from "@/lib/aiPicks";
+import { AiAddedTag, fboRecTagFor, PickTag, AiPicksPanel, MoreAiPlaces, ProgramChip, useMyPrograms, useCachedAiPicks, AiCard } from "@/lib/aiPicks";
 import { getPosition, type NearAirport } from "@/lib/geo";
 import { useToast } from "@/hooks/use-toast";
 import { trustScore } from "@shared/vetting";
@@ -427,6 +427,9 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
   </div>);
   const legPts = legs.filter((l) => l.airport?.lat != null && l.airport?.lon != null).map((l) => ({ icao: l.airport!.icao, lat: l.airport!.lat!, lon: l.airport!.lon!, name: l.airport!.name }));
   const unpinned = filtered.filter((x) => x.lat == null || x.lng == null).length;
+  // AI picks already asked for at these fields also go on the map, ringed in violet (Joe, Oct 26)
+  const aiOnMap = useCachedAiPicks(groups.map((g) => g.icao).filter(Boolean) as string[], cat, showRewards ? s.rewards : null);
+  const mapSpots = useMemo(() => (aiOnMap.length ? [...filtered, ...aiOnMap] : filtered), [filtered, aiOnMap]);
 
   return (
     <div className="space-y-5">
@@ -517,7 +520,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
 
       <div className="flex items-center justify-between pt-1">
         <p className="text-sm text-muted-foreground" data-testid="text-result-count">
-          <span className="font-semibold text-foreground tabular">{filtered.length}</span> {M.label.toLowerCase()} {filtered.length === 1 ? "pick" : "picks"}{s.view === "map" && " on the map"}
+          <span className="font-semibold text-foreground tabular">{filtered.length}</span> {M.label.toLowerCase()} {filtered.length === 1 ? "pick" : "picks"}{s.view === "map" && aiOnMap.length > 0 && <> + <span className="font-semibold text-violet-700 dark:text-violet-300 tabular">{aiOnMap.length}</span> AI</>}{s.view === "map" && " on the map"}
           {bucket && <> within {bucket.sub}</>}
         </p>
         {s.view === "list" && <select
@@ -540,8 +543,9 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
         ) : (
           <div className="space-y-2">
             <Suspense fallback={<Skeleton className="h-[62vh] min-h-[360px] rounded-2xl" />}>
-              <SpotsMap spots={filtered} legs={legPts} focusId={s.focus} className="h-[62vh] min-h-[360px]" renderCard={(x) => <SpotCard spot={x} />} />
+              <SpotsMap spots={mapSpots} legs={legPts} focusId={s.focus} className="h-[62vh] min-h-[360px]" renderCard={(x) => (x.id < 0 ? <AiCard spot={x as any} /> : <SpotCard spot={x} />)} />
             </Suspense>
+            {aiOnMap.length > 0 && <p className="flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="text-map-ai"><span className="inline-block h-3 w-3 shrink-0 rounded-full border-2 border-dashed border-violet-600" />Also on the map: {aiOnMap.length} AI {aiOnMap.length === 1 ? "pick" : "picks"} you asked for (violet ring). They aren't crew-rated.</p>}
             {IS_STATIC && <p className="text-xs text-muted-foreground" data-testid="text-map-demo">Demo: sample pins sit at each listing's distance from the airport, not at real addresses.</p>}
             {unpinned > 0 && (
               <p className="text-xs text-muted-foreground" data-testid="text-map-unpinned">
