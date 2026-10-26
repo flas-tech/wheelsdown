@@ -908,12 +908,11 @@ function NumBadge({ n, spot, className }: { n: number; spot: SpotWithStats; clas
   const c = PIN_COLORS[spot.category as keyof typeof PIN_COLORS];
   return looksAi(spot)
     ? <span className={cn("grid h-6 w-6 shrink-0 place-items-center rounded-full border-2 border-dashed bg-background text-[11px] font-bold", className)} style={{ borderColor: c, color: c }} title={isAi(spot) ? "AI pick" : "AI added, no crew ratings yet"} data-testid={`badge-ai-${n}`}>{n}</span>
-    : <span className={cn("grid h-6 w-6 shrink-0 place-items-center rounded-full text-[11px] font-bold text-white", className)} style={{ background: c }} title="Crew added" data-testid={`badge-crew-${n}`}>{n}</span>;
+    : <span className={cn("grid h-6 w-6 shrink-0 place-items-center rounded-full text-[11px] font-bold text-white", className)} style={{ background: c }} data-testid={`badge-crew-${n}`}>{n}</span>;
 }
 function PickLegend() {
   return (
     <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground" data-testid="text-pick-legend">
-      <span className="inline-flex items-center gap-1.5"><span className="h-3.5 w-3.5 rounded-full bg-muted-foreground/70" />Crew added</span>
       <span className="inline-flex items-center gap-1.5"><span className="h-3.5 w-3.5 rounded-full border-2 border-dashed border-muted-foreground/70" />AI pick</span>
     </p>
   );

@@ -148,7 +148,7 @@ export async function buildBriefPdf(b: BriefFull, opts: { appUrl: string; prepar
   y += 8;
   if (y > H - 80) { footer(page); doc.addPage(); page++; brandBar(); y = 70; }
   doc.setFontSize(8.5); doc.setTextColor(...slate);
-  doc.text(doc.splitTextToSize("Picks come from crew ratings, up/down vetting and crew-reported prices on Wheelsdown. Favorites saved by the crew member who built this briefing are always included. Each stop page lists the picks in map order with the top crew tip. CREW PICK means a crew member listed and rated it. AI PICK means AI suggested it because no crew has listed a place for that meal or slot yet: check hours before you go. FBO RECOMMENDED means the FBO at that airport recommends it; FBO LISTED means it is on their list of nearby places.", CW), M, y);
+  doc.text(doc.splitTextToSize("Picks come from crew ratings, up/down vetting and crew-reported prices on Wheelsdown. Favorites saved by the crew member who built this briefing are always included. Each stop page lists the picks in map order with the top crew tip. Places with no tag were added by crews. AI PICK means AI suggested it because no crew has listed a place for that meal or slot yet: check hours before you go. FBO RECOMMENDED means the FBO at that airport recommends it; FBO LISTED means it is on their list of nearby places.", CW), M, y);
   footer(page);
 
   // ---------- one page per stop ----------
@@ -221,7 +221,7 @@ export async function buildBriefPdf(b: BriefFull, opts: { appUrl: string; prepar
         doc.setTextColor(255, 255, 255); doc.text("FAVORITE", nx + fw / 2, yy - 0.8, { align: "center" });
         nx += fw + 6; doc.setFontSize(11.5); doc.setTextColor(...navy);
       }
-      { // CREW PICK / AI PICK tag, plus FBO LISTED / FBO RECOMMENDED when an FBO at the field lists it
+      { // AI PICK / AI ADDED tag (crew listings go untagged), plus FBO LISTED / FBO RECOMMENDED when an FBO at the field lists it
         const added = isAiAdded(spot);
         const fbo = !ai && !added && (spot as any).source === "fbo";
         const lvl = !ai ? fboLevel(spot) : null;
@@ -233,7 +233,6 @@ export async function buildBriefPdf(b: BriefFull, opts: { appUrl: string; prepar
           nx += tw + 6; doc.setFontSize(11.5); doc.setTextColor(...navy);
         };
         if (ai || added) pill(ai ? "AI PICK" : "AI ADDED", [124, 58, 237]);
-        else if (!fbo) pill("CREW PICK", [5, 150, 105]);
         if (lvl === "recommended") pill("FBO RECOMMENDED", [2, 132, 199]);
         else if (lvl === "listed") pill("FBO LISTED", [100, 116, 139]);
       }

@@ -418,7 +418,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
       {hasAi && (
         <div className="flex items-center gap-1.5" role="group" aria-label="Who added it" data-testid="filter-source">
           <span className="mr-1 text-xs text-muted-foreground">Show</span>
-          {([["all", "All"], ["crew", "Crew added"], ...(hasFbo ? [["fbo", "FBO picks"]] as const : []), ...(hasAiOnly ? [["ai", "AI added"]] as const : [])] as const).map(([v, label]) => (
+          {([["all", "All"], ["crew", "Crew listings"], ...(hasFbo ? [["fbo", "FBO picks"]] as const : []), ...(hasAiOnly ? [["ai", "AI added"]] as const : [])] as const).map(([v, label]) => (
             <Chip key={v} active={s.source === v} onClick={() => set({ source: v })} className="text-xs" testId={`chip-source-${v}`}>{label}</Chip>
           ))}
         </div>
@@ -654,7 +654,7 @@ export function SpotCard({ spot }: { spot: SpotWithStats }) {
         </div>
       </div>
       <p className="mt-1.5 text-sm text-muted-foreground line-clamp-2">{spot.description}</p>
-      <div className="mt-2.5 flex flex-wrap items-center gap-2">{spot.source === "ai" && <AiAddedTag rated={!!spot.reviewCount} />}{spot.source === "fbo" ? fboRecTagFor(spot.fboRecs) : spot.fboRecs ? <>{spot.source !== "ai" && <PickTag ai={false} />}{fboRecTagFor(spot.fboRecs)}</> : null}<VetBadge vet={spot.vet} />{spot.goArounds > 0 && <GoAroundBadge count={spot.goArounds} />}</div>
+      <div className="mt-2.5 flex flex-wrap items-center gap-2">{spot.source === "ai" && <AiAddedTag rated={!!spot.reviewCount} />}{spot.source === "fbo" ? fboRecTagFor(spot.fboRecs) : spot.fboRecs ? fboRecTagFor(spot.fboRecs) : null}<VetBadge vet={spot.vet} />{spot.goArounds > 0 && <GoAroundBadge count={spot.goArounds} />}</div>
       <div className="mt-2.5 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           {spot.reviewCount > 0 ? (

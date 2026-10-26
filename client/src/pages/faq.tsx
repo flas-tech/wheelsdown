@@ -12,7 +12,6 @@ import { VetBadge } from "@/lib/ui";
 /** The tags as crews see them on a card, each with what it means. */
 const VET_DEMO = { up: 3, down: 0, score: 3, level: "vetted" as const, lastUpAt: null, reasons: {}, myVote: 0 };
 const TAGS: [React.ReactNode, string][] = [
-  [<PickTag ai={false} />, "A crew member added this place. It says who listed it, not how good it is."],
   [<VetBadge vet={VET_DEMO} />, "Crews have upvoted it: 3 or more upvotes in the last year, at least 75% positive. Any listing can earn it, whoever added it."],
   [<FboRecTag n={1} recommended={false} />, "An FBO at this airport put it on its list as close by and decent (List only)."],
   [<FboRecTag n={1} />, "An FBO at this airport picked it as one of the better options near the field (List and recommend)."],
@@ -47,8 +46,8 @@ const SECTIONS: { title: string; items: QA[] }[] = [
       qa("How do ratings work?", "Rate from 1 to 5 stars. A Go around (0 stars) warns crews to avoid a place. You can add what you paid and a comment. Each place takes one rating per crew member: edit it later, or delete it from the listing."),
       qa("What is Rate a spot?", "A list of places you haven't rated yet: ones you checked in at, opened directions or a website for, had in a briefing, or saved as a favorite. Rate each in a couple of taps."),
       qa("How do I add a spot?", "Tap Add a spot on the home screen, Add spot in the bottom bar, or Add spot on any briefing stop. Enter the name, the airport and what crews should know. A moderator checks new listings before they go public."),
-      qa("What's the difference between Crew added, Crew-vetted, FBO listed and FBO recommended?", "Crew added tells you who listed a place. Crew-vetted tells you crews voted it good. FBO listed and FBO recommended mean the FBO at that airport stands behind it. A place can carry more than one: an FBO can recommend a place crews added, and it can become Crew-vetted too. If an FBO added the place itself, it shows the FBO tag instead of Crew added. Star ratings and votes always come from crews, never from FBOs.", <TagList />),
-      qa("What does Crew-vetted mean?", "A listing with 3 or more upvotes in the last year, at least 75% positive. Choose Crew-vetted only in the filters to see just those. It isn't the same as Crew added, which only means a crew member listed the place."),
+      qa("What's the difference between Crew-vetted, FBO listed and FBO recommended?", "Crews add the places on Wheelsdown, so a listing with no tag is a crew listing. Crew-vetted means crews have voted it good. FBO listed and FBO recommended mean the FBO at that airport stands behind it. A place can carry more than one: an FBO can recommend a place crews added, and it can become Crew-vetted too. Star ratings and votes always come from crews, never from FBOs.", <TagList />),
+      qa("What does Crew-vetted mean?", "A listing with 3 or more upvotes in the last year, at least 75% positive. Choose Crew-vetted only in the filters to see just those. Any listing can earn it, whoever added it."),
       qa("Can I edit someone else's listing?", "No. Only the member who added a listing can edit it. If something is wrong or a place has closed, vote it down with a reason or send feedback, and we'll fix it."),
       qa("Why are prices shown as ranges?", "Prices change, so we show what crews reported as a dollar range per person (or per night for hotels), like Under $15 or $15–30."),
       qa("Will I be reminded to rate a place?", "Yes. If you open directions or a website for a place, or check in there, the home screen asks how it was a couple of hours later. Tap Didn't go to dismiss it. The reminder stays on your phone only."),

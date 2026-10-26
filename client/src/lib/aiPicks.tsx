@@ -18,13 +18,12 @@ import { cn } from "@/lib/utils";
 import { DirectionsButton } from "@/lib/directions";
 import type { AiPick } from "@/lib/briefPdf";
 
-/** "Crew added" (listed by a crew member; matches the Show filter, and is not the Crew-vetted badge) or "AI pick" (suggested where no crew has listed anything yet). */
+/** "AI pick" (suggested where no crew has listed anything yet). Crew listings carry no tag: crew-added is the default,
+ *  so it goes without saying (user, Oct 26). */
 export function PickTag({ ai, className }: { ai: boolean; className?: string }) {
   return ai ? (
     <span className={cn("inline-flex items-center gap-1 rounded-full bg-violet-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-700 dark:text-violet-300", className)} title="Suggested by AI because no crew has listed a place here yet" data-testid="tag-ai-pick"><Sparkles className="h-3 w-3" />AI pick</span>
-  ) : (
-    <span className={cn("inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-300", className)} title="Added by a crew member. Crew-vetted is the separate badge for places crews have upvoted" data-testid="tag-crew-pick"><Users className="h-3 w-3" />Crew added</span>
-  );
+  ) : null;
 }
 
 /** A listing added by the FBO at the airport through the FBO portal. Ratings on it still come only from crews. */

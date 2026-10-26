@@ -113,7 +113,7 @@ export default function SpotPage() {
           {spot.goArounds > 0 && <GoAroundBadge count={spot.goArounds} />}
           {spot.source === "ai" && <AiAddedTag rated={!!spot.reviewCount} />}
           {(() => { const tag = fboRecs.length > 0 ? <FboRecTag names={fboRecs.slice(0, 3).map((r) => r.fbo)} n={fboRecs.length} recommended={fboRecs.some((r) => r.level !== "listed")} /> : null;
-            return spot.source === "fbo" ? tag : tag ? <>{spot.source !== "ai" && <PickTag ai={false} />}{tag}</> : null; })()}
+            return spot.source === "fbo" ? tag : tag; })()}
           <button type="button" onClick={() => document.getElementById("rate")?.scrollIntoView({ behavior: "smooth", block: "center" })} className="text-xs font-medium text-primary" data-testid="button-jump-rate">Rate it</button>
         </div>
         <div className="mt-3"><CheckInButton spotId={spot.id} name={spot.name} /></div>
