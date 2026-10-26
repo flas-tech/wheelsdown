@@ -1,7 +1,7 @@
 // Wheelsdown "Logbook" crew status — tiers modeled on the pilot certificate ladder.
 import { computeVet } from "./vetting";
 
-export type TierId = "student" | "private" | "instrument" | "commercial" | "restricted_atp" | "atp" | "check_airman" | "ancient_albatross";
+export type TierId = "student" | "private" | "instrument" | "commercial" | "restricted_atp" | "atp" | "check_airman" | "grand_pelican";
 
 export const TIERS: {
   id: TierId; name: string; min: number; stripes: number; color: string; tagline: string; perks: string[];
@@ -20,8 +20,8 @@ export const TIERS: {
     perks: ["Platinum badge", "\"ATP Pick\" highlight on your listings (planned)", "Partner perks and giveaways (planned)"] },
   { id: "check_airman", name: "Check Airman", min: 2500, stripes: 4, color: "#67E8F9", tagline: "Trusted to check everyone else",
     perks: ["Diamond badge", "Resolve \"Needs check\" flags in your region (planned)", "Annual Wheelsdown swag kit (planned)"] },
-  { id: "ancient_albatross", name: "Ancient Albatross", min: 6000, stripes: 4, color: "#F8D27A", tagline: "Longest-serving, most-trusted crew in the network",
-    perks: ["Obsidian & gold badge", "Name on the Albatross Wall", "Advisory seat on new features (planned)"] },
+  { id: "grand_pelican", name: "Grand Pelican", min: 6000, stripes: 4, color: "#F8D27A", tagline: "Big bill, bigger logbook: the most-trusted crew in the network",
+    perks: ["Obsidian & gold badge", "Name on the Pelican Perch", "Advisory seat on new features (planned)"] },
 ];
 
 export const POINTS = {

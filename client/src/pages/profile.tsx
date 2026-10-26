@@ -32,7 +32,7 @@ export function TierCard({ points, name, sub, tierId, aircraft }: { points: numb
   const { tier, next, progress, toNext } = tierFor(points);
   const student = tier.id === "student";
   const soloed = student && hasSoloed(points);
-  const dark = tierId === "ancient_albatross" || tierId === "check_airman";
+  const dark = tierId === "grand_pelican" || tierId === "check_airman";
   return (
     <div
       className="relative overflow-hidden rounded-3xl p-5 text-white shadow-lg"
@@ -93,7 +93,7 @@ export default function ProfilePage() {
         <TierCard points={0} name="Your name here" sub="Student · 0 contributions" tierId="student" />
         <div className="rounded-2xl border border-card-border bg-card p-5 text-center space-y-3">
           <p className="text-base font-semibold">Start your crew logbook</p>
-          <p className="text-sm text-muted-foreground">Earn points for every spot you add, rating you leave and vote you cast. Climb from Student to Ancient Albatross.</p>
+          <p className="text-sm text-muted-foreground">Earn points for every spot you add, rating you leave and vote you cast. Climb from Student to Grand Pelican.</p>
           <button onClick={() => openAuth()} data-testid="button-profile-signin" className="h-11 px-6 rounded-full taxi-sign font-semibold hover-elevate">Create account or sign in</button>
         </div>
         <TierLadder points={0} signedIn={false} />

@@ -38,7 +38,7 @@ export default function CrewPage() {
   const { data: first, isLoading, isFetching } = useQuery<Board>({ queryKey: [`/api/leaderboard?${params}`], placeholderData: keepPreviousData, staleTime: 30_000 });
   const rows = first?.rows || [];
   const { data: top } = useQuery<Board>({ queryKey: ["/api/leaderboard?offset=0&limit=50"], staleTime: 30_000 });
-  const albatrosses = (top?.rows || []).filter((u) => u.tierId === "ancient_albatross");
+  const pelicans = (top?.rows || []).filter((u) => u.tierId === "grand_pelican");
   const { data: mine } = useQuery<{ rank: number; user: PublicUser }>({ queryKey: [`/api/crew/${me?.id}`], enabled: !!me, staleTime: 30_000 });
   const { data: bases } = useQuery<{ code: string; n: number }[]>({ queryKey: ["/api/leaderboard/bases"] });
   const baseHints = base.trim().length >= 1 ? (bases || []).filter((b) => b.code.startsWith(base.trim().toUpperCase()) && b.code !== base.trim().toUpperCase()).slice(0, 5) : [];
@@ -63,11 +63,11 @@ export default function CrewPage() {
         )}
       </header>
 
-      {albatrosses.length > 0 && (
-        <section className="rounded-2xl p-4 text-white" style={{ background: "linear-gradient(135deg,#0B0F1A,#1F2937 60%,#F8D27A44)" }} data-testid="section-albatross-wall">
-          <p className="font-code text-[10px] tracking-[0.25em] text-[#F8D27A]">THE ALBATROSS WALL</p>
+      {pelicans.length > 0 && (
+        <section className="rounded-2xl p-4 text-white" style={{ background: "linear-gradient(135deg,#0B0F1A,#1F2937 60%,#F8D27A44)" }} data-testid="section-pelican-perch">
+          <p className="font-code text-[10px] tracking-[0.25em] text-[#F8D27A]">THE PELICAN PERCH</p>
           <div className="mt-2 flex flex-wrap gap-3">
-            {albatrosses.map((u) => (
+            {pelicans.map((u) => (
               <Link key={u.id} href={`/crew/${u.id}`} className="flex items-center gap-2">
                 <CrewAvatar aircraft={u.aircraft} dark className="h-8 w-8" />
                 <div><p className="text-sm font-semibold">{u.displayName}</p><p className="text-[11px] text-white/60">{u.homeBase ? `${u.homeBase} · ` : ""}{u.points.toLocaleString()} pts</p></div>

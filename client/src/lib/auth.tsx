@@ -74,23 +74,24 @@ export function useCrewIndex() {
 
 // ---------- Insignia ----------
 export function tierById(id: TierId) {
-  return TIERS.find((t) => t.id === id)!;
+  // old name for the top rank (renamed Oct 26) and any unknown id still render a badge instead of crashing
+  return TIERS.find((t) => t.id === (id === ("ancient_albatross" as string) ? "grand_pelican" : id)) || TIERS[0];
 }
 
-/** Epaulet-style insignia: stripes for Private → ATP (Restricted ATP has an outlined fourth stripe), a star for Check Airman, wings for Ancient Albatross. */
+/** Epaulet-style insignia: stripes for Private → ATP (Restricted ATP has an outlined fourth stripe), a star for Check Airman, wings for Grand Pelican. */
 export function Insignia({ tierId, className }: { tierId: TierId; className?: string }) {
   const t = tierById(tierId);
   const bars = Array.from({ length: t.stripes });
   return (
     <svg viewBox="0 0 40 24" className={cn("h-5 w-auto", className)} aria-label={`${t.name} insignia`}>
-      <rect x="1" y="1" width="38" height="22" rx="4" fill={tierId === "ancient_albatross" ? "#111827" : "#0B1222"} stroke={t.color} strokeOpacity="0.6" />
+      <rect x="1" y="1" width="38" height="22" rx="4" fill={tierId === "grand_pelican" ? "#111827" : "#0B1222"} stroke={t.color} strokeOpacity="0.6" />
       {tierId === "student" && <path d="M14 12h12" stroke={t.color} strokeWidth="2" strokeLinecap="round" strokeDasharray="2 3" />}
-      {tierId !== "student" && tierId !== "ancient_albatross" &&
+      {tierId !== "student" && tierId !== "grand_pelican" &&
         bars.map((_, i) => tierId === "restricted_atp" && i === bars.length - 1
           ? <rect key={i} x="5" y={4 + i * 4.2} width="30" height="2.6" rx="0.6" fill="none" stroke={t.color} strokeWidth="0.9" /> // 4th stripe outlined: not quite full ATP
           : <rect key={i} x="5" y={4 + i * 4.2} width="30" height="2.6" rx="0.6" fill={t.color} />)}
       {tierId === "check_airman" && <path d="M33 3.2l.9 1.9 2 .3-1.5 1.4.4 2-1.8-1-1.8 1 .4-2-1.5-1.4 2-.3z" fill="#fff" />}
-      {tierId === "ancient_albatross" && (
+      {tierId === "grand_pelican" && (
         <g fill={t.color}>
           <path d="M20 9c-3-2.6-8.5-3.6-15-3 4 1.4 7 3.2 9.5 5.5L20 13l5.5-1.5C28 9.2 31 7.4 35 6c-6.5-.6-12 .4-15 3z" />
           <circle cx="20" cy="15.5" r="2.6" />
@@ -190,7 +191,7 @@ function AuthDialog({ open, onOpenChange, reason, onAuthed }: { open: boolean; o
           <DialogTitle>{mode === "signup" ? "Open your crew logbook" : mode === "login" ? "Welcome back" : "Reset your password"}</DialogTitle>
           <DialogDescription>
             {mode === "forgot" ? "Enter the email on your account and we'll send a reset link." :
-              <>{reason || "Sign in to add spots, rate and vote."} Every contribution earns points toward your next rating, from Student up to Ancient Albatross.</>}
+              <>{reason || "Sign in to add spots, rate and vote."} Every contribution earns points toward your next rating, from Student up to Grand Pelican.</>}
           </DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted p-1 text-sm font-medium">
@@ -234,7 +235,7 @@ function AuthDialog({ open, onOpenChange, reason, onAuthed }: { open: boolean; o
           </button>
           {IS_STATIC && (
             <p className="text-xs text-muted-foreground">
-              Demo: accounts live only in this browser. Try <span className="font-code">jramirez</span> / <span className="font-code">{SEED_PASSWORD}</span> to see an Ancient Albatross.
+              Demo: accounts live only in this browser. Try <span className="font-code">jramirez</span> / <span className="font-code">{SEED_PASSWORD}</span> to see an Grand Pelican.
             </p>
           )}
         </form>
