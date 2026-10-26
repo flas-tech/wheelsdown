@@ -32,7 +32,7 @@ export function TierCard({ points, name, sub, tierId, aircraft }: { points: numb
   const { tier, next, progress, toNext } = tierFor(points);
   const student = tier.id === "student";
   const soloed = student && hasSoloed(points);
-  const dark = tierId === "grand_pelican" || tierId === "check_airman";
+  const dark = tierId === "grand_pelican" || tierId === "chief_pilot" || tierId === "check_airman";
   return (
     <div
       className="relative overflow-hidden rounded-3xl p-5 text-white shadow-lg"
