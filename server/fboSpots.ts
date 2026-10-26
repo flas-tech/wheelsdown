@@ -15,8 +15,14 @@ import { findDuplicate } from "./moderator";
 import { AI_ENABLED, autofill } from "./ai";
 import { geocodeAddress } from "./places";
 import { refAirport } from "./airportsData";
+import { rowsFor, ensurePicks, findMore, moreStatus, claimAiPick } from "./aiPicks";
+import { similarity } from "@shared/similar";
+import { isFocus, focusCategory, matchesFocus } from "@shared/focus";
+import { cuisinesOf } from "@shared/cuisine";
+import { activitiesOf } from "@shared/activities";
+import { logChange } from "./ops";
 import { isValidCost, isPace } from "@shared/cost";
-import { FBO_CATEGORIES, FBO_LIMITS, isoDate, nameKey, type FboCategory } from "@shared/fbo";
+import { FBO_CATEGORIES, FBO_LIMITS, isoDate, nameKey, type FboCategory, type FboLevel, type FboAiFind } from "@shared/fbo";
 
 type Mw = (req: Request, res: Response, next: NextFunction) => any;
 const rows = async <T = any>(q: any) => ((await db().execute(q)).rows as T[]);
@@ -126,7 +132,31 @@ export async function publishHeldSpots(fboId: number) {
   return db().execute(sql`UPDATE spots SET status = 'live', mod_note = 'Added by an FBO (portal)' WHERE fbo_id = ${fboId} AND source = 'fbo' AND status = 'pending'`);
 }
 
-export function registerFboSpots(app: Express, o: { requireFbo: Mw; writeLimit: Mw; h: SpotHelpers; c: FboCtx }) {
+type AiGate = { audience: "pilot" | "all"; fbos: number[] };
+let gateCache: { at: number; v: AiGate } | null = null;
+/** fbo_ai_search: {"audience":"pilot","fbos":[ids]} (default: no FBO) or {"audience":"all"}. */
+async function aiGate(fresh = false): Promise<AiGate> {
+  if (!fresh && gateCache && Date.now() - gateCache.at < 30_000) return gateCache.v;
+  let v: AiGate = { audience: "pilot", fbos: [] };
+  try {
+    const r = await one(sql`SELECT value FROM app_settings WHERE key = 'fbo_ai_search'`);
+    const j = r?.value ? JSON.parse(r.value) : null;
+    if (j) v = { audience: j.audience === "all" ? "all" : "pilot", fbos: Array.isArray(j.fbos) ? j.fbos.map(Number).filter(Number.isFinite) : [] };
+  } catch { /* default */ }
+  gateCache = { at: Date.now(), v };
+  return v;
+}
+export async function aiSearchOn(fboId: number) { const g = await aiGate(); return g.audience === "all" || g.fbos.includes(fboId); }
+function findOut(r: any): FboAiFind {
+  const t = { name: r.name, description: r.description, tags: r.tags };
+  return { id: num(r.id), category: r.category, name: r.name, description: r.description || "", address: r.address || "", website: r.website || "",
+    miles: r.miles == null ? null : Number(r.miles), costLevel: r.cost_level == null ? null : num(r.cost_level), lat: r.lat == null ? null : Number(r.lat), lng: r.lng == null ? null : Number(r.lng),
+    foods: r.category === "eat" ? Array.from(new Set([...(r.focus && r.focus !== "local" && r.category === "eat" ? [r.focus] : []), ...cuisinesOf(t)])) : [],
+    acts: r.category === "do" ? Array.from(new Set([...(String(r.focus || "").startsWith("act:") ? [String(r.focus).slice(4)] : []), ...activitiesOf(t)])) : [],
+    focus: r.focus || "", draft: !!r.draft };
+}
+
+export function registerFboSpots(app: Express, o: { requireFbo: Mw; writeLimit: Mw; h: SpotHelpers; c: FboCtx; requireAdmin?: Mw }) {
   const { requireFbo, writeLimit, h, c } = o;
   const aiLimit = rateLimit({ windowMs: 10 * 60_000, limit: 20, standardHeaders: true, legacyHeaders: false, message: { message: "AI lookup is busy. Try again in a few minutes, or type the details in." } });
 
@@ -191,7 +221,7 @@ export function registerFboSpots(app: Express, o: { requireFbo: Mw; writeLimit: 
     const f = c.fbo(req); const id = num(f.id);
     const ap = await airportOf(f.icao);
     const icao = ap?.icao || f.icao;
-    const list = await rows(sql`SELECT s.id, s.category, s.name, s.address, s.website, s.description, s.cost_level, s.pace, s.miles_from_field, s.status, s.source, s.fbo_id,
+    const list = await rows(sql`SELECT s.id, s.category, s.name, s.address, s.website, s.description, s.cost_level, s.pace, s.miles_from_field, s.status, s.source, s.fbo_id, s.tags, s.lat, s.lng,
         (SELECT COUNT(*) FROM reviews v WHERE v.spot_id = s.id AND v.status = 'live' AND v.rating > 0) AS n,
         (SELECT AVG(v.rating) FROM reviews v WHERE v.spot_id = s.id AND v.status = 'live' AND v.rating > 0) AS avg,
         (SELECT COUNT(*) FROM reviews v WHERE v.spot_id = s.id AND v.status = 'live' AND v.rating = 0) AS ga,
@@ -206,12 +236,13 @@ export function registerFboSpots(app: Express, o: { requireFbo: Mw; writeLimit: 
       return {
         spotId: num(s.id), category: s.category, name: s.name, address: s.address || "", website: s.website || "", description: s.description || "",
         costLevel: s.cost_level == null ? null : num(s.cost_level), pace: s.pace, miles: s.miles_from_field == null ? null : Number(s.miles_from_field), status: s.status,
+        tags: s.tags || "", lat: s.lat == null ? null : Number(s.lat), lng: s.lng == null ? null : Number(s.lng),
         crew: { ratings: num(s.n), avg: s.avg == null ? null : Math.round(Number(s.avg) * 10) / 10, goArounds: num(s.ga) },
         addedBy: mine ? "you" : s.source === "fbo" ? "fbo" : "crew", otherFbos: num(s.others), canEdit: mine,
         rec: r ? recOut(r) : null,
       };
     }).sort((a, b) => Number(!!b.rec) - Number(!!a.rec) || b.crew.ratings - a.crew.ratings || a.name.localeCompare(b.name));
-    res.json({ icao, airport: ap ? `${ap.name}${ap.city ? ", " + ap.city : ""}` : "", lat: ap?.lat ?? null, lng: ap?.lon ?? null, verified: verified(req), aiEnabled: AI_ENABLED, spots: out });
+    res.json({ icao, airport: ap ? `${ap.name}${ap.city ? ", " + ap.city : ""}` : "", lat: ap?.lat ?? null, lng: ap?.lon ?? null, verified: verified(req), aiEnabled: AI_ENABLED, aiSearch: await aiSearchOn(id), spots: out });
   });
 
   // flat list of recommendations (print, discounts)
@@ -320,6 +351,80 @@ export function registerFboSpots(app: Express, o: { requireFbo: Mw; writeLimit: 
       res.status(502).json({ message: "AI lookup couldn't finish. Type the details in, or try again.", duplicate: dup ? { spotId: num(dup.id), name: dup.name } : null });
     }
   });
+
+  // ---------- Trip-sheet-style AI search (fbo_ai_search: pilot FBOs until opened to all) ----------
+  /** AI finds at the FBO's own airport (the one it signed up with) that aren't listed yet. Starts the first AI run if none. */
+  app.get("/api/fbo/ai", requireFbo, async (req, res) => {
+    const f = c.fbo(req);
+    if (!(await aiSearchOn(num(f.id)))) return res.status(404).json({ message: "Not available yet" });
+    const cat = String(req.query.cat || "");
+    if (!(FBO_CATEGORIES as readonly string[]).includes(cat)) return res.status(400).json({ message: "cat (eat, stay, do) required" });
+    const ap = await airportOf(f.icao);
+    const icao = ap?.icao || String(f.icao).toUpperCase();
+    const raw = String(req.query.type || "");
+    const typeQ = raw && isFocus(raw) && focusCategory(raw) === cat ? raw : "";
+    const listed = await candidates(req);
+    const status = AI_ENABLED ? await ensurePicks(icao) : "off";
+    const all = (await rowsFor(icao)).filter((r: any) => r.category === cat && !r.spot_id && !listed.some((x: any) => similarity({ name: r.name }, { name: x.name, lat: x.lat, lng: x.lng } as any) >= 0.8));
+    const finds = all.filter((r: any) => !typeQ || matchesFocus({ category: r.category, name: r.name, description: r.description, tags: r.tags, ai: { focus: r.focus || "" } } as any, typeQ)).map(findOut)
+      .sort((a, b) => (a.miles ?? 99) - (b.miles ?? 99));
+    res.json({ status: status === "pending" || !all.length ? status : "ready", more: moreStatus(icao), icao, finds, total: all.length });
+  });
+  /** Ask AI for more places at the FBO's airport (any of a type, or Surprise me). Shares the crew app's daily AI cap. */
+  app.post("/api/fbo/ai/more", requireFbo, aiLimit, async (req, res) => {
+    const f = c.fbo(req);
+    if (!(await aiSearchOn(num(f.id)))) return res.status(404).json({ message: "Not available yet" });
+    const ap = await airportOf(f.icao);
+    const icao = ap?.icao || String(f.icao).toUpperCase();
+    const focus = String(req.body?.focus || "");
+    const ok = focus === "local" || (FBO_CATEGORIES as readonly string[]).includes(focus) || (isFocus(focus) && !!focusCategory(focus));
+    const st = await findMore(icao, ok ? focus : "");
+    await c.event(num(f.id), "ai_lookup", c.who(req), `asked AI for more places (${focus || "any"})`);
+    res.json({ status: st });
+  });
+  /** List (or list and recommend) an AI find: it becomes a real Wheelsdown listing at the airport, checked by this FBO. */
+  app.post("/api/fbo/ai/:id/add", requireFbo, writeLimit, async (req, res) => {
+    try {
+      const f = c.fbo(req);
+      if (!(await aiSearchOn(num(f.id)))) return res.status(404).json({ message: "Not available yet" });
+      const ap = await airportOf(f.icao);
+      const icao = ap?.icao || String(f.icao).toUpperCase();
+      const r: any = (await rowsFor(icao)).find((x: any) => x.id === Number(req.params.id));
+      if (!r) return res.status(404).json({ message: "That AI find isn't available anymore. Refresh and try another." });
+      const level: FboLevel = req.body?.level === "listed" ? "listed" : "recommended";
+      // already a listing (claimed, or the same business crews added)? check that one instead of adding a copy
+      const dup = r.spot_id ? { id: r.spot_id, name: r.name } : findDuplicate({ name: r.name, lat: r.lat ?? null, lng: r.lng ?? null }, (await candidates(req)) as any[]);
+      if (dup) {
+        const rec = await addRec(req, num(dup.id), { level });
+        await c.touch(c.fid(req));
+        return res.json({ spotId: num(dup.id), existing: true, status: "live", rec: recOut(rec) });
+      }
+      if ((await recCount(c.fid(req))) >= FBO_LIMITS.places) return res.status(400).json({ message: `Accounts hold up to ${FBO_LIMITS.places} recommendations during the beta.` });
+      let tags: string[] = []; try { tags = JSON.parse(r.tags || "[]"); } catch { tags = []; }
+      const s = await createSpot(req, { category: r.category, name: r.name, description: r.description, address: r.address, website: r.website, tags,
+        costLevel: r.cost_level, pace: r.pace, lat: r.lat == null ? null : Number(r.lat), lng: r.lng == null ? null : Number(r.lng) }, false);
+      await claimAiPick({ id: s.id, icao: s.icao, category: s.category, name: s.name }, r.id);
+      const rec = await addRec(req, s.id, { level });
+      await c.event(c.fid(req), "edit", c.who(req), `added listing ${s.name} (${s.category}) from AI search`); await c.touch(c.fid(req));
+      res.json({ spotId: s.id, status: s.status, rec: recOut(rec) });
+    } catch (e) { fail(res, e); }
+  });
+  if (o.requireAdmin) {
+    app.get("/api/admin/fbo-ai-search", o.requireAdmin, async (_req, res) => {
+      const accounts = await rows(sql`SELECT id, name, icao FROM fbo_accounts ORDER BY id`);
+      res.json({ ...(await aiGate(true)), enabled: AI_ENABLED, accounts: accounts.map((a) => ({ id: num(a.id), name: a.name, icao: String(a.icao).toUpperCase() })) });
+    });
+    app.put("/api/admin/fbo-ai-search", o.requireAdmin, async (req, res) => {
+      const audience: AiGate["audience"] = req.body?.audience === "all" ? "all" : "pilot";
+      const fbos = (Array.isArray(req.body?.fbos) ? req.body.fbos : []).map(Number).filter((n: number) => Number.isInteger(n) && n > 0).slice(0, 200);
+      const v: AiGate = { audience, fbos };
+      await db().execute(sql`INSERT INTO app_settings (key, value) VALUES ('fbo_ai_search', ${JSON.stringify(v)}) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`);
+      gateCache = { at: Date.now(), v };
+      await logChange({ actor: (req as any).adminName || "Admin", kind: "admin", action: "fbo_ai_search", entity: "settings",
+        summary: audience === "all" ? "FBO portal AI place search opened to all FBOs" : `FBO portal AI place search: pilot FBOs only (${fbos.join(", ") || "none"})` });
+      res.json(v);
+    });
+  }
 
   /**
    * Bulk upload. Each row is matched to a listing already at the airport (recommend it), else to one of the FBO's own

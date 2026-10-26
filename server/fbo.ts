@@ -531,7 +531,7 @@ export function registerFbo(app: Express, deps: { requireAdmin: Mw; spots: SpotH
   });
 
   // ---- recommendations live on the shared listings (fboSpots.ts)
-  registerFboSpots(app, { requireFbo, writeLimit, h: deps.spots, c: { fid, who, fbo: (req) => ctx(req).fbo, event, touch } });
+  registerFboSpots(app, { requireFbo, writeLimit, requireAdmin, h: deps.spots, c: { fid, who, fbo: (req) => ctx(req).fbo, event, touch } });
 
   // ---- offers
   const offerFields = async (req: Request, b: any, cur?: any) => {

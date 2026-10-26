@@ -195,7 +195,8 @@ export type FboPlace = {
 /** A listing at the FBO's airport, as shown in the portal's checklist. `rec` is set when this FBO recommends it. */
 export type FboSpot = {
   spotId: number; category: FboCategory; name: string; address: string; website: string; description: string;
-  costLevel: number | null; pace: string | null; miles: number | null; status: string;
+  costLevel: number | null; pace: string | null; miles: number | null; status: string; tags?: string;
+  lat?: number | null; lng?: number | null;
   crew: { ratings: number; avg: number | null; goArounds: number };
   addedBy: "you" | "crew" | "fbo"; otherFbos: number; canEdit: boolean;
   rec: (Omit<FboPlace, "spotId" | "category" | "name" | "address" | "website">) | null;
@@ -207,3 +208,10 @@ export type FboSpotInput = {
 export type FboOffer = { id: number; placeId: number | null; title: string; code: string; details: string; expiresOn: string; active: boolean; updatedAt: number; updatedBy: string };
 export type FboIntel = Record<string, { value: string; updatedAt: number; updatedBy: string }>;
 export type FboAd = { id: number; slot: string; headline: string; body: string; cta: string; url: string; active: boolean; impressions: number; clicks: number };
+
+/** Trip-sheet-style AI search in the portal: an AI find at the FBO's airport that isn't listed yet. */
+export type FboAiFind = {
+  id: number; category: FboCategory; name: string; description: string; address: string; website: string;
+  miles: number | null; costLevel: number | null; lat: number | null; lng: number | null; foods: string[]; acts: string[]; focus: string; draft: boolean;
+};
+export type FboAiResp = { status: string; more: string; icao: string; finds: FboAiFind[]; total: number };

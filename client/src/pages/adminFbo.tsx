@@ -51,6 +51,8 @@ export function FboAdminPanel({ api }: { api: AdmApi }) {
         <button className="ml-auto rounded-lg border border-border px-2.5 py-1 text-xs hover-elevate" onClick={() => data?.signupUrl && navigator.clipboard.writeText(data.signupUrl).catch(() => {})} data-testid="button-copy-signup-url">Copy link</button>
       </div>
 
+      <FboAiSearchSwitch api={api} />
+
       <div className="flex flex-wrap items-center gap-3 rounded-xl border border-card-border bg-card p-3">
         <Switch checked={!!data?.adsServing} onCheckedChange={(v) => serving.mutate(v)} data-testid="switch-fbo-ads-serving" />
         <div className="text-sm"><p className="font-medium">Serve FBO ads in the crew app</p><p className="text-xs text-muted-foreground">{data?.adsServing ? "On: active FBO ads run at their own airport, labeled Sponsored." : "Off: FBOs can build ads, but crews don't see any yet."}</p></div>
@@ -188,6 +190,43 @@ function FboDetail({ api, id, onBack }: { api: AdmApi; id: number; onBack: () =>
         <p className="mb-2 text-sm font-semibold">Recommendations ({data.places.length})</p>
         <div className="max-h-72 overflow-y-auto text-xs">{data.places.map((p: any) => <p key={p.id} className="border-t border-border py-1 first:border-0">{p.favorite ? "★ " : ""}<b>{p.name}</b> <span className="text-muted-foreground">{p.category} · {p.address} {p.website}</span>{p.hidden ? " (hidden)" : ""}</p>)}</div>
       </section>
+    </div>
+  );
+}
+
+type AiGateResp = { audience: "pilot" | "all"; fbos: number[]; enabled: boolean; accounts: { id: number; name: string; icao: string }[] };
+/** Trip-sheet-style AI place search in the portal: pilot FBOs first, then all. */
+function FboAiSearchSwitch({ api }: { api: AdmApi }) {
+  const { adm, admGet } = api;
+  const { toast } = useToast();
+  const { data } = useQuery<AiGateResp>({ queryKey: ["/api/admin/fbo-ai-search"], queryFn: admGet("/api/admin/fbo-ai-search") });
+  const save = useMutation({
+    mutationFn: async (v: { audience: "pilot" | "all"; fbos: number[] }) => (await adm("PUT", "/api/admin/fbo-ai-search", v)).json(),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/admin/fbo-ai-search"] }),
+    onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
+  });
+  if (!data) return null;
+  const all = data.audience === "all";
+  const toggle = (id: number) => save.mutate({ audience: data.audience, fbos: data.fbos.includes(id) ? data.fbos.filter((x) => x !== id) : [...data.fbos, id] });
+  return (
+    <div className="space-y-2 rounded-xl border border-card-border bg-card p-3" data-testid="card-fbo-ai-search">
+      <div className="flex flex-wrap items-center gap-3">
+        <Switch checked={all} onCheckedChange={(v) => save.mutate({ audience: v ? "all" : "pilot", fbos: data.fbos })} data-testid="switch-fbo-ai-search-all" />
+        <div className="min-w-0 text-sm">
+          <p className="font-medium">AI place search in the portal (trip-sheet style)</p>
+          <p className="text-xs text-muted-foreground">{all ? "On for every FBO: type drop-downs, tap-to-preview and Ask AI for more, at each FBO's own airport." : "Pilot only: just the FBOs checked below see it. Everyone else keeps today's Recommendations page."}{!data.enabled && " AI is switched off on this server, so the Ask AI box stays hidden."}</p>
+        </div>
+      </div>
+      {!all && (
+        <div className="flex flex-wrap gap-1.5 pl-12">
+          {data.accounts.map((a) => {
+            const on = data.fbos.includes(a.id);
+            return <button key={a.id} type="button" onClick={() => toggle(a.id)} aria-pressed={on} disabled={save.isPending} data-testid={`button-ai-pilot-${a.id}`}
+              className={cn("rounded-full border px-2.5 py-1 text-xs font-medium", on ? "border-violet-600 bg-violet-600 text-white" : "border-border text-muted-foreground hover-elevate")}>{a.icao} · {a.name}</button>;
+          })}
+          {!data.accounts.length && <span className="text-xs text-muted-foreground">No FBO accounts yet.</span>}
+        </div>
+      )}
     </div>
   );
 }

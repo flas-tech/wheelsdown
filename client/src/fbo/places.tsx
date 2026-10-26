@@ -6,13 +6,17 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { FBO_CATEGORIES, FBO_CAT_LABEL, FBO_LIMITS, FBO_LEVEL_LABEL, type FboLevel, mapImport, parseDelimited, nameKey, similarListings, nameLikeness, type FboCategory, type FboSpot, type FboImportRow } from "@shared/fbo";
 import { api, get, fboQuery, ApiError } from "./api";
+import { AiSearchBox, TypeSelect } from "./aiSearch";
+import { matchesFocus } from "@shared/focus";
+import { CUISINES } from "@shared/cuisine";
+import { ACTIVITIES } from "@shared/activities";
 import { Card, Empty, Field, PageHeader, Spinner, areaCls, btn, btnGhost, btnPrimary, inputCls, Counter } from "./ui";
 
 /**
  * Recommendations = check marks on the shared Wheelsdown listings at your airport. One listing per business; the FBO's
  * note, crew rate and discount attach to it. A place that isn't listed yet is added once (with AI lookup) and checked.
  */
-export type SpotsResp = { icao: string; airport: string; lat: number | null; lng: number | null; verified: boolean; aiEnabled: boolean; spots: FboSpot[] };
+export type SpotsResp = { icao: string; airport: string; lat: number | null; lng: number | null; verified: boolean; aiEnabled: boolean; aiSearch?: boolean; spots: FboSpot[] };
 const TABS: { id: FboCategory; label: string }[] = [{ id: "eat", label: "Restaurants" }, { id: "stay", label: "Hotels" }, { id: "do", label: "Things to do" }];
 export const refreshSpots = () => { for (const k of ["/api/fbo/spots", "/api/fbo/places", "/api/fbo/stats"]) fboQuery.invalidateQueries({ queryKey: [k] }); };
 const stars = (s: FboSpot) => (s.crew.ratings ? `${(s.crew.avg ?? 0).toFixed(1)}★ · ${s.crew.ratings} crew rating${s.crew.ratings === 1 ? "" : "s"}` : "No crew ratings yet");
@@ -43,6 +47,8 @@ export function PlacesPage() {
   const [tab, setTab] = useState<FboCategory>("eat");
   const [q, setQ] = useState("");
   const [only, setOnly] = useState(false);
+  // food type / type of thing to do, like crews' Search (trip-sheet search for pilot FBOs)
+  const [type, setType] = useState("");
   const [open, setOpen] = useState<number | null>(null);
   const [adding, setAdding] = useState<{ name?: string; spot?: FboSpot } | null>(null);
   const [importing, setImporting] = useState(false);
@@ -61,8 +67,8 @@ export function PlacesPage() {
     onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
   });
   const [choosing, setChoosing] = useState<number | null>(null);
-  const list = useMemo(() => spots.filter((s) => s.category === tab && (!only || s.rec) && (!q || `${s.name} ${s.address}`.toLowerCase().includes(q.toLowerCase()) || nameLikeness(q, s.name) >= 45))
-    .sort((a, b) => Number(!!b.rec) - Number(!!a.rec) || Number(!!b.rec?.favorite) - Number(!!a.rec?.favorite) || Number(b.rec?.level === "recommended") - Number(a.rec?.level === "recommended") || b.crew.ratings - a.crew.ratings || a.name.localeCompare(b.name)), [spots, tab, only, q]);
+  const list = useMemo(() => spots.filter((s) => s.category === tab && (!only || s.rec) && (!type || matchesFocus({ category: s.category, name: s.name, description: s.description, tags: s.tags || "" } as any, type)) && (!q || `${s.name} ${s.address}`.toLowerCase().includes(q.toLowerCase()) || nameLikeness(q, s.name) >= 45))
+    .sort((a, b) => Number(!!b.rec) - Number(!!a.rec) || Number(!!b.rec?.favorite) - Number(!!a.rec?.favorite) || Number(b.rec?.level === "recommended") - Number(a.rec?.level === "recommended") || b.crew.ratings - a.crew.ratings || a.name.localeCompare(b.name)), [spots, tab, only, q, type]);
   const counts = (c: FboCategory) => { const all = spots.filter((s) => s.category === c); return { all: all.length, mine: all.filter((s) => s.rec).length }; };
   const picks = spots.filter((s) => s.rec).length;
   const noMatch = q.trim().length >= 2 && !spots.some((s) => s.category === tab && nameKey(s.name) === nameKey(q));
@@ -76,10 +82,11 @@ export function PlacesPage() {
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <div className="flex flex-wrap gap-1 rounded-lg border border-border p-1">
           {TABS.map((t) => { const c = counts(t.id); return (
-            <button key={t.id} onClick={() => { setTab(t.id); setOpen(null); }} className={cn("rounded-md px-3 py-1.5 text-sm", tab === t.id ? "bg-primary font-semibold text-primary-foreground" : "text-muted-foreground hover-elevate")} data-testid={`tab-cat-${t.id}`}>
+            <button key={t.id} onClick={() => { setTab(t.id); setOpen(null); setType(""); }} className={cn("rounded-md px-3 py-1.5 text-sm", tab === t.id ? "bg-primary font-semibold text-primary-foreground" : "text-muted-foreground hover-elevate")} data-testid={`tab-cat-${t.id}`}>
               {t.label} <span className="tabular text-xs opacity-75">{c.mine}/{c.all}</span>
             </button>); })}
         </div>
+        {data?.aiSearch && <TypeSelect cat={tab} value={type} onChange={setType} testId="select-type-filter" />}
         <label className="flex items-center gap-2 text-sm text-muted-foreground"><input type="checkbox" checked={only} onChange={(e) => setOnly(e.target.checked)} className="h-4 w-4 accent-[hsl(var(--primary))]" data-testid="checkbox-only-mine" />Only my picks</label>
         <div className="relative ml-auto w-full sm:w-72">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -95,15 +102,16 @@ export function PlacesPage() {
                 choosing={choosing === s.spotId} onChoose={() => setChoosing(choosing === s.spotId ? null : s.spotId)}
                 onLevel={(level) => check.mutate({ s, level })}
                 onRemove={() => { if ((s.rec?.notes || s.rec?.crewRate) && !confirm(`Remove ${s.name} from your list? Your note and crew rate for it will be deleted.`)) return; check.mutate({ s }); }}
-                onEditListing={() => setAdding({ spot: s })} busy={check.isPending && check.variables?.s.spotId === s.spotId} />
+                onEditListing={() => setAdding({ spot: s })} busy={check.isPending && check.variables?.s.spotId === s.spotId} preview={!!data?.aiSearch} />
             ))}
             {!list.length && (
               <div className="p-6">
-                <Empty title={q ? `No ${TABS.find((t) => t.id === tab)!.label.toLowerCase()} match "${q}"` : only ? "No picks here yet" : `No ${TABS.find((t) => t.id === tab)!.label.toLowerCase()} listed at ${data?.icao} yet`}>
+                <Empty title={type && !q ? `No ${focusName(type)} listed at ${data?.icao} yet` : q ? `No ${TABS.find((t) => t.id === tab)!.label.toLowerCase()} match "${q}"` : only ? "No picks here yet" : `No ${TABS.find((t) => t.id === tab)!.label.toLowerCase()} listed at ${data?.icao} yet`}>
                   {only ? "Uncheck \u201cOnly my picks\u201d to see everything crews have listed." : q ? "Add it with the button below and AI can fill in the details." : "Be the first: add the places your desk already recommends."}
                 </Empty>
               </div>
             )}
+            {data?.aiSearch && data.aiEnabled && !only && !q && <AiSearchBox cat={tab} icao={data.icao} type={type} hasItems={list.length > 0} onAdded={(id) => setOpen(id)} />}
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-muted/30 px-3 py-2.5 text-sm">
             <span className="text-muted-foreground">{noMatch ? <>Don't see <b className="text-foreground">{q}</b>?</> : "Not on the list?"}</span>
@@ -118,8 +126,10 @@ export function PlacesPage() {
   );
 }
 
-function SpotRow({ s, open, onToggleOpen, choosing, onChoose, onLevel, onRemove, onEditListing, busy }: { s: FboSpot; open: boolean; onToggleOpen: () => void; choosing: boolean; onChoose: () => void;
-  onLevel: (l: FboLevel) => void; onRemove: () => void; onEditListing: () => void; busy: boolean }) {
+const focusName = (t: string) => (t.startsWith("act:") ? ACTIVITIES.find((a) => a.id === t.slice(4))?.label.toLowerCase() : CUISINES.find((c) => c.id === t)?.label.toLowerCase() + " food") || "places";
+
+function SpotRow({ s, open, onToggleOpen, choosing, onChoose, onLevel, onRemove, onEditListing, busy, preview }: { s: FboSpot; open: boolean; onToggleOpen: () => void; choosing: boolean; onChoose: () => void;
+  onLevel: (l: FboLevel) => void; onRemove: () => void; onEditListing: () => void; busy: boolean; preview?: boolean }) {
   const r = s.rec;
   return (
     <div className={cn("border-b border-border last:border-0", r && "bg-primary/[0.04]")} data-testid={`row-spot-${s.spotId}`}>
@@ -130,6 +140,7 @@ function SpotRow({ s, open, onToggleOpen, choosing, onChoose, onLevel, onRemove,
         </button>
         <button className="min-w-0 flex-1 text-left" onClick={r ? onToggleOpen : onChoose}>
           <p className="font-medium">{s.name}
+            {preview && !r && <ChevronDown className={cn("ml-1 inline h-3.5 w-3.5 text-muted-foreground transition-transform", choosing && "rotate-180")} />}
             {r && <LevelBadge level={r.level} />}
             {r?.favorite && <Star className="ml-1.5 inline h-3.5 w-3.5 fill-primary text-primary" aria-label="FBO favorite" />}
             {r?.hidden && <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase text-muted-foreground">Hidden</span>}
@@ -145,8 +156,17 @@ function SpotRow({ s, open, onToggleOpen, choosing, onChoose, onLevel, onRemove,
         </div>
       </div>
       {r && <div className="-mt-1 px-3 pb-3 pl-12 sm:hidden"><LevelChoice value={r.level} onPick={onLevel} busy={busy} id={`m-${s.spotId}`} /></div>}
+      {!r && choosing && preview && (s.description || s.website || s.address) && (
+        <div className="space-y-1.5 border-t border-border/60 px-3 pt-2.5 text-xs sm:pl-12" data-testid={`preview-spot-${s.spotId}`}>
+          {s.description && <p className="text-muted-foreground">{s.description}</p>}
+          <div className="flex flex-wrap items-center gap-3">
+            <a href={s.lat != null && s.lng != null ? `https://www.google.com/maps/search/?api=1&query=${s.lat},${s.lng}` : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${s.name} ${s.address}`)}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium hover:underline"><MapPin className="h-3 w-3" />Map</a>
+            {s.website && <a href={s.website} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground hover:underline">Website</a>}
+          </div>
+        </div>
+      )}
       {!r && choosing && (
-        <div className="grid gap-2 border-t border-border/60 px-3 pb-3 pt-2.5 sm:grid-cols-2 sm:pl-12" data-testid={`choose-level-${s.spotId}`}>
+        <div className={cn("grid gap-2 px-3 pb-3 sm:grid-cols-2 sm:pl-12", preview && (s.description || s.website || s.address) ? "pt-2" : "border-t border-border/60 pt-2.5")} data-testid={`choose-level-${s.spotId}`}>
           {(["listed", "recommended"] as FboLevel[]).map((l) => (
             <button key={l} type="button" disabled={busy} onClick={() => onLevel(l)} className={cn("rounded-lg border p-2.5 text-left hover-elevate", l === "recommended" ? "border-sky-500/60" : "border-border")} data-testid={`button-choose-${l}-${s.spotId}`}>
               <span className="block text-sm font-semibold">{FBO_LEVEL_LABEL[l]}</span><span className="block text-xs text-muted-foreground">{LEVEL_HINT[l]}</span>
