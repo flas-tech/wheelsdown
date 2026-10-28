@@ -4,7 +4,9 @@ import { pgTable, text, integer, serial, bigint, doublePrecision, index, uniqueI
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-export const CATEGORIES = ["eat", "do", "stay", "fbo"] as const;
+export const CATEGORIES = ["eat", "do", "stay", "fbo", "car"] as const;
+/** Rental cars (PJ's feedback #71) launch admins-first behind app_settings rental_cars_audience. */
+export const PREVIEW_CATEGORIES: readonly string[] = ["car"];
 export type Category = (typeof CATEGORIES)[number];
 
 // Time buckets, in minutes of free time required
@@ -33,7 +35,7 @@ export type Airport = typeof airports.$inferSelect;
 export const spots = pgTable("spots", {
   id: serial("id").primaryKey(),
   icao: text("icao").notNull(),
-  category: text("category").notNull(), // eat | do | stay | fbo
+  category: text("category").notNull(), // eat | do | stay | fbo | car (rental cars)
   name: text("name").notNull(),
   description: text("description").notNull().default(""),
   address: text("address").default(""),

@@ -117,7 +117,7 @@ export async function osmTags(placeRef?: string | null): Promise<Record<string, 
 
 // ---------------------------------------------------------------- shared prompt bits
 const priceGuide = (cat: string) => costOptions(cat as Category).map((i) => `${i}=${COST_LABELS[i] || "Free"} (${(COST_RANGES as any)[cat]?.[i] ?? ""})`).join(", ");
-const CAT_HELP = "eat = restaurants/cafes/bars, do = activities and attractions, stay = hotels, fbo = the airport's FBO itself";
+const CAT_HELP = "eat = restaurants/cafes/bars, do = activities and attractions, stay = hotels, fbo = the airport's FBO itself, car = a rental car company or counter serving the airport";
 const TAG_HINT = "short lowercase tags crews filter on, e.g. late night, crew discount, open 24h, breakfast, healthy, walkable, shuttle, gym, pool, coffee, local favorite";
 
 // ---------------------------------------------------------------- autofill
@@ -156,7 +156,7 @@ Rules:
 - category is ${i.category} (${CAT_HELP}).
 - description: 1-3 plain sentences (max 280 chars) a crew member would find useful: what it is, what it's known for, and hours if found. No hype, no emojis, no exclamation points.
 - crewTip: one short practical tip only if a source supports it (e.g. "Open until 2am", "Free hotel shuttle from the FBO"); otherwise "".
-- costLevel: integer for the price per ${i.category === "stay" ? "night" : "person"} using ${priceGuide(i.category)}${i.category === "fbo" ? "; FBO is always 0" : ""}; null if unknown.
+- costLevel: integer for the price per ${i.category === "stay" ? "night" : i.category === "car" ? "day for a typical car" : "person"} using ${priceGuide(i.category)}${i.category === "fbo" ? "; FBO is always 0" : ""}; null if unknown.
 - pace (eat only, else null): "grab" for counter service/takeout, "sit" for table service, "both" if it clearly offers both.
 - minutesNeeded (do only, else null): typical visit length in minutes, not counting travel.
 - tags: up to 5, ${TAG_HINT}.

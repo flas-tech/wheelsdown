@@ -33,6 +33,7 @@ import { registerPush, forgetPush } from "./push";
 import { registerDm, forgetDm } from "./dm";
 import { registerTrip, aiSpotsFor, aiSpotsForUser, promoteBriefAiPicks } from "./trip";
 import { registerCrewsChoice } from "./crewsChoice";
+import { registerRentalCars, carsFor } from "./rentalCars";
 import { dayKey } from "./metrics";
 import { SERVICES } from "@shared/services";
 import { track, visit, pageKey, outboundKey, report, untracked } from "./metrics";
@@ -284,7 +285,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const codes = legs.map((l) => l.code);
     const icaos = legs.filter((l) => l.airport).map((l) => l.airport!.icao);
     const v = await voterOf(req);
-    const ai = { ai: await aiSpotsFor(req) };
+    const ai = { ai: await aiSpotsFor(req), cars: await carsFor(await userOf(req), isSuperAdmin) };
     const results = codes.length ? (icaos.length ? await storage.searchSpots(icaos, false, v, ai) : []) : await storage.searchSpots([], false, v, ai);
     if (codes.length) { track(req, "search"); for (const i of Array.from(new Set(icaos))) track(req, "search_airport", i); }
     const recs = await fboRecMap(results.map((s: any) => s.id)).catch(() => new Map());
@@ -298,13 +299,14 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json(buildHighlights(await storage.searchSpots([], false, await voterOf(req)), { category: cat, visits }));
   });
 
-  registerSimilar(app, { userOf });
+  registerSimilar(app, { userOf, isSuperAdmin });
   app.get("/api/spots/:id", async (req, res) => {
     const v = await voterOf(req);
     const s = await storage.getSpot(id(req), v);
     if (!s || s.status === "hidden") return res.status(404).json({ message: "Not found" });
     if (s.source === "ai" && !(await aiSpotsFor(req))) return res.status(404).json({ message: "Not found" });
     const viewer = await userOf(req);
+    if (s.category === "car" && !(await carsFor(viewer, isSuperAdmin))) return res.status(404).json({ message: "Not found" });
     const mine = !!viewer && s.userId === viewer.id;
     if (s.status !== "live" && !mine) return res.status(404).json({ message: "Not found" });
     if (!mine) track(req, "spot_view", s.icao);
@@ -358,6 +360,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     } else rest.pace = null;
     if (rest.category === "stay") rest.minutesNeeded = 720;
     if (rest.category === "fbo") rest.minutesNeeded = 30;
+    if (rest.category === "car") rest.minutesNeeded = 30; // a car is a means, not a stop: never fills layover time
     return null;
   }
   /** Distance is always measured from the listing's airport, never from where the poster is standing. */
@@ -384,6 +387,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const { airportCity, tags, goAround, ...rest } = p.data;
     const code = rest.icao.toUpperCase();
     if (!(await storage.resolveCode(code)) && !refAirport(code) && !airportCity) return res.status(400).json({ message: `We don't know ${code} yet — add the city so we can create it.` });
+    if (rest.category === "car" && !(await carsFor(user, isSuperAdmin))) return res.status(403).json({ message: "Rental cars aren't open yet" });
     const err = applyCategoryRules(rest);
     if (err) return res.status(400).json({ message: err });
     const icao = await ensureAirport(code, airportCity);
@@ -573,6 +577,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.get("/api/crew/:id", async (req, res) => {
     const viewer = await userOf(req);
     const p = await storage.crewProfile(id(req), viewer?.id);
+    if (p && !(await carsFor(viewer, isSuperAdmin))) { p.spots = p.spots.filter((x: any) => x.category !== "car"); const cars = await storage.carSpotIds(); p.reviews = p.reviews.filter((x: any) => !cars.has(x.spotId)); }
     p ? res.json(p) : res.status(404).json({ message: "Not found" });
   });
   // ---------- following (no points; anonymous members can't be followed) ----------
@@ -749,6 +754,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   registerFboCards(app, { userOf, isSuperAdmin, requireAdmin }); // participating FBO cards on briefs and Crew Up (fbo_cards_audience: admins until opened)
   registerDm(app, { userOf, isSuperAdmin, requireAdmin }); // private messages, end-to-end encrypted (dm_audience: admins until opened)
   registerCrewsChoice(app, { userOf, isSuperAdmin, requireAdmin, requireUser }); // rank mascots + Crews' Choice voting (each admins-only until opened)
+  registerRentalCars(app, { userOf, isSuperAdmin, requireAdmin }); // rental cars: a fifth listing type, admins-only until rental_cars_audience = members
   registerTrip(app, { userOf, isSuperAdmin, requireAdmin, requireUser }); // 4-tab nav, Home trip card, AI-added listings (trip_audience: admins until opened) // push notifications (push_audience: admins until opened)
   registerModFix(app, { requireAdmin, requireUser, ensureAirport: (c) => ensureAirport(c), byAdmin });
   app.get("/api/admin/costs", requireAdmin, async (req, res) => {

@@ -7,6 +7,8 @@ import { useQuery } from "@tanstack/react-query";
 import { BookUser, ClipboardList, ClipboardPlus, Contact, Heart, House, LayoutGrid, Map as MapIcon, MapPin, MessagesSquare, PlaneLanding, PlusCircle, Search, Star, Trophy, Users, type LucideIcon } from "lucide-react";
 import { useAuth } from "./auth";
 import { apiRequest, IS_STATIC } from "./queryClient";
+import { CAT_META } from "./ui";
+import type { Category } from "@shared/schema";
 
 export type Experience = "plan" | "spots" | "lounge";
 export type NavItem = { href: string; label: string; icon: LucideIcon; active: (loc: string) => boolean; dot?: string };
@@ -25,15 +27,15 @@ const subscribe = (cb: () => void) => {
   return () => { window.removeEventListener(EVENT, cb); window.removeEventListener("storage", cb); };
 };
 
-export type Features = { experience: "admins" | "members"; trip: "admins" | "members"; rankArt: "admins" | "members"; crewsChoice: "admins" | "members"; ready: boolean };
+export type Features = { experience: "admins" | "members"; trip: "admins" | "members"; rankArt: "admins" | "members"; crewsChoice: "admins" | "members"; rentalCars: "admins" | "members"; ready: boolean };
 /** Which parts of the app are open to members. Fails closed: if it can't load, members keep the classic app. */
 export function useFeatures(): Features {
-  const { data, isFetched } = useQuery<{ experience: string; trip?: string; rankArt?: string; crewsChoice?: string }>({
+  const { data, isFetched } = useQuery<{ experience: string; trip?: string; rankArt?: string; crewsChoice?: string; rentalCars?: string }>({
     queryKey: ["/api/features"], enabled: !IS_STATIC, staleTime: 60_000, retry: 1,
     queryFn: async () => (await apiRequest("GET", "/api/features")).json(),
   });
   return { experience: data?.experience === "members" ? "members" : "admins", trip: data?.trip === "members" ? "members" : "admins",
-    rankArt: data?.rankArt === "members" ? "members" : "admins", crewsChoice: data?.crewsChoice === "members" ? "members" : "admins", ready: IS_STATIC || isFetched };
+    rankArt: data?.rankArt === "members" ? "members" : "admins", crewsChoice: data?.crewsChoice === "members" ? "members" : "admins", rentalCars: data?.rentalCars === "members" ? "members" : "admins", ready: IS_STATIC || isFetched };
 }
 /** The new landing page and everything on it: super-user accounts always; signed-in members once it's launched. */
 export function usePreview() { return usePreviewState().on; }
@@ -59,6 +61,10 @@ export function useTrip() { return useTripState().on; }
 
 /** Rank mascots + one-liners (rank_art_audience) and Crews' Choice voting (crews_choice_audience): admins first. */
 export function useRankArt() { const { me } = useAuth(); const f = useFeatures(); return { on: !!me?.isAdmin || f.rankArt === "members", adminOnly: !!me?.isAdmin && f.rankArt !== "members" }; }
+/** Rental cars (category "car"): admins first, behind rental_cars_audience. The server leaves car listings out for everyone else too. */
+export function useRentalCars() { const { me } = useAuth(); const f = useFeatures(); return { on: !!me?.isAdmin || f.rentalCars === "members", adminOnly: !!me?.isAdmin && f.rentalCars !== "members" }; }
+/** The listing types this viewer can browse and add, in display order. */
+export function useCategories(): Category[] { const cars = useRentalCars().on; return (Object.keys(CAT_META) as Category[]).filter((c) => c !== "car" || cars); }
 export function useCrewsChoice() { const { me } = useAuth(); const f = useFeatures(); return { on: !!me && (!!me.isAdmin || f.crewsChoice === "members"), adminOnly: !!me?.isAdmin && f.crewsChoice !== "members" }; }
 
 /** Current experience, or null for the classic app (always null for members). */

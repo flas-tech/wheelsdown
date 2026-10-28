@@ -10,7 +10,7 @@ import type { Category, SpotWithStats } from "@shared/schema";
 import { getPosition } from "@/lib/geo";
 import { cn } from "@/lib/utils";
 
-export const MAP_COLORS: Record<Category, string> = { eat: "#E8A317", do: "#0E9F8E", stay: "#7C5CDB", fbo: "#475569" };
+export const MAP_COLORS: Record<Category, string> = { eat: "#E8A317", do: "#0E9F8E", stay: "#7C5CDB", fbo: "#475569", car: "#E11D48" };
 type Leg = { icao: string; lat: number; lon: number; name?: string };
 
 // lucide icon shapes (Utensils, Compass, BedDouble, PlaneLanding) as plain SVG, so pins need no React renderer
@@ -19,6 +19,7 @@ const GLYPHS: Record<Category, string> = {
   do: '<path d="m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z"/><circle cx="12" cy="12" r="10"/>',
   stay: '<path d="M2 20v-8a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v8"/><path d="M4 10V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v4"/><path d="M12 4v6"/><path d="M2 18h20"/>',
   fbo: '<path d="M2 22h20"/><path d="M3.77 10.77 2 9l2-4.5 1.1.55c.55.28.9.84.9 1.45s.35 1.17.9 1.45L8 8.5l3-6 1.05.53a2 2 0 0 1 1.09 1.52l.72 5.4a2 2 0 0 0 1.09 1.52l4.4 2.2c.42.22.78.55 1.01.96l.6 1.03c.49.88-.06 1.98-1.06 2.1l-1.18.15c-.47.06-.95-.02-1.37-.24L4.29 11.15a2 2 0 0 1-.52-.38Z"/>',
+  car: '<path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/>',
 };
 const glyph = (c: Category) => `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">${GLYPHS[c] || ""}</svg>`;
 

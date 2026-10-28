@@ -3,7 +3,7 @@ import { trackOut } from "@/lib/metrics";
 import type { VetInfo } from "@shared/schema";
 import { useEffect, useRef, useState, createContext, useContext } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Utensils, Compass, BedDouble, PlaneLanding, Star, Moon, Sun } from "lucide-react";
+import { Utensils, Compass, BedDouble, PlaneLanding, Car, Star, Moon, Sun } from "lucide-react";
 import type { Ad, Category } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
@@ -13,6 +13,7 @@ export const CAT_META: Record<Category, { label: string; prompt: string; icon: t
   do: { label: "Do", prompt: "Something to do", icon: Compass, dot: "bg-sky-400" },
   stay: { label: "Stay", prompt: "Somewhere to stay", icon: BedDouble, dot: "bg-violet-400" },
   fbo: { label: "FBO intel", prompt: "FBO commentary", icon: PlaneLanding, dot: "bg-emerald-400" },
+  car: { label: "Cars", prompt: "A rental car", icon: Car, dot: "bg-rose-400" },
 };
 
 export const COST_LABELS = ["Free", "$", "$$", "$$$", "$$$$"];

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { BedDouble, CheckCircle2, Compass, Heart, Loader2, MapPin, PlaneLanding, Plane, Search, Star, Utensils } from "lucide-react";
+import { BedDouble, Car, CheckCircle2, Compass, Heart, Loader2, MapPin, PlaneLanding, Plane, Search, Star, Utensils } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { openVisits } from "@/lib/visits";
 import { PreviewBadge, PreviewGate, ago, errMsg } from "@/lib/preview";
@@ -13,7 +13,7 @@ import type { SpotWithStats } from "@shared/schema";
 
 export default function RatePage() { return <PreviewGate><Rate /></PreviewGate>; }
 
-const CAT_ICON: Record<string, typeof Utensils> = { eat: Utensils, do: Compass, stay: BedDouble, fbo: PlaneLanding };
+const CAT_ICON: Record<string, typeof Utensils> = { eat: Utensils, do: Compass, stay: BedDouble, fbo: PlaneLanding, car: Car };
 const WHY_ICON = { checkin: PlaneLanding, visit: MapPin, briefing: Plane, favorite: Heart } as const;
 
 function Rate() {

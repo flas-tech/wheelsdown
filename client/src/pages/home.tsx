@@ -14,7 +14,7 @@ import { COST_LABELS, PACES, costOptions, costRange, costText, paceLabel, paceOf
 import { CostChoice } from "@/lib/costChip";
 import { PROGRAMS, programOf, type ProgramId } from "@shared/loyalty";
 import { VisitReminder } from "@/lib/visits";
-import { useTrip } from "@/lib/experience";
+import { useTrip, useCategories, useRentalCars } from "@/lib/experience";
 import { TodayCard } from "./todayCard";
 import { AiAddedTag, fboRecTagFor, PickTag, AiPicksPanel, MoreAiPlaces, ProgramChip, useMyPrograms, useCachedAiPicks, AiCard } from "@/lib/aiPicks";
 import { getPosition, type NearAirport } from "@/lib/geo";
@@ -81,6 +81,7 @@ export default function Home() {
 }
 
 function Prompt({ onPick }: { onPick: (c: Category) => void }) {
+  const cats = useCategories(); const carsGate = useRentalCars();
   const [, set] = useSearch();
   const { data: hl } = useQuery<Highlights>({ queryKey: ["/api/highlights"] });
   const count = hl?.totals.spots ?? 0;
@@ -100,14 +101,14 @@ function Prompt({ onPick }: { onPick: (c: Category) => void }) {
       </section>
 
       <div className="grid grid-cols-2 gap-3">
-        {(Object.keys(CAT_META) as Category[]).map((c) => {
+        {cats.map((c, i) => {
           const M = CAT_META[c];
           return (
             <button
               key={c}
               onClick={() => onPick(c)}
               data-testid={`button-category-${c}`}
-              className="group rounded-2xl border border-card-border bg-card p-4 text-left hover-elevate active-elevate-2 min-h-[120px] flex flex-col justify-between"
+              className={cn("group rounded-2xl border border-card-border bg-card p-4 text-left hover-elevate active-elevate-2 min-h-[120px] flex flex-col justify-between", cats.length % 2 === 1 && i === cats.length - 1 && "col-span-2 min-h-0 gap-3")}
             >
               <div className="flex items-center justify-between">
                 <span className="grid h-10 w-10 place-items-center rounded-xl bg-primary/15 text-primary">
@@ -117,7 +118,7 @@ function Prompt({ onPick }: { onPick: (c: Category) => void }) {
               </div>
               <div>
                 <p className="text-base font-semibold">{M.label}</p>
-                <p className="text-xs text-muted-foreground">{M.prompt}</p>
+                <p className="text-xs text-muted-foreground">{M.prompt}{c === "car" && carsGate.adminOnly && <span className="ml-1.5 rounded bg-muted px-1 py-px text-[10px] font-semibold uppercase tracking-wide" data-testid="badge-cars-admin">Admin preview</span>}</p>
               </div>
             </button>
           );
@@ -218,6 +219,7 @@ function Rail({ title, icon: Icon, spots, testId, bare }: { title: string; icon:
 }
 
 function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) {
+  const cats = useCategories();
   const [s, set] = useSearch();
   const tripR = useTrip();
   const cat = s.category!;
@@ -308,6 +310,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
   }, [filtered, route, data]);
 
   const M = CAT_META[cat];
+  const catWord = cat === "car" ? "rental car" : M.label.toLowerCase();
   let cardIndex = 0;
   const PAGE = 10, PER_AIRPORT = 6;
   const [shown, setShown] = useState(PAGE);
@@ -438,7 +441,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
       {/* Category switcher */}
       <div className="flex items-center gap-2 overflow-x-auto no-scrollbar -mx-4 px-4">
         {tripR && <button type="button" onClick={() => { set({ category: null }); window.scrollTo(0, 0); }} aria-label="Back to Home" className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-border hover-elevate" data-testid="button-results-back"><ArrowLeft className="h-4 w-4" /></button>}
-        {(Object.keys(CAT_META) as Category[]).map((c) => {
+        {cats.map((c) => {
           const I = CAT_META[c].icon;
           return (
             <Chip key={c} active={c === cat} onClick={() => set({ category: c })} testId={`chip-category-${c}`}>
@@ -501,14 +504,14 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
 
       {mode === "choose" ? (
         <div className="space-y-5" data-testid="section-choose">
-          <SwitchRail hl={hl} limit={5} what={M.label.toLowerCase()} testId="rail-cat" />
-          <BrowseButton onClick={() => set({ browse: true })} testId="button-browse-all" title={`Browse all ${M.label.toLowerCase()} picks`} sub="No route in mind? Scroll everything, with filters" />
+          <SwitchRail hl={hl} limit={5} what={catWord} testId="rail-cat" />
+          <BrowseButton onClick={() => set({ browse: true })} testId="button-browse-all" title={`Browse all ${catWord} picks`} sub="No route in mind? Scroll everything, with filters" />
           <AdBanner slot="footer" icaos={[]} />
         </div>
       ) : (<>
       {mode === "browse" && (
         <div className="flex items-center justify-between rounded-xl bg-muted/60 px-3.5 py-2.5 text-sm" data-testid="banner-browsing">
-          <span className="flex items-center gap-2"><List className="h-4 w-4 text-primary" />Browsing all {M.label.toLowerCase()} picks</span>
+          <span className="flex items-center gap-2"><List className="h-4 w-4 text-primary" />Browsing all {catWord} picks</span>
           <button onClick={() => set({ browse: false, view: "list", focus: null })} className="text-xs font-medium text-primary" data-testid="button-exit-browse">Back to highlights</button>
         </div>
       )}
@@ -520,7 +523,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
 
       <div className="flex items-center justify-between pt-1">
         <p className="text-sm text-muted-foreground" data-testid="text-result-count">
-          <span className="font-semibold text-foreground tabular">{filtered.length}</span> {M.label.toLowerCase()} {filtered.length === 1 ? "pick" : "picks"}{s.view === "map" && aiOnMap.length > 0 && <> + <span className="font-semibold text-violet-700 dark:text-violet-300 tabular">{aiOnMap.length}</span> AI</>}{s.view === "map" && " on the map"}
+          <span className="font-semibold text-foreground tabular">{filtered.length}</span> {catWord} {filtered.length === 1 ? "pick" : "picks"}{s.view === "map" && aiOnMap.length > 0 && <> + <span className="font-semibold text-violet-700 dark:text-violet-300 tabular">{aiOnMap.length}</span> AI</>}{s.view === "map" && " on the map"}
           {bucket && <> within {bucket.sub}</>}
         </p>
         {s.view === "list" && <select
@@ -547,7 +550,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
             </Suspense>
             {filtered.length === 0 && aiOnMap.length === 0 && (
               <div className="rounded-xl border border-dashed border-border bg-muted/40 px-3.5 py-3 text-sm" data-testid="text-map-empty">
-                <p className="font-medium">No {M.label.toLowerCase()} listings to pin here yet</p>
+                <p className="font-medium">No {catWord} listings to pin here yet</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">Try another category{route ? " or airport" : ""}, loosen the filters, or add the first one for crews.</p>
               </div>
             )}
@@ -577,7 +580,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
             {g.spots.length === 0 ? (
               <>
               <Empty
-                title={`No ${M.label.toLowerCase()} picks${s.time || s.pace || s.food || s.act || s.rewards || budget != null || s.vettedOnly || s.source !== "all" ? " match these filters" : " yet"}`}
+                title={`No ${catWord} picks${s.time || s.pace || s.food || s.act || s.rewards || budget != null || s.vettedOnly || s.source !== "all" ? " match these filters" : " yet"}`}
                 body="Be the first crew to drop one here."
                 icao={g.icao}
               />

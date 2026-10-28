@@ -11,6 +11,8 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { CAT_META, Chip, GoAroundIcon } from "@/lib/ui";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { useCategories } from "@/lib/experience";
+import { CAR_FEATURES } from "@shared/cars";
 import { useSearch } from "./home";
 import { useAuth } from "@/lib/auth";
 import { POINTS } from "@shared/tiers";
@@ -28,6 +30,7 @@ async function getJson<T>(url: string): Promise<T> {
 }
 
 export default function AddPage() {
+  const cats = useCategories();
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const [search] = useSearch();
@@ -43,7 +46,7 @@ export default function AddPage() {
   // once on open, then tidy the address bar so a later plain "Add spot" doesn't pick up the old pick.
   const [linkQ] = useState(() => new URLSearchParams(window.location.hash.split("?")[1] || window.location.search.slice(1)));
   useEffect(() => { if (window.location.search) history.replaceState(history.state, "", window.location.pathname + window.location.hash); }, []);
-  const linkCat = (["eat", "do", "stay", "fbo"] as const).find((c) => c === linkQ.get("cat"));
+  const linkCat = (["eat", "do", "stay", "fbo", "car"] as const).find((c) => c === linkQ.get("cat"));
   const [category, setCategory] = useState<Category>(linkCat || search.category || "eat");
   const [code, setCode] = useState(initialIcao);
   const [city, setCity] = useState("");
@@ -291,8 +294,8 @@ export default function AddPage() {
       </header>
 
       <Field n={1} label="What kind of spot?">
-        <div className="grid grid-cols-4 gap-2">
-          {(Object.keys(CAT_META) as Category[]).map((k) => {
+        <div className={cn("grid gap-2", cats.length > 4 ? "grid-cols-5" : "grid-cols-4")}>
+          {cats.map((k) => {
             const I = CAT_META[k].icon;
             return (
               <button type="button" key={k} onClick={() => setCategory(k)} data-testid={`button-add-cat-${k}`}
@@ -333,7 +336,7 @@ export default function AddPage() {
       <Field n={3} label="Name">
         <PlaceAutocomplete value={name} onChange={(v) => { setName(v); if (place && v !== place.name) setPlace(null); }} onPick={choosePlace}
           anchor={anchor} category={category} here={hereNearField ? here : null} field={field} code={resolved?.icao || c}
-          placeholder={category === "fbo" ? "e.g. Signature Aviation OPF" : category === "stay" ? "e.g. Hampton Inn Miami Lakes" : "e.g. Versailles Restaurant"} />
+          placeholder={category === "fbo" ? "e.g. Signature Aviation OPF" : category === "stay" ? "e.g. Hampton Inn Miami Lakes" : category === "car" ? "e.g. Enterprise Rent-A-Car Opa-locka" : "e.g. Versailles Restaurant"} />
         {dup && !instead && (
           <DuplicatePrompt match={dup} others={open.filter((x) => x.id !== dup.id)} code={resolved?.icao || c} onPick={(x) => setPick(x.id)}
             onSame={() => setInstead(dup)} onDifferent={() => setNotDup((sx) => new Set(sx).add(dup.id))} />
@@ -365,7 +368,7 @@ export default function AddPage() {
           <div className="flex gap-2 flex-wrap">
             {costOptions(category).map((i) => <CostChoice key={i} category={category} level={i} active={costLevel === i} onClick={() => { setCost(i); touch("cost"); }} testId={`chip-add-cost-${i}`} />)}
           </div>
-          <p className="mt-1.5 text-[11px] text-muted-foreground">{category === "eat" ? "One meal per person: $ is a fast-food meal, $$$$ is fine dining. " : category === "stay" ? "Per night, before taxes. " : "Per person. "}Crews who rate it add their own price — the listing shows the crew's typical price.</p>
+          <p className="mt-1.5 text-[11px] text-muted-foreground">{category === "eat" ? "One meal per person: $ is a fast-food meal, $$$$ is fine dining. " : category === "stay" ? "Per night, before taxes. " : category === "car" ? "Per day, before taxes and fees. " : "Per person. "}Crews who rate it add their own price — the listing shows the crew's typical price.</p>
         </Field>
       )}
       {category === "eat" && (
@@ -378,6 +381,19 @@ export default function AddPage() {
             })}
           </div>
           {pace === "both" && <p className="mt-1.5 text-[11px] text-muted-foreground" data-testid="text-pace-both">Shows up for crews looking for either.</p>}
+        </Field>
+      )}
+      {category === "car" && (
+        <Field n={5} label="What crews should know" hint="tap any that apply">
+          <div className="flex gap-2 flex-wrap" role="group" aria-label="Rental car details">
+            {CAR_FEATURES.map((f) => {
+              const list = tags.split(",").map((t) => t.trim()).filter(Boolean);
+              const on = list.some((t) => t.toLowerCase() === f.id.toLowerCase());
+              return <Chip key={f.id} active={on} onClick={() => setTags((on ? list.filter((t) => t.toLowerCase() !== f.id.toLowerCase()) : [...list, f.id]).join(", "))} testId={`chip-add-car-${f.short.toLowerCase().replace(/[^a-z]+/g, "-")}`}>
+                <span className="inline-flex items-center gap-1">{on && <Check className="h-3.5 w-3.5" />}{f.id}</span></Chip>;
+            })}
+          </div>
+          <p className="mt-1.5 text-[11px] text-muted-foreground">Saved as tags on the listing. Put hours, phone and how to reach the counter in the crew tip.</p>
         </Field>
       )}
       {category === "do" && (
@@ -526,7 +542,7 @@ function PlaceAutocomplete({ value, onChange, onPick, anchor, category, here, fi
         <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1">
           {field && (
             <button type="button" onClick={() => showNearby(field, `Near ${code}`)} data-testid="button-add-near-field" className="text-xs font-medium text-primary inline-flex items-center gap-1">
-              <PlaneLanding className="h-3.5 w-3.5" /> {category === "stay" ? "Hotels" : category === "eat" ? "Food" : category === "fbo" ? "Places" : "Things to do"} near {code}
+              <PlaneLanding className="h-3.5 w-3.5" /> {category === "stay" ? "Hotels" : category === "eat" ? "Food" : category === "fbo" ? "Places" : category === "car" ? "Rental cars" : "Things to do"} near {code}
             </button>
           )}
           {here && (

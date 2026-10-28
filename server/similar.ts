@@ -1,4 +1,5 @@
 import type { Express, Request } from "express";
+import { carsFor } from "./rentalCars";
 import { sql } from "drizzle-orm";
 import { db } from "./db";
 import { storage } from "./storage";
@@ -6,7 +7,7 @@ import { findDuplicate } from "./moderator";
 import { similarity, squash } from "@shared/similar";
 
 /** While someone types a new listing: anything already listed at that airport that looks like the same place. */
-export function registerSimilar(app: Express, o: { userOf: (req: Request) => Promise<{ id: number } | undefined> }) {
+export function registerSimilar(app: Express, o: { userOf: (req: Request) => Promise<{ id: number } | undefined>; isSuperAdmin?: (u?: any) => boolean }) {
   app.get("/api/spots/similar", async (req, res) => {
     const code = String(req.query.icao || "").toUpperCase().slice(0, 4);
     const name = String(req.query.name || "").slice(0, 120);
@@ -16,8 +17,9 @@ export function registerSimilar(app: Express, o: { userOf: (req: Request) => Pro
     const lat = req.query.lat != null && req.query.lat !== "" ? Number(req.query.lat) : null;
     const lng = req.query.lng != null && req.query.lng !== "" ? Number(req.query.lng) : null;
     const placeRef = String(req.query.placeRef || "") || null;
-    const others = (await db().execute(sql`SELECT id, name, category, address, lat, lng, place_ref AS "placeRef" FROM spots WHERE icao = ${icao} AND status = 'live'`)).rows as any[];
     const me = await o.userOf(req);
+    const cars = await carsFor(me as any, o.isSuperAdmin || (() => false));
+    const others = ((await db().execute(sql`SELECT id, name, category, address, lat, lng, place_ref AS "placeRef" FROM spots WHERE icao = ${icao} AND status = 'live'`)).rows as any[]).filter((x) => cars || x.category !== "car");
     const strong = findDuplicate({ name, lat, lng }, others);
     const ranked = others.map((x) => ({ x, s: Math.max(similarity({ name, lat, lng, placeRef }, x), strong?.id === x.id ? 0.9 : 0) }))
       .filter((r) => r.s >= 0.6).sort((a, b) => b.s - a.s).slice(0, 3);

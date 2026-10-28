@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { useSearch } from "@/pages/home";
-import { BedDouble, CalendarDays, ChevronRight, Clock, Compass, LocateFixed, Heart, X, Loader2, PlaneLanding, Plane, RefreshCw, Sparkles, Star, Sunrise, Sunset, Users, Utensils, Wind } from "lucide-react";
+import { BedDouble, Car, CalendarDays, ChevronRight, Clock, Compass, LocateFixed, Heart, X, Loader2, PlaneLanding, Plane, RefreshCw, Sparkles, Star, Sunrise, Sunset, Users, Utensils, Wind } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { AirportCheckInCard } from "@/lib/checkins";
 import { PreviewBadge, PreviewGate, ago, errMsg } from "@/lib/preview";
@@ -354,7 +354,7 @@ function Section({ title, icon, action, children, testid }: { title: string; ico
   );
 }
 
-const CAT_ICON: Record<string, typeof Utensils> = { eat: Utensils, do: Compass, stay: BedDouble, fbo: PlaneLanding };
+const CAT_ICON: Record<string, typeof Utensils> = { eat: Utensils, do: Compass, stay: BedDouble, fbo: PlaneLanding, car: Car };
 function Picks({ list }: { list: TodayPick[] }) {
   return (
     <ul className="divide-y divide-border border-t border-border">

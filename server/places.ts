@@ -10,6 +10,7 @@ const TAGS: Record<string, string[]> = {
     "leisure:golf_course", "leisure:fitness_centre", "leisure:sports_centre", "leisure:beach_resort", "leisure:nature_reserve", "natural:beach",
     "historic:monument", "historic:memorial", "amenity:theatre", "amenity:cinema", "shop:mall", "amenity:spa"],
   fbo: ["aeroway:terminal", "aeroway:aerodrome", "aeroway:hangar"],
+  car: ["amenity:car_rental"],
 };
 
 export type PlaceHit = {

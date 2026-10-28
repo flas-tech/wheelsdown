@@ -162,7 +162,7 @@ export default function SpotPage() {
       <div className={cn("grid gap-2", spot.category === "do" || spot.category === "eat" ? "grid-cols-3" : hasCost(spot.category) ? "grid-cols-2" : "grid-cols-1")}>
         {hasCost(spot.category) && (
           <Fact label={spot.costVotes > 1 ? `Crew price · ${spot.costVotes} crew` : "Price"} value={spot.cost == null ? "Not priced" : COST_LABELS[spot.cost]} mono={spot.cost != null} testId="text-spot-cost"
-            sub={spot.cost != null && spot.cost > 0 ? `${costRange(spot.category, spot.cost)} ${spot.category === "stay" ? "/ night" : "pp"}` : undefined} />
+            sub={spot.cost != null && spot.cost > 0 ? `${costRange(spot.category, spot.cost)} ${spot.category === "stay" ? "/ night" : spot.category === "car" ? "/ day" : "pp"}` : undefined} />
         )}
         {spot.category === "eat" && <Fact label="Pace" value={paceLabel(paceOf(spot))} testId="text-spot-pace" />}
         {spot.category === "do" && <Fact label="Time needed" value={fmtMinutes(totalMinutes(spot))} />}

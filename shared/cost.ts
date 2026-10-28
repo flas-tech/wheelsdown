@@ -11,15 +11,17 @@ export const COST_RANGES: Record<string, string[]> = {
   eat: ["", "Under $15", "$15–30", "$30–60", "$60+"],
   stay: ["", "Under $125", "$125–200", "$200–325", "$325+"],
   do: ["Free", "Under $20", "$20–50", "$50–100", "$100+"],
+  car: ["", "Under $60", "$60–100", "$100–150", "$150+"],
 };
 export const COST_EXAMPLES: Record<string, string[]> = {
   eat: ["", "Fast food", "Casual", "Nice dinner", "Fine dining"],
   stay: ["", "Budget", "Mid-range", "Upscale", "Luxury"],
   do: ["Free", "Cheap", "Moderate", "Pricey", "Splurge"],
+  car: ["", "Economy", "Mid-size", "SUV / full-size", "Premium"],
 };
 export const costRange = (category: string, level: number | null | undefined) => (level == null ? "" : COST_RANGES[category]?.[level] || "");
 export const costExample = (category: string, level: number | null | undefined) => (level == null ? "" : COST_EXAMPLES[category]?.[level] || "");
-export const costUnit = (category: string) => (category === "stay" ? "per night" : category === "eat" ? "per person, one meal" : "per person");
+export const costUnit = (category: string) => (category === "stay" ? "per night" : category === "car" ? "per day" : category === "eat" ? "per person, one meal" : "per person");
 /** "$$ · $15–30" for compact displays. */
 export const costWithRange = (category: string, level: number | null | undefined) =>
   level == null ? "" : level === 0 ? "Free" : `${COST_LABELS[level]} · ${costRange(category, level)}`;
@@ -28,7 +30,7 @@ export const costWithRange = (category: string, level: number | null | undefined
 export function costOptions(category: string): number[] {
   if (category === "fbo") return [];
   if (category === "do") return [0, 1, 2, 3, 4];
-  return [1, 2, 3, 4]; // eat, stay
+  return [1, 2, 3, 4]; // eat, stay, car
 }
 export const hasCost = (category: string) => category !== "fbo";
 export const isValidCost = (category: string, c: number | null | undefined) =>

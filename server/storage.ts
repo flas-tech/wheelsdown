@@ -1,4 +1,5 @@
 import { airports, spots, reviews, ads, votes, users, sessions, passwordResets, briefings, favorites, modLog, appSettings, follows } from "@shared/schema";
+import { carsOpenNow } from "./rentalCars";
 import { parseInterests } from "@shared/interests";
 import { WRIGHT_SEATS, isTestSignup } from "@shared/club";
 import { achievementProgress, type AchStats } from "@shared/achievements";
@@ -209,9 +210,11 @@ export class DatabaseStorage {
 
   // ---- spots ----
   /** ai: include AI-added listings (source = 'ai'). Off by default, so members don't see them until the trip preview opens. */
-  async searchSpots(icaos: string[], includeAll = false, voter = "", opts: { ai?: boolean } = {}) {
-    const base = icaos.length ? (includeAll ? inArray(spots.icao, icaos) : and(inArray(spots.icao, icaos), eq(spots.status, "live")))
+  /** cars: include rental-car listings while they're still admins-only (rental_cars_audience); once open, everyone gets them. */
+  async searchSpots(icaos: string[], includeAll = false, voter = "", opts: { ai?: boolean; cars?: boolean } = {}) {
+    const base0 = icaos.length ? (includeAll ? inArray(spots.icao, icaos) : and(inArray(spots.icao, icaos), eq(spots.status, "live")))
       : includeAll ? undefined : eq(spots.status, "live");
+    const base = includeAll || opts.cars || carsOpenNow() ? base0 : base0 ? and(base0, ne(spots.category, "car")) : ne(spots.category, "car");
     const where = includeAll || opts.ai ? base : base ? and(base, ne(spots.source, "ai")) : ne(spots.source, "ai");
     const rows = await db().select().from(spots).where(where).orderBy(desc(spots.createdAt));
     return withStats(rows, voter);
@@ -577,6 +580,7 @@ export class DatabaseStorage {
       achievements: achievementProgress(await this.achievementStats(u.id)),
     };
   }
+  async carSpotIds() { return new Set((await db().select({ id: spots.id }).from(spots).where(eq(spots.category, "car"))).map((x) => x.id)); }
   async userContributions(userId: number) {
     const d = db();
     const raw = await d.select().from(spots).where(eq(spots.userId, userId)).orderBy(desc(spots.createdAt));
@@ -689,7 +693,7 @@ export class DatabaseStorage {
     const items = [
       ...ss.map((s) => ({ kind: "spot" as const, at: s.createdAt, user: who(s.userId), spot: { id: s.id, name: s.name, icao: s.icao, category: s.category }, description: s.description.slice(0, 200) })),
       ...rs.filter((r) => sm.get(r.spotId)?.status === "live").map((r) => { const sp = sm.get(r.spotId)!; return { kind: "review" as const, at: r.createdAt, user: who(r.userId), spot: { id: sp.id, name: sp.name, icao: sp.icao, category: sp.category }, rating: r.rating, comment: r.comment.slice(0, 280) }; }),
-    ].filter((x) => x.user);
+    ].filter((x) => x.user && (x.spot.category !== "car" || carsOpenNow()));
     return items.sort((a, b) => b.at - a.at).slice(0, limit);
   }
 

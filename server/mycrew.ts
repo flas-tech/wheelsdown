@@ -12,6 +12,7 @@ import { z } from "zod";
 import { db } from "./db";
 import { notify } from "./push";
 import { storage } from "./storage";
+import { rentalCarsAudience } from "./rentalCars";
 import { logChange } from "./ops";
 import {
   DEFAULT_PRIVACY, MYCREW_LIMITS, crewInviteUrl,
@@ -123,7 +124,7 @@ export function registerMyCrew(app: Express, o: { userOf: (req: Request) => Prom
   /** Public: which parts of the app are open to members. The client uses it to show the new landing page. */
   app.get("/api/features", async (_req, res) => {
     res.set("Cache-Control", "no-store");
-    res.json({ experience: await experienceAudience(), trip: await tripAudience(), rankArt: await rankArtAudience(), crewsChoice: await crewsChoiceAudience() });
+    res.json({ experience: await experienceAudience(), trip: await tripAudience(), rankArt: await rankArtAudience(), crewsChoice: await crewsChoiceAudience(), rentalCars: await rentalCarsAudience() });
   });
 
   app.get("/api/mycrew", gate, async (req, res) => {
