@@ -13,6 +13,7 @@ import { CheckInButton } from "@/lib/checkins";
 import { trackOut } from "@/lib/metrics";
 import { DirectionsButton } from "@/lib/directions";
 import { CrewAvatar } from "@/lib/aircraft";
+import { CrewsChoiceVote } from "@/lib/crewsChoice";
 import { ModNotice, type ModInfo } from "@/lib/moderation";
 import { COST_LABELS, costOptions, costRange, costUnit, hasCost, paceLabel, paceOf } from "@shared/cost";
 import { CostChoice } from "@/lib/costChip";
@@ -169,6 +170,8 @@ export default function SpotPage() {
       </div>
 
       <CrewVote spot={spot} />
+
+      <CrewsChoiceVote spot={spot} />
 
       <AdBanner slot="inline" icaos={[spot.icao]} />
 

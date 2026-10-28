@@ -31,6 +31,27 @@ export function refAirport(code: string): RefAirport | undefined {
   const r = byCode.get(c) || (/^[A-Z]{3}$/.test(c) ? byIata.get(c) : undefined) || byAlias.get(c) || (c.length === 3 ? byCode.get("K" + c) : undefined);
   return r ? toObj(r) : undefined;
 }
+/** Airports in a city by name ("BOSTON", "LAS VEGAS"), biggest first. An optional 2-letter region narrows it ("PORTLAND ME"). */
+let byCity: Map<string, Row[]> | null = null;
+export function cityAirports(phrase: string, limit = 3): RefAirport[] {
+  if (!byCity) {
+    byCity = new Map();
+    for (const r of ROWS) {
+      if (!r[3] || r[8] < 1) continue; // skip heliports/closed/seaplane-only
+      const k = r[3].toUpperCase().replace(/[^A-Z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+      const a = byCity.get(k); if (a) a.push(r); else byCity.set(k, [r]);
+    }
+    byCity.forEach((a) => a.sort((x: Row, y: Row) => y[8] - x[8]));
+  }
+  const words = phrase.toUpperCase().replace(/[^A-Z0-9 ]+/g, " ").replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+  if (!words.length || words.join("").length < 3) return [];
+  let rows = byCity.get(words.join(" "));
+  if (!rows && words.length > 1 && /^[A-Z]{2}$/.test(words[words.length - 1])) {
+    const reg = words[words.length - 1];
+    rows = (byCity.get(words.slice(0, -1).join(" ")) || []).filter((r) => r[4].toUpperCase().endsWith(reg));
+  }
+  return (rows || []).slice(0, limit).map(toObj);
+}
 /** Closest airports to a point. Small strips are only returned if they are much closer than a public-use field. */
 export function nearestAirports(lat: number, lon: number, limit = 3): (RefAirport & { miles: number })[] {
   const scored: { r: Row; mi: number }[] = [];

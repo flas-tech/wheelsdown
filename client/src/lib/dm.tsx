@@ -6,7 +6,7 @@ import { useLocation } from "wouter";
 import { MessageCircle } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
-import { dmSupported, loadDevice, makeKeys, rememberDevice, forgetDevice } from "@/lib/dmCrypto";
+import { dmSupported, loadDevice, makeStorableKeys, rememberDevice, forgetDevice } from "@/lib/dmCrypto";
 import type { DmConfig, MyDmDevice } from "@shared/dm";
 
 export function useDmConfig() {
@@ -30,12 +30,13 @@ export function ensureDevice(userId: number) {
   pending ||= (async () => {
     try {
       let d = await loadDevice(userId);
+      if (d && !d.deviceId) { await forgetDevice(userId); d = undefined; } // keys saved but registration never finished
       if (d) {
         const r = await (await apiRequest("GET", `/api/dm/devices?current=${d.deviceId}`)).json() as { devices: MyDmDevice[] };
         if (!r.devices.some((x) => x.id === d!.deviceId)) { await forgetDevice(userId); d = undefined; }
       }
       if (!d) {
-        const k = await makeKeys();
+        const k = await makeStorableKeys(userId);
         const r = await (await apiRequest("POST", "/api/dm/devices", { encPub: k.encPub, sigPub: k.sigPub, label: deviceLabel() })).json() as { id: number };
         await rememberDevice(userId, r.id, k);
         d = await loadDevice(userId);

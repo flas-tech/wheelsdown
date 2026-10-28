@@ -111,7 +111,14 @@ export async function pushTo(userId: number, kind: PushKind | "test", m: PushMsg
     let sent = 0, failed = 0;
     await Promise.all(subs.map(async (s) => {
       try {
-        await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload, { TTL: 6 * 3600, urgency: quiet ? "low" : "normal", topic: (m.tag || kind).replace(/[^A-Za-z0-9_-]/g, "").slice(0, 32) || undefined });
+        const sub = { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } };
+        const opts = { TTL: 6 * 3600, urgency: (quiet ? "low" : "normal") as "low" | "normal", topic: (m.tag || kind).replace(/[^A-Za-z0-9_-]/g, "").slice(0, 32) || undefined };
+        try { await webpush.sendNotification(sub, payload, opts); }
+        catch (e1: any) {
+          // Some push services (Apple) reject topics they don't like; the topic only collapses repeats, so send without it.
+          if (num(e1?.statusCode) === 400 && /BadWebPushTopic/i.test(String(e1?.body || ""))) await webpush.sendNotification(sub, payload, { ...opts, topic: undefined });
+          else throw e1;
+        }
         sent++;
         await db().execute(sql`UPDATE push_subs SET last_ok_at = ${Date.now()}, fails = 0 WHERE id = ${s.id}`);
       } catch (e: any) {

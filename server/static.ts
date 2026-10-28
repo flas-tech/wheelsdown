@@ -36,6 +36,17 @@ export function serveStatic(app: Express) {
   // fall through to index.html if the file doesn't exist
   app.use("/{*path}", (req, res) => {
     if (isFboHost(req)) return sendFbo(res);
+    const full = req.originalUrl.split("?")[0]; // req.path is trimmed under app.use
+    // A missing file (old build, typo) is a 404, not the app shell; HTML served as a script just leaves a blank page
+    if (/\.[a-z0-9]{2,5}$/i.test(full)) return res.status(404).type("text/plain").send("Not found");
+    // The app routes after the "#". A link typed or shared without it (getwheelsdown.com/spot/147) used to load the shell at
+    // that path, where its relative script paths miss, so it showed a blank page. Send it to the same screen instead.
+    if ((req.method === "GET" || req.method === "HEAD") && full !== "/" && full !== "" && !full.startsWith("/api/")) {
+      const q = req.originalUrl.includes("?") ? req.originalUrl.slice(req.originalUrl.indexOf("?")) : "";
+      let route = "/";
+      try { route = decodeURI(full).replace(/\/+$/, "") || "/"; } catch { /* keep "/" */ }
+      return res.redirect(302, `/${q}#${encodeURI(route)}`);
+    }
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     res.sendFile(path.resolve(distPath, "index.html"));
   });

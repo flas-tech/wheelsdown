@@ -20,6 +20,7 @@ import {
 import type { User } from "@shared/schema";
 import { meetupVisibleTo, meetupStart } from "@shared/layover";
 import { tripAudience } from "./trip";
+import { rankArtAudience, crewsChoiceAudience } from "./crewsChoice";
 
 type Mw = (req: Request, res: Response, next: NextFunction) => any;
 const rows = async <T = any>(q: ReturnType<typeof sql>) => (await db().execute(q)).rows as T[];
@@ -122,7 +123,7 @@ export function registerMyCrew(app: Express, o: { userOf: (req: Request) => Prom
   /** Public: which parts of the app are open to members. The client uses it to show the new landing page. */
   app.get("/api/features", async (_req, res) => {
     res.set("Cache-Control", "no-store");
-    res.json({ experience: await experienceAudience(), trip: await tripAudience() });
+    res.json({ experience: await experienceAudience(), trip: await tripAudience(), rankArt: await rankArtAudience(), crewsChoice: await crewsChoiceAudience() });
   });
 
   app.get("/api/mycrew", gate, async (req, res) => {

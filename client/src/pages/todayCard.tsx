@@ -1,7 +1,7 @@
 // Home (trip preview): the Spots search opens first, and this card at the top shows the field you're at:
 // nearest airport by location (asks if the phone hasn't decided; never when it's been denied), else the last
 // airport you picked. Tapping it opens Layover today on that airport.
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { ChevronRight, Loader2, PlaneLanding, Users } from "lucide-react";
@@ -19,7 +19,7 @@ export function TodayCard() {
   useEffect(() => {
     let live = true;
     const last = (() => { try { return localStorage.getItem(LAST) || ""; } catch { return ""; } })();
-    const timer = setTimeout(() => { if (live) setCode((c) => c ?? last); }, 8000);
+    const timer = setTimeout(() => { if (live) setCode((c) => c ?? last); }, 5000);
     (async () => {
       try {
         const perms = (navigator as any).permissions;
@@ -34,7 +34,16 @@ export function TodayCard() {
     return () => { live = false; clearTimeout(timer); };
   }, []);
   // same cache as Layover today, so opening it is instant
-  const { data } = useQuery<TodayResp>({
+  const [typing, setTyping] = useState(false);
+  const [typed, setTyped] = useState("");
+  const pick = (e: FormEvent) => {
+    e.preventDefault();
+    const c = typed.trim().toUpperCase();
+    if (!/^[A-Z0-9]{3,4}$/.test(c)) return;
+    try { localStorage.setItem(LAST, c); } catch { /* private mode */ }
+    setTyping(false); setCode(c);
+  };
+  const { data, isError } = useQuery<TodayResp>({
     queryKey: ["/api/preview/today", code || ""], enabled: code !== null, staleTime: 60_000, retry: false,
     queryFn: async () => (await apiRequest("GET", `/api/preview/today${code ? `?icao=${encodeURIComponent(code)}` : ""}`)).json(),
   });
@@ -42,17 +51,29 @@ export function TodayCard() {
   const { data: plans } = useQuery<{ byIcao: Record<string, Meetup[]> }>({ queryKey: [`/api/preview/crewup-at?icaos=${icao}`], enabled: !!icao, staleTime: 30_000, retry: false });
   const nPlans = plans?.byIcao[icao]?.length || 0;
 
-  if (code === null || (!data && code !== "")) return (
+  // No location (or it's slow): type the field instead of waiting on the spinner
+  if (typing) return (
+    <form onSubmit={pick} className="flex items-center gap-2 rounded-2xl bg-[#0b1220] p-3 text-white" data-testid="form-home-today-field">
+      <PlaneLanding className="ml-1 h-5 w-5 shrink-0 text-primary" />
+      <input autoFocus value={typed} onChange={(e) => setTyped(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4))} placeholder="Field you're at (KTEB)"
+        autoCapitalize="characters" autoCorrect="off" spellCheck={false} aria-label="Airport code" data-testid="input-home-today-field"
+        className="min-w-0 flex-1 h-10 rounded-lg bg-white/10 px-3 font-code text-base tracking-wider placeholder:font-sans placeholder:tracking-normal placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary" />
+      <button type="submit" disabled={typed.length < 3} className="h-10 shrink-0 rounded-lg bg-primary px-3.5 text-sm font-semibold text-primary-foreground disabled:opacity-50" data-testid="button-home-today-go">Go</button>
+      <button type="button" onClick={() => setTyping(false)} className="h-10 shrink-0 px-1.5 text-xs text-white/60" data-testid="button-home-today-cancel">Cancel</button>
+    </form>
+  );
+  if (!isError && (code === null || (!data && code !== ""))) return (
     <div className="flex items-center gap-3 rounded-2xl bg-[#0b1220] p-4 text-white/80" data-testid="card-home-today-loading">
-      <Loader2 className="h-5 w-5 animate-spin" /><span className="text-sm">Finding the nearest airport…</span>
+      <Loader2 className="h-5 w-5 shrink-0 animate-spin" /><span className="flex-1 text-sm">Finding the nearest airport…</span>
+      <button type="button" onClick={() => setTyping(true)} className="shrink-0 text-xs font-semibold text-primary" data-testid="button-home-today-type">Type a field</button>
     </div>
   );
   if (!data?.airport) return (
-    <Link href="/today" className="flex items-center gap-3 rounded-2xl border border-border bg-card p-4 hover-elevate" data-testid="card-home-today">
+    <button type="button" onClick={() => setTyping(true)} className="flex w-full items-center gap-3 rounded-2xl border border-border bg-card p-4 text-left hover-elevate" data-testid="card-home-today">
       <PlaneLanding className="h-5 w-5 text-primary" />
-      <span className="flex-1 text-sm font-semibold">Layover today: pick the field you're at</span>
+      <span className="flex-1 text-sm font-semibold">Layover today: type the field you're at</span>
       <ChevronRight className="h-4 w-4 text-muted-foreground" />
-    </Link>
+    </button>
   );
   const ap = data.airport, m = data.metar;
   const time = new Intl.DateTimeFormat("en-US", { timeZone: data.tz || undefined, hour: "numeric", minute: "2-digit" }).format(Date.now());

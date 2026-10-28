@@ -5,24 +5,26 @@ export type TierId = "student" | "private" | "instrument" | "commercial" | "rest
 
 export const TIERS: {
   id: TierId; name: string; min: number; stripes: number; color: string; tagline: string; perks: string[];
+  /** One fun line on what this rank does in the network (rank mascots preview, rank_art_audience). */
+  role: string;
 }[] = [
-  { id: "student", name: "Student", min: 0, stripes: 0, color: "#94A3B8", tagline: "Solo endorsement pending",
+  { id: "student", name: "Student", min: 0, stripes: 0, color: "#94A3B8", tagline: "Solo endorsement pending", role: "Learning the field: rate a few spots and earn your solo.",
     perks: ["Add listings, rate, review and vote", "Your own crew logbook"] },
-  { id: "private", name: "Private", min: 40, stripes: 1, color: "#C08457", tagline: "Cleared for the local area",
+  { id: "private", name: "Private", min: 40, stripes: 1, color: "#C08457", tagline: "Cleared for the local area", role: "Knows the local area and shares the first good finds.",
     perks: ["Private badge on everything you post", "Listed on the crew leaderboard"] },
-  { id: "instrument", name: "Instrument", min: 150, stripes: 2, color: "#CBD5E1", tagline: "Comfortable in the soup",
+  { id: "instrument", name: "Instrument", min: 150, stripes: 2, color: "#CBD5E1", tagline: "Comfortable in the soup", role: "Finds the good stuff even when the layover is socked in.",
     perks: ["Silver badge", "Reviews are tagged \"Instrument-rated reviewer\"", "Suggest edits to any listing (planned)"] },
-  { id: "commercial", name: "Commercial", min: 250, stripes: 3, color: "#F5B83D", tagline: "Getting paid to know the good spots",
+  { id: "commercial", name: "Commercial", min: 250, stripes: 3, color: "#F5B83D", tagline: "Getting paid to know the good spots", role: "Gets paid to fly and knows exactly where crews should eat.",
     perks: ["Gold badge", "Listings you add skip the moderation queue", "Early access to partner crew rates (planned)"] },
-  { id: "restricted_atp", name: "Restricted ATP", min: 750, stripes: 4, color: "#E8A88E", tagline: "Almost there, with a few more hours to log",
+  { id: "restricted_atp", name: "Restricted ATP", min: 750, stripes: 4, color: "#E8A88E", tagline: "Almost there, with a few more hours to log", role: "Logbook's bursting: a regular crews already lean on.",
     perks: ["Rose-gold badge", "Everything Commercial gets", "First look at new partner perks (planned)"] },
-  { id: "atp", name: "ATP", min: 1500, stripes: 4, color: "#E5E7EB", tagline: "Airline Transport Pro",
+  { id: "atp", name: "ATP", min: 1500, stripes: 4, color: "#E5E7EB", tagline: "Airline Transport Pro", role: "A go-to voice: crews plan whole layovers around these picks.",
     perks: ["Platinum badge", "\"ATP Pick\" highlight on your listings (planned)", "Partner perks and giveaways (planned)"] },
-  { id: "check_airman", name: "Check Airman", min: 2500, stripes: 4, color: "#67E8F9", tagline: "Trusted to check everyone else",
+  { id: "check_airman", name: "Check Airman", min: 2500, stripes: 4, color: "#67E8F9", tagline: "Trusted to check everyone else", role: "Keeps the guide honest: hours, prices and parking checked.",
     perks: ["Diamond badge", "Resolve \"Needs check\" flags in your region (planned)", "Annual Wheelsdown swag kit (planned)"] },
-  { id: "chief_pilot", name: "Chief Pilot", min: 3000, stripes: 4, color: "#C4B5FD", tagline: "Runs the crew room and still knows the best breakfast",
+  { id: "chief_pilot", name: "Chief Pilot", min: 3000, stripes: 4, color: "#C4B5FD", tagline: "Runs the crew room and still knows the best breakfast", role: "Runs the crew room and sets the bar for every pick.",
     perks: ["Amethyst badge with twin stars", "Everything Check Airman gets", "Chief Pilot's pick of the month in the Lounge (planned)"] },
-  { id: "grand_pelican", name: "Grand Pelican", min: 6000, stripes: 4, color: "#F8D27A", tagline: "Big bill, bigger logbook: the most-trusted crew in the network",
+  { id: "grand_pelican", name: "Grand Pelican", min: 6000, stripes: 4, color: "#F8D27A", tagline: "Big bill, bigger logbook: the most-trusted crew in the network", role: "The legend of the network: big bill, bigger logbook.",
     perks: ["Obsidian & gold badge", "Name on the Pelican Perch", "Advisory seat on new features (planned)"] },
 ];
 

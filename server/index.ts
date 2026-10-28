@@ -101,6 +101,8 @@ app.use((req, res, next) => {
   recordRelease().catch(() => {});
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
+    // A malformed %-escape in the URL (bot probes like %c0) is a bad request, not a server error
+    if (err instanceof URIError) err = Object.assign(new Error("Bad request"), { status: 400 });
     const status = err.status || err.statusCode || 500;
     // Don't leak internals in production
     const message = status < 500 || !PROD ? err.message || "Internal Server Error" : "Something went wrong on our side. Try again in a moment.";
@@ -130,6 +132,12 @@ app.use((req, res, next) => {
     const { setupVite } = await import("./vite");
     await setupVite(httpServer, app);
   }
+  // Page routes come after the API error handler; a malformed %-escape there (bot probes like /%c0) is just a 400, not a logged crash
+  app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
+    if (res.headersSent) return next(err);
+    if (err instanceof URIError || err?.status === 400) return res.status(400).type("text/plain").send("Bad request");
+    next(err);
+  });
 
   // ALWAYS serve the app on the port specified in the environment variable PORT
   // Other ports are firewalled. Default to 5000 if not specified.

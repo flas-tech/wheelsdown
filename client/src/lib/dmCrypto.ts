@@ -12,6 +12,8 @@ import { dmSigned, type DmDevice, type DmKeyBox, type DmMessage, type DmSend } f
 
 const DB = "wd-dm", STORE = "keys";
 type Stored = { userId: number; deviceId: number; enc: CryptoKeyPair; sig: CryptoKeyPair };
+/** Fallback form for browsers that can't put a CryptoKey in IndexedDB (some iPhones throw DataCloneError): the keys as JWK. */
+type StoredJwk = { userId: number; deviceId: number; jwk: { encPriv: JsonWebKey; encPub: JsonWebKey; sigPriv: JsonWebKey; sigPub: JsonWebKey } };
 
 const subtle = () => {
   const s = globalThis.crypto?.subtle;
@@ -44,25 +46,54 @@ function idb<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<
   });
 }
 const keyFor = (userId: number) => `u${userId}`;
-export const loadDevice = (userId: number) => idb<Stored | undefined>("readonly", (s) => s.get(keyFor(userId)) as IDBRequest<Stored | undefined>);
-const saveDevice = (d: Stored) => idb("readwrite", (s) => s.put(d, keyFor(d.userId)));
+export async function loadDevice(userId: number): Promise<Stored | undefined> {
+  const raw = await idb<Stored | StoredJwk | undefined>("readonly", (s) => s.get(keyFor(userId)) as IDBRequest<Stored | StoredJwk | undefined>);
+  if (!raw || !("jwk" in raw)) return raw as Stored | undefined;
+  const j = raw.jwk; // re-import non-extractable, so page code can't export them again this session
+  return {
+    userId: raw.userId, deviceId: raw.deviceId,
+    enc: { privateKey: await subtle().importKey("jwk", j.encPriv, ECDH, false, ["deriveBits"]), publicKey: await subtle().importKey("jwk", j.encPub, ECDH, true, []) },
+    sig: { privateKey: await subtle().importKey("jwk", j.sigPriv, ECDSA, false, ["sign"]), publicKey: await subtle().importKey("jwk", j.sigPub, ECDSA, true, ["verify"]) },
+  };
+}
+const saveDevice = (d: Stored | StoredJwk) => idb("readwrite", (s) => s.put(d, keyFor(d.userId)));
+const isCloneErr = (e: any) => e?.name === "DataCloneError" || /could not be cloned|can ?not be cloned/i.test(String(e?.message || e));
 export const forgetDevice = (userId: number) => idb("readwrite", (s) => s.delete(keyFor(userId)));
 
 const ECDH = { name: "ECDH", namedCurve: "P-256" } as const;
 const ECDSA = { name: "ECDSA", namedCurve: "P-256" } as const;
 
 /** New key pairs for this device. Private halves are non-extractable. */
-export async function makeKeys() {
-  const encK = await subtle().generateKey(ECDH, false, ["deriveBits"]) as CryptoKeyPair;
-  const sigK = await subtle().generateKey(ECDSA, false, ["sign", "verify"]) as CryptoKeyPair;
+export async function makeKeys(extractable = false) {
+  const encK = await subtle().generateKey(ECDH, extractable, ["deriveBits"]) as CryptoKeyPair;
+  const sigK = await subtle().generateKey(ECDSA, extractable, ["sign", "verify"]) as CryptoKeyPair;
   return {
-    enc: encK, sig: sigK,
+    enc: encK, sig: sigK, extractable,
     encPub: b64(await subtle().exportKey("raw", encK.publicKey)),
     sigPub: b64(await subtle().exportKey("raw", sigK.publicKey)),
   };
 }
-export async function rememberDevice(userId: number, deviceId: number, k: { enc: CryptoKeyPair; sig: CryptoKeyPair }) {
-  await saveDevice({ userId, deviceId, enc: k.enc, sig: k.sig });
+type Keys = Awaited<ReturnType<typeof makeKeys>>;
+/**
+ * Keys that this browser can actually keep. Tried before the device is registered, so a phone that can't store them
+ * no longer registers a new, unreadable device on every app open. Normal path: non-extractable CryptoKeys in
+ * IndexedDB. If the browser refuses to store a CryptoKey, fall back to JWK in IndexedDB (still only on this device).
+ */
+export async function makeStorableKeys(userId: number): Promise<Keys> {
+  const k = await makeKeys(false);
+  try { await saveDevice({ userId, deviceId: 0, enc: k.enc, sig: k.sig }); return k; }
+  catch (e) { if (!isCloneErr(e)) throw e; }
+  const x = await makeKeys(true);
+  await saveDevice(await asJwk(userId, 0, x));
+  return x;
+}
+async function asJwk(userId: number, deviceId: number, k: Keys): Promise<StoredJwk> {
+  const ex = (key: CryptoKey) => subtle().exportKey("jwk", key);
+  return { userId, deviceId, jwk: { encPriv: await ex(k.enc.privateKey), encPub: await ex(k.enc.publicKey), sigPriv: await ex(k.sig.privateKey), sigPub: await ex(k.sig.publicKey) } };
+}
+export async function rememberDevice(userId: number, deviceId: number, k: Keys) {
+  if (k.extractable) await saveDevice(await asJwk(userId, deviceId, k));
+  else await saveDevice({ userId, deviceId, enc: k.enc, sig: k.sig });
 }
 
 /** Short code to compare in person: the same on both phones means nobody swapped keys in between. */

@@ -458,7 +458,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
             ref={routeRef}
             value={s.route}
             onChange={(e) => set({ route: e.target.value.toUpperCase() })}
-            placeholder="MIA TEB  or  KOPF-KASE"
+            placeholder="MIA TEB  or  Boston"
             autoCapitalize="characters"
             autoCorrect="off"
             spellCheck={false}
@@ -539,12 +539,18 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
 
       {s.view === "map" ? (
         isLoading ? <Skeleton className="h-[62vh] min-h-[360px] rounded-2xl" /> : route && icaos.length === 0 ? (
-          <Empty title="No airports matched" body="Try a 3-letter IATA (MIA) or 4-letter ICAO (KMIA) code." />
+          <Empty title="No airports matched" body="Try a 3-letter IATA (MIA) or 4-letter ICAO (KMIA) code, or a city name (Boston)." />
         ) : (
           <div className="space-y-2">
             <Suspense fallback={<Skeleton className="h-[62vh] min-h-[360px] rounded-2xl" />}>
               <SpotsMap spots={mapSpots} legs={legPts} focusId={s.focus} className="h-[62vh] min-h-[360px]" renderCard={(x) => (x.id < 0 ? <AiCard spot={x as any} /> : <SpotCard spot={x} />)} />
             </Suspense>
+            {filtered.length === 0 && aiOnMap.length === 0 && (
+              <div className="rounded-xl border border-dashed border-border bg-muted/40 px-3.5 py-3 text-sm" data-testid="text-map-empty">
+                <p className="font-medium">No {M.label.toLowerCase()} listings to pin here yet</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">Try another category{route ? " or airport" : ""}, loosen the filters, or add the first one for crews.</p>
+              </div>
+            )}
             {aiOnMap.length > 0 && <p className="flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="text-map-ai"><span className="inline-block h-3 w-3 shrink-0 rounded-full border-2 border-dashed border-violet-600" />Also on the map: {aiOnMap.length} AI {aiOnMap.length === 1 ? "pick" : "picks"} you asked for (violet ring). They aren't crew-rated.</p>}
             {IS_STATIC && <p className="text-xs text-muted-foreground" data-testid="text-map-demo">Demo: sample pins sit at each listing's distance from the airport, not at real addresses.</p>}
             {unpinned > 0 && (
@@ -557,7 +563,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
       ) : isLoading ? (
         <div className="space-y-3">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-28 rounded-2xl" />)}</div>
       ) : route && icaos.length === 0 ? (
-        <Empty title="No airports matched" body="Try a 3-letter IATA (MIA) or 4-letter ICAO (KMIA) code. Unknown fields can be added when you submit a spot." />
+        <Empty title="No airports matched" body="Try a 3-letter IATA (MIA) or 4-letter ICAO (KMIA) code, or a city name (Boston). Unknown fields can be added when you submit a spot." />
       ) : (
         groups.map((g) => (
           <section key={g.icao || "all"} className="space-y-3">

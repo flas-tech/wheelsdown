@@ -13,7 +13,7 @@ import { buildHighlights } from "@shared/highlights";
 import { briefingSchema, type BriefingStop, type Briefing, type SpotWithStats } from "@shared/schema";
 import { isValidCost, costOptions, milesBetween, isPace, paceMinutes } from "@shared/cost";
 import { suggestPicks } from "@shared/briefing";
-import { refAirport, nearestAirports, isCode } from "./airportsData";
+import { refAirport, nearestAirports, isCode, cityAirports } from "./airportsData";
 import { searchPlaces, nearbyPlaces, geocodeAddress } from "./places";
 import { AI_ENABLED, autofill, checkName, checkBio } from "./ai";
 import { isTestSignup } from "@shared/club";
@@ -32,6 +32,7 @@ import { registerMyCrew, requestFromInvite, forgetMember } from "./mycrew";
 import { registerPush, forgetPush } from "./push";
 import { registerDm, forgetDm } from "./dm";
 import { registerTrip, aiSpotsFor, aiSpotsForUser, promoteBriefAiPicks } from "./trip";
+import { registerCrewsChoice } from "./crewsChoice";
 import { dayKey } from "./metrics";
 import { SERVICES } from "@shared/services";
 import { track, visit, pageKey, outboundKey, report, untracked } from "./metrics";
@@ -79,6 +80,31 @@ const id = (req: Request) => Number(req.params.id);
 // Split "MIA-TEB ASE/KAPA,TJSJ" into codes
 function parseRoute(route: string) {
   return route.toUpperCase().split(/[^A-Z0-9]+/).filter((c) => c.length === 3 || c.length === 4).slice(0, 12);
+}
+/**
+ * Route box legs. Codes as before; a part that isn't all airport codes is read as a city ("Boston", "Las Vegas",
+ * "Portland ME", "MIA - Boston"). A city becomes its listed airports (fields with crew listings first), else its
+ * biggest field. Searching only: adding a listing still takes an airport code.
+ */
+async function routeLegs(route: string) {
+  const parts = route.toUpperCase().split(/[-,/>;]+|\bTO\b/).map((p) => p.trim()).filter(Boolean).slice(0, 8);
+  const out: { code: string; airport: any }[] = [];
+  const asCode = async (code: string) => {
+    const a = await storage.resolveCode(code);
+    if (a) return a;
+    const ref = refAirport(code); // known airport with no listings yet
+    return ref ? { icao: ref.icao, iata: ref.iata, name: ref.name, city: ref.city, region: ref.region, country: ref.country, lat: ref.lat, lon: ref.lon } : null;
+  };
+  for (const part of parts) {
+    const toks = part.split(/[^A-Z0-9]+/).filter(Boolean);
+    const codeToks = toks.filter((c) => c.length === 3 || c.length === 4);
+    const coded = codeToks.length === toks.length ? await Promise.all(codeToks.map(async (code) => ({ code, airport: await asCode(code) }))) : null;
+    if (coded && coded.every((l) => l.airport)) { out.push(...coded); continue; }
+    const city = /[A-Z]{3,}/.test(part) ? await storage.cityAirports(part, cityAirports(part)) : [];
+    if (city.length) { for (const a of city) out.push({ code: part, airport: a }); continue; }
+    out.push(...(coded || await Promise.all(codeToks.map(async (code) => ({ code, airport: await asCode(code) })))));
+  }
+  return out.slice(0, 12);
 }
 
 // ---- tiny CSV helpers ----
@@ -254,13 +280,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.get("/api/airports", async (_req, res) => res.json(await storage.listAirports()));
 
   app.get("/api/search", async (req, res) => {
-    const codes = parseRoute(String(req.query.route || ""));
-    const legs = await Promise.all(codes.map(async (code) => {
-      const a = await storage.resolveCode(code);
-      if (a) return { code, airport: a };
-      const ref = refAirport(code); // known airport with no listings yet
-      return { code, airport: ref ? { icao: ref.icao, iata: ref.iata, name: ref.name, city: ref.city, region: ref.region, country: ref.country, lat: ref.lat, lon: ref.lon } : null };
-    }));
+    const legs = await routeLegs(String(req.query.route || ""));
+    const codes = legs.map((l) => l.code);
     const icaos = legs.filter((l) => l.airport).map((l) => l.airport!.icao);
     const v = await voterOf(req);
     const ai = { ai: await aiSpotsFor(req) };
@@ -727,6 +748,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   registerPush(app, { userOf, isSuperAdmin, requireAdmin, requireUser });
   registerFboCards(app, { userOf, isSuperAdmin, requireAdmin }); // participating FBO cards on briefs and Crew Up (fbo_cards_audience: admins until opened)
   registerDm(app, { userOf, isSuperAdmin, requireAdmin }); // private messages, end-to-end encrypted (dm_audience: admins until opened)
+  registerCrewsChoice(app, { userOf, isSuperAdmin, requireAdmin, requireUser }); // rank mascots + Crews' Choice voting (each admins-only until opened)
   registerTrip(app, { userOf, isSuperAdmin, requireAdmin, requireUser }); // 4-tab nav, Home trip card, AI-added listings (trip_audience: admins until opened) // push notifications (push_audience: admins until opened)
   registerModFix(app, { requireAdmin, requireUser, ensureAirport: (c) => ensureAirport(c), byAdmin });
   app.get("/api/admin/costs", requireAdmin, async (req, res) => {

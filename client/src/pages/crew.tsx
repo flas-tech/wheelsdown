@@ -7,6 +7,7 @@ import { useAuth, Insignia, TierChip } from "@/lib/auth";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { TierLadder } from "./profile";
+import { CrewsChoiceCard } from "@/lib/crewsChoice";
 import { CrewAvatar } from "@/lib/aircraft";
 
 type Row = PublicUser & { rank: number };
@@ -150,6 +151,7 @@ export default function CrewPage() {
         </button>
       )}
 
+      <CrewsChoiceCard />
       <TierLadder points={me?.points ?? 0} signedIn={!!me} />
       <p className="text-[11px] text-muted-foreground">{TIERS.length} ratings. Points are counted from your activity, so the total always matches your logbook. Equal points share a rank.</p>
     </div>

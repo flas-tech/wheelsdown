@@ -25,14 +25,15 @@ const subscribe = (cb: () => void) => {
   return () => { window.removeEventListener(EVENT, cb); window.removeEventListener("storage", cb); };
 };
 
-export type Features = { experience: "admins" | "members"; trip: "admins" | "members"; ready: boolean };
+export type Features = { experience: "admins" | "members"; trip: "admins" | "members"; rankArt: "admins" | "members"; crewsChoice: "admins" | "members"; ready: boolean };
 /** Which parts of the app are open to members. Fails closed: if it can't load, members keep the classic app. */
 export function useFeatures(): Features {
-  const { data, isFetched } = useQuery<{ experience: string; trip?: string }>({
+  const { data, isFetched } = useQuery<{ experience: string; trip?: string; rankArt?: string; crewsChoice?: string }>({
     queryKey: ["/api/features"], enabled: !IS_STATIC, staleTime: 60_000, retry: 1,
     queryFn: async () => (await apiRequest("GET", "/api/features")).json(),
   });
-  return { experience: data?.experience === "members" ? "members" : "admins", trip: data?.trip === "members" ? "members" : "admins", ready: IS_STATIC || isFetched };
+  return { experience: data?.experience === "members" ? "members" : "admins", trip: data?.trip === "members" ? "members" : "admins",
+    rankArt: data?.rankArt === "members" ? "members" : "admins", crewsChoice: data?.crewsChoice === "members" ? "members" : "admins", ready: IS_STATIC || isFetched };
 }
 /** The new landing page and everything on it: super-user accounts always; signed-in members once it's launched. */
 export function usePreview() { return usePreviewState().on; }
@@ -55,6 +56,10 @@ export function useTripState() {
   return { on: !!me && (!!me.isAdmin || f.trip === "members"), ready: !loading && (!me || !!me.isAdmin || f.ready), adminOnly: !!me?.isAdmin && f.trip !== "members" };
 }
 export function useTrip() { return useTripState().on; }
+
+/** Rank mascots + one-liners (rank_art_audience) and Crews' Choice voting (crews_choice_audience): admins first. */
+export function useRankArt() { const { me } = useAuth(); const f = useFeatures(); return { on: !!me?.isAdmin || f.rankArt === "members", adminOnly: !!me?.isAdmin && f.rankArt !== "members" }; }
+export function useCrewsChoice() { const { me } = useAuth(); const f = useFeatures(); return { on: !!me && (!!me.isAdmin || f.crewsChoice === "members"), adminOnly: !!me?.isAdmin && f.crewsChoice !== "members" }; }
 
 /** Current experience, or null for the classic app (always null for members). */
 export function useExperience(): Experience | null {

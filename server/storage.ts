@@ -155,6 +155,23 @@ export class DatabaseStorage {
   // ---- airports ----
   listAirports() { return db().select().from(airports).orderBy(airports.icao); }
   /** Saved airport for what a pilot typed: KOPF, OPF, X51, KX51, 06FA. */
+  /** Airports for a typed city: fields there with live crew listings (most listings first), else the reference fields given. */
+  async cityAirports(phrase: string, refs: { icao: string }[]): Promise<Airport[]> {
+    const words = phrase.toUpperCase().replace(/[^A-Z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+    if (words.replace(/ /g, "").length < 3) return [];
+    const reg = / ([A-Z]{2})$/.exec(words)?.[1];
+    const city = words;
+    const d = db();
+    const rows = await d.execute(sql`SELECT a.icao, COUNT(s.id)::int AS n FROM airports a JOIN spots s ON s.icao = a.icao AND s.status = 'live'
+      WHERE upper(regexp_replace(trim(a.city), '[^A-Za-z0-9 ]+', ' ', 'g')) = ${city}
+         OR (${reg ?? null}::text IS NOT NULL AND upper(regexp_replace(trim(a.city), '[^A-Za-z0-9 ]+', ' ', 'g')) = ${reg ? city.slice(0, -3) : ""} AND upper(coalesce(a.region, '')) LIKE ${"%" + (reg || "")})
+      GROUP BY a.icao ORDER BY n DESC LIMIT 4`);
+    const listed = ((rows as any).rows ?? rows) as { icao: string }[];
+    const codes = listed.length ? listed.map((r) => r.icao) : refs.slice(0, 1).map((r) => r.icao);
+    const res: Airport[] = [];
+    for (const c of codes) { const a = await this.resolveCode(c); if (a) res.push(a); else { const r = refAirport(c); if (r) res.push({ icao: r.icao, iata: r.iata, name: r.name, city: r.city, region: r.region, country: r.country, lat: r.lat, lon: r.lon } as any); } }
+    return res;
+  }
   async resolveCode(code: string): Promise<Airport | undefined> {
     const c = code.trim().toUpperCase();
     if (!isCode(c)) return undefined;

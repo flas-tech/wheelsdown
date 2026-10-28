@@ -10,7 +10,7 @@ import { AirportCheckInCard, CheckInList, ProfileMap } from "@/lib/checkins";
 import { InviteCard } from "@/lib/share";
 import { AiPrefCard, ProgramsCard } from "@/lib/aiPicks";
 import { VersionCard } from "@/lib/version";
-import { setExperience, useAdminOnly, useExperience, usePreview, useTripState } from "@/lib/experience";
+import { setExperience, useAdminOnly, useExperience, usePreview, useTripState, useRankArt } from "@/lib/experience";
 import { Switch } from "@/components/ui/switch";
 import { BIO_MAX } from "@shared/interests";
 import { aircraftList } from "@shared/aircraft";
@@ -28,11 +28,18 @@ import { VetBadge, timeAgo } from "@/lib/ui";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
+/** Rank mascot (pelican art per rank). Shown only while rank_art_audience lets this account see it. */
+export function RankMascot({ tierId, className }: { tierId: TierId; className?: string }) {
+  const t = tierById(tierId);
+  return <img src={`./ranks/${t.id}.webp`} alt={`${t.name} mascot`} width={160} height={160} decoding="async" className={cn("shrink-0 rounded-full", className)} data-testid={`img-rank-${t.id}`} />;
+}
+
 export function TierCard({ points, name, sub, tierId, aircraft }: { points: number; name: string; sub?: string; tierId: TierId; aircraft?: string }) {
   const { tier, next, progress, toNext } = tierFor(points);
   const student = tier.id === "student";
   const soloed = student && hasSoloed(points);
   const dark = tierId === "grand_pelican" || tierId === "chief_pilot" || tierId === "check_airman";
+  const art = useRankArt();
   return (
     <div
       className="relative overflow-hidden rounded-3xl p-5 text-white shadow-lg"
@@ -45,9 +52,10 @@ export function TierCard({ points, name, sub, tierId, aircraft }: { points: numb
           <p className="font-code text-[10px] tracking-[0.25em] text-white/60">WHEELSDOWN CREW STATUS</p>
           <p className="mt-1 text-xl font-semibold" style={{ color: tier.color }} data-testid="text-tier-name">{tier.name}</p>
           <p className="text-xs text-white/70">{soloed ? "Solo endorsed. Cross-country next." : tier.tagline}</p>
+          {art.on && <p className="mt-1 max-w-[15rem] text-[11px] leading-snug text-white/85" data-testid="text-tier-role">{tier.role}{art.adminOnly && <span className="ml-1.5 rounded bg-white/15 px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-white/70">Admins only</span>}</p>}
           {soloed && <span className="mt-1.5 inline-flex items-center gap-1 rounded-full border border-white/30 bg-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide" data-testid="badge-soloed">Soloed</span>}
         </div>
-        <Insignia tierId={tier.id} className="h-10" />
+        {art.on ? <div className="flex shrink-0 flex-col items-center gap-1"><RankMascot tierId={tier.id} className="h-16 w-16 ring-2 ring-white/20" /><Insignia tierId={tier.id} className="h-4" /></div> : <Insignia tierId={tier.id} className="h-10" />}
       </div>
       <div className="relative mt-6 flex items-end justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5">
@@ -343,18 +351,21 @@ function ActivityLog({ items, loading }: { items?: ActivityItem[]; loading: bool
 
 export function TierLadder({ points, signedIn = true }: { points: number; signedIn?: boolean }) {
   const cur = signedIn ? tierFor(points).index : -1;
+  const art = useRankArt();
   return (
     <section className="rounded-2xl border border-card-border bg-card p-4" data-testid="section-ladder">
       <h2 className="text-sm font-semibold">The ratings ladder</h2>
       <p className="text-xs text-muted-foreground mt-0.5">
         {POINTS.listing} pts per listing (+{POINTS.listingVetted} when it's Crew-vetted) · {POINTS.review} per rating (+{POINTS.reviewDetail} if detailed) · {POINTS.vote} per vote · {POINTS.referral} per crew member who signs up with your invite link · points when others upvote your work
       </p>
+      {art.adminOnly && <p className="mt-1.5 text-[10px] font-semibold uppercase tracking-wide text-primary" data-testid="text-rank-art-admin">Rank mascots: admins only</p>}
       <ol className="mt-3 space-y-1">
         {TIERS.map((t, i) => (
           <li key={t.id} className={cn("flex items-center gap-3 rounded-xl px-2.5 py-2", i === cur && "bg-primary/10 ring-1 ring-primary/40")} data-testid={`row-tier-${t.id}`}>
-            <Insignia tierId={t.id} className="h-6 shrink-0" />
+            {art.on ? <RankMascot tierId={t.id} className="h-11 w-11" /> : <Insignia tierId={t.id} className="h-6 shrink-0" />}
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold" style={{ color: i <= cur ? t.color : undefined }}>{t.name}{i === cur && <span className="ml-2 text-[10px] font-semibold uppercase text-primary">You</span>}</p>
+              <p className="flex items-center gap-1.5 text-sm font-semibold" style={{ color: i <= cur ? t.color : undefined }}>{t.name}{art.on && <Insignia tierId={t.id} className="h-3.5 shrink-0" />}{i === cur && <span className="ml-0.5 text-[10px] font-semibold uppercase text-primary">You</span>}</p>
+              {art.on ? <p className="text-[11px] leading-snug text-foreground/80" data-testid={`text-tier-role-${t.id}`}>{t.role}</p> : null}
               <p className="text-[11px] text-muted-foreground truncate">{t.perks[0]}</p>
             </div>
             <span className="font-code text-xs tabular text-muted-foreground">{t.min.toLocaleString()}</span>
@@ -441,6 +452,8 @@ function TripCardAdmin({ adminOnly, admin }: { adminOnly: boolean; admin: boolea
       {admin && <TripSwitch />}
       {admin && <><p className="mt-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Private messages</p><DmSwitch /></>}
       {admin && <><p className="mt-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">FBOs on trip sheets and Crew Up</p><FboCardsSwitch /></>}
+      {admin && <><p className="mt-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Rank mascots and one-liners</p><SimpleAudienceSwitch api="/api/admin/rank-art" testId="rank-art" onText="On: members see the pelican mascot and a one-line role for each rank." offText="Off: only admins see the rank mascots." confirmOn="Show the rank mascots and one-liners to all members?" confirmOff="Hide the rank mascots from members?" /></>}
+      {admin && <><p className="mt-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Crews' Choice voting</p><SimpleAudienceSwitch api="/api/admin/crews-choice" testId="crews-choice" onText="On: members can vote one place to eat per field each month." offText="Off: only admins can vote and see results." confirmOn="Open Crews' Choice voting to all members?" confirmOff="Hide Crews' Choice from members? Votes are kept." extra={(d) => `${d.votes} vote${d.votes === 1 ? "" : "s"} from ${d.people} crew this month.`} /></>}
       {admin && <><p className="mt-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Earlier switch: My Crew, Crew Up, Lounge</p><LaunchSwitch /></>}
     </section>
   );
@@ -464,6 +477,28 @@ function TripSwitch() {
     <div className="mt-3 flex items-start justify-between gap-3 border-t border-dashed border-border pt-3" data-testid="row-trip-switch">
       <span><span className="block text-xs font-semibold">Open to members</span><span className="block text-[11px] text-muted-foreground">{live ? "On: members have Home, four tabs and AI-added listings." : "Off: only admins see it."} {q.data.aiSpots} AI-added listing{q.data.aiSpots === 1 ? "" : "s"}, {q.data.aiRated} rated by crew.</span></span>
       <Switch checked={live} disabled={m.isPending} onCheckedChange={(v) => { if (window.confirm(v ? "Open Home, the four tabs and AI-added listings to all members?" : "Put members back on the current navigation and hide AI-added listings from them?")) m.mutate(v ? "members" : "admins"); }} data-testid="switch-trip" aria-label="Open the four tabs to members" />
+    </div>
+  );
+}
+
+/** Admins: a plain admins/members switch for a preview feature (rank mascots, Crews' Choice). Instant, no deploy. */
+function SimpleAudienceSwitch({ api, testId, onText, offText, confirmOn, confirmOff, extra }: { api: string; testId: string; onText: string; offText: string; confirmOn: string; confirmOff: string; extra?: (d: { votes: number; people: number }) => string }) {
+  const { toast } = useToast();
+  const q = useQuery<{ audience: "admins" | "members"; votes: number; people: number }>({ queryKey: [api], queryFn: async () => (await apiRequest("GET", api)).json(), retry: false });
+  const m = useMutation({
+    mutationFn: async (audience: "admins" | "members") => (await apiRequest("PUT", api, { audience })).json(),
+    onSuccess: (r: { audience: string }) => {
+      for (const k of [api, "/api/features"]) queryClient.invalidateQueries({ queryKey: [k] });
+      toast({ title: r.audience === "members" ? "Open to members" : "Back to admins only" });
+    },
+    onError: (e: Error) => toast({ title: "Couldn't change it", description: e.message, variant: "destructive" }),
+  });
+  if (!q.data) return null;
+  const live = q.data.audience === "members";
+  return (
+    <div className="mt-1 flex items-start justify-between gap-3 pt-1" data-testid={`row-${testId}-switch`}>
+      <span><span className="block text-xs font-semibold">Open to members</span><span className="block text-[11px] text-muted-foreground">{live ? onText : offText}{extra ? ` ${extra(q.data)}` : ""}</span></span>
+      <Switch checked={live} disabled={m.isPending} onCheckedChange={(v) => { if (window.confirm(v ? confirmOn : confirmOff)) m.mutate(v ? "members" : "admins"); }} data-testid={`switch-${testId}`} aria-label={`Open ${testId} to members`} />
     </div>
   );
 }
