@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { HotelSheetCard } from "@/lib/layoverTools";
 import { AiAddedTag, FboRecTag, PickTag } from "@/lib/aiPicks";
 import { noteVisit, clearVisit } from "@/lib/visits";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -168,6 +169,8 @@ export default function SpotPage() {
         {spot.category === "do" && <Fact label="Time needed" value={fmtMinutes(totalMinutes(spot))} />}
         <Fact label="From field" value={spot.milesFromField ? `${spot.milesFromField} mi` : "On field"} />
       </div>
+
+      {spot.category === "stay" && <HotelSheetCard spotId={spot.id} name={spot.name} />}
 
       <CrewVote spot={spot} />
 

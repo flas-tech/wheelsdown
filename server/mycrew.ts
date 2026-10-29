@@ -1,3 +1,4 @@
+import { layoverTools, crewNetwork, scheduleTools } from "./switches";
 /**
  * My Crew: mutual friends. A crew request, then Accept. Crew see each other's Crew Up plans and whatever each person shares.
  * Launch switch: app_settings experience_audience ("admins" | "members"). Until it is "members", every /api/mycrew route
@@ -125,7 +126,7 @@ export function registerMyCrew(app: Express, o: { userOf: (req: Request) => Prom
   /** Public: which parts of the app are open to members. The client uses it to show the new landing page. */
   app.get("/api/features", async (_req, res) => {
     res.set("Cache-Control", "no-store");
-    res.json({ experience: await experienceAudience(), trip: await tripAudience(), rankArt: await rankArtAudience(), crewsChoice: await crewsChoiceAudience(), rentalCars: await rentalCarsAudience(), rampChecks: await rampChecksAudience() });
+    res.json({ experience: await experienceAudience(), trip: await tripAudience(), rankArt: await rankArtAudience(), crewsChoice: await crewsChoiceAudience(), rentalCars: await rentalCarsAudience(), rampChecks: await rampChecksAudience(), layoverTools: await layoverTools.audience(), crewNetwork: await crewNetwork.audience(), scheduleTools: await scheduleTools.audience() });
   });
 
   app.get("/api/mycrew", gate, async (req, res) => {

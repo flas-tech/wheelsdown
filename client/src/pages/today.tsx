@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { DirectionsButton } from "@/lib/directions";
 import { ComingUpTrips } from "./tripHome";
 import type { Meetup, Metar, TodayPick, TodayResp } from "@shared/layover";
+import { NasBanner, ForecastCard, AbroadCard, ShuttleCalls } from "@/lib/layoverTools";
 import { getPosition, type NearAirport } from "@/lib/geo";
 import { useTrip } from "@/lib/experience";
 import { useToast } from "@/hooks/use-toast";
@@ -209,6 +210,9 @@ function Board({ d, refreshing, onRefresh, fav, onFav }: { d: TodayResp; refresh
         </div>
       </section>
 
+      <NasBanner icao={ap.icao} />
+      {d.briefing && <ShuttleCalls hotels={d.briefing.picks.filter((p) => p.category === "stay" && p.id > 0).map((p) => ({ id: p.id, name: p.name }))} />}
+
       {/* Plan your day here: starts a trip briefing with this airport filled in */}
       <Link href="/brief/new" onClick={() => sessionStorage.setItem("wd-brief-prefill", ap.icao)}
         className="flex items-center justify-between gap-3 rounded-2xl taxi-sign p-4 hover-elevate" data-testid="link-today-plan-day">
@@ -225,6 +229,8 @@ function Board({ d, refreshing, onRefresh, fav, onFav }: { d: TodayResp; refresh
       {trip && <CrewPlansHere icao={ap.icao} tz={d.tz} />}
 
       <Weather m={d.metar} failed={d.metarError} tz={d.tz} refreshing={refreshing} onRefresh={onRefresh} />
+      <ForecastCard icao={ap.icao} tz={d.tz} />
+      <AbroadCard icao={ap.icao} />
 
       {!d.checkedInAt && <AirportCheckInCard />}
 

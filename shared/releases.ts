@@ -2,6 +2,13 @@
 export type Release = { date: string; sha?: string; title: string; notes: string[] };
 
 export const RELEASES: Release[] = [
+  { date: "2026-10-29", title: "Layover tools: hotel sheet, shuttle call, 10-day forecast, abroad card, FAA delay alerts (admins first)", notes: [
+    "Flight Crew View catch-up, batch 1. All behind app_settings layover_tools_audience (default admins); Settings > Layover tools switch.",
+    "Crew hotel sheet on hotel pages: shuttle phone (one-tap Call the shuttle), van notes, 12 amenity chips crews mark yes/no, 'confirmed by N crews, last X ago' and a Still right button. Table hotel_facts (append-only; latest per crew wins).",
+    "Layover today: Call the shuttle for hotels on your trip sheet stop; FAA NAS status banner (ground stops, ground delay programs, delays, closures incl. 'closed to transient GA without PPR'); 10-day forecast (Open-Meteo) and TAF (aviationweather.gov); Abroad card outside the US with local emergency numbers (curated list, 'ask your hotel or FBO' when unknown), US embassy finder, State Department advisory and STEP links.",
+    "Delay alerts: every 10 min the server checks FAA NAS status and pushes a member whose trip sheet has that airport today/tomorrow (once per event per stop date; table nas_alerts_sent). New notification setting Delays and ground stops.",
+    "Rollback: redeploy 24df87b.",
+  ] },
   { date: "2026-10-29", title: "Ramp check map (worldwide) and marketing copy", notes: [
     "New Ramp check map (#/ramp-checks): every field with a crew ramp check report in the last 7, 30, 90 or 365 days, worldwide. Red = active in the last 48h, amber = hot spot (3+ in 90 days), grey = earlier. Filters for US / international and by agency; list under the map, tap a row to zoom to it.",
     "Two new report types for abroad: Local aviation authority (SAFA, Transport Canada, AFAC and the like) and Local customs / police.",

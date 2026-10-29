@@ -1,6 +1,7 @@
 // Push notifications on this device: setup, the Settings card, and the app-icon badge.
 // iPhone/iPad: only in the home-screen app (iOS 16.4+), and the permission prompt must come straight from a tap.
 // Server side and payload format: server/push.ts. Background script: client/public/sw.js (notifications only, no caching).
+import { useLayoverTools } from "@/lib/experience";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { BellOff, BellRing, Loader2, Moon, Share, SquarePlus } from "lucide-react";
@@ -161,6 +162,7 @@ const ROWS: { key: keyof NotifyPrefs; title: string; body: string }[] = [
   { key: "crewUp", title: "Crew Up plans", body: "Someone in My Crew posts plans at an airport." },
   { key: "crewUpJoins", title: "Who's in", body: "A crew member says they're in on your Crew Up." },
   { key: "messages", title: "Messages", body: "A private message, or a reply in a Crew Up thread. It never shows the text." },
+  { key: "delays", title: "Delays and ground stops", body: "FAA ground stops, delay programs and closures at an airport on your trip sheet today or tomorrow." },
   { key: "team", title: "From Wheelsdown", body: "Replies to your feedback and notes from the team." },
 ];
 const hourLabel = (h: number) => (h === 0 ? "12 AM" : h < 12 ? `${h} AM` : h === 12 ? "12 PM" : `${h - 12} PM`);
@@ -169,6 +171,7 @@ const hourLabel = (h: number) => (h === 0 ? "12 AM" : h < 12 ? `${h} AM` : h ===
 export function NotificationSettings() {
   const { me } = useAuth();
   const dmOn = useDmOn();
+  const delaysOn = useLayoverTools().on;
   const { toast } = useToast();
   const cfg = usePushConfig();
   const [state, recheck] = useDeviceState();
@@ -235,7 +238,7 @@ export function NotificationSettings() {
       </div>
 
       <ul className="divide-y divide-border border-t border-border">
-        {ROWS.filter((r) => r.key !== "messages" || dmOn).map((r) => (
+        {ROWS.filter((r) => (r.key !== "messages" || dmOn) && (r.key !== "delays" || delaysOn)).map((r) => (
           <li key={r.key} className="flex items-center justify-between gap-3 py-2.5">
             <span className="min-w-0"><span className="block text-sm font-medium">{r.title}</span><span className="block text-[11px] text-muted-foreground">{r.body}</span></span>
             <Switch checked={!!prefs[r.key]} onCheckedChange={(v) => save.mutate({ [r.key]: v })} aria-label={r.title} data-testid={`switch-push-${r.key}`} />

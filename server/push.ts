@@ -199,7 +199,7 @@ export function registerPush(app: Express, o: { userOf: (req: Request) => Promis
   });
 
   const prefsBody = z.object({
-    crewRequests: z.boolean(), crewUp: z.boolean(), crewUpJoins: z.boolean(), messages: z.boolean(), team: z.boolean(), quiet: z.boolean(),
+    crewRequests: z.boolean(), crewUp: z.boolean(), crewUpJoins: z.boolean(), messages: z.boolean(), delays: z.boolean(), team: z.boolean(), quiet: z.boolean(),
     quietStart: z.number().int().min(0).max(23), quietEnd: z.number().int().min(0).max(23), tz: z.string().max(60),
   }).partial();
   app.put("/api/push/prefs", o.requireUser, limit, async (req, res) => {

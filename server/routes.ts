@@ -35,6 +35,7 @@ import { registerTrip, aiSpotsFor, aiSpotsForUser, promoteBriefAiPicks } from ".
 import { registerCrewsChoice } from "./crewsChoice";
 import { registerRentalCars, carsFor } from "./rentalCars";
 import { registerRampChecks, rampChecksAudience } from "./rampChecks";
+import { registerLayoverTools } from "./layoverTools";
 import { registerCampaigns, campaignVisit, campaignSignup, campaignReport } from "./campaigns";
 import { dayKey } from "./metrics";
 import { SERVICES } from "@shared/services";
@@ -760,6 +761,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   registerCrewsChoice(app, { userOf, isSuperAdmin, requireAdmin, requireUser }); // rank mascots + Crews' Choice voting (each admins-only until opened)
   registerCampaigns(app); // tracked share links: /go/<code>
   registerRampChecks(app, { userOf, isSuperAdmin, requireAdmin, requireUser, resolveCode: (c) => storage.resolveCode(c) as any }); // ramp check reports (FBO intel), admins first
+  registerLayoverTools(app, { userOf, isSuperAdmin, requireAdmin, requireUser }); // hotel sheet, forecast, abroad card, NAS delay alerts; admins first
   registerRentalCars(app, { userOf, isSuperAdmin, requireAdmin }); // rental cars: a fifth listing type, admins-only until rental_cars_audience = members
   registerTrip(app, { userOf, isSuperAdmin, requireAdmin, requireUser }); // 4-tab nav, Home trip card, AI-added listings (trip_audience: admins until opened) // push notifications (push_audience: admins until opened)
   registerModFix(app, { requireAdmin, requireUser, ensureAirport: (c) => ensureAirport(c), byAdmin });

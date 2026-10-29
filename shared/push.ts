@@ -1,22 +1,23 @@
 // Push notifications: what a member can get, and their settings. Shared by server and client.
-export type PushKind = "crew_request" | "crew_accepted" | "crewup_posted" | "crewup_joined" | "team" | "message";
+export type PushKind = "crew_request" | "crew_accepted" | "crewup_posted" | "crewup_joined" | "team" | "message" | "delay_alert";
 
 export type NotifyPrefs = {
   crewRequests: boolean; // someone asks to add you; someone accepts yours
   crewUp: boolean; // a crew member posts Crew Up plans
   crewUpJoins: boolean; // someone says they're in on your Crew Up
   messages: boolean; // a private message or a reply in a Crew Up thread (never shows the text)
+  delays: boolean; // ground stops, ground delay programs, delays and closures at airports on your trip sheet today/tomorrow
   team: boolean; // replies to your feedback and notes from the Wheelsdown team
   quiet: boolean; // overnight (quietStart..quietEnd, local time) notifications arrive without sound
   quietStart: number; // hour 0-23
   quietEnd: number; // hour 0-23
   tz: string; // IANA zone from the member's device, for quiet hours
 };
-export const DEFAULT_NOTIFY_PREFS: NotifyPrefs = { crewRequests: true, crewUp: true, crewUpJoins: true, messages: true, team: true, quiet: true, quietStart: 22, quietEnd: 7, tz: "America/New_York" };
+export const DEFAULT_NOTIFY_PREFS: NotifyPrefs = { crewRequests: true, crewUp: true, crewUpJoins: true, messages: true, delays: true, team: true, quiet: true, quietStart: 22, quietEnd: 7, tz: "America/New_York" };
 
 /** Which setting turns each kind on or off. */
 export const PREF_FOR: Record<PushKind, keyof NotifyPrefs> = {
-  crew_request: "crewRequests", crew_accepted: "crewRequests", crewup_posted: "crewUp", crewup_joined: "crewUpJoins", team: "team", message: "messages",
+  crew_request: "crewRequests", crew_accepted: "crewRequests", crewup_posted: "crewUp", crewup_joined: "crewUpJoins", team: "team", message: "messages", delay_alert: "delays",
 };
 
 export type PushConfig = {
