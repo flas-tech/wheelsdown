@@ -15,6 +15,7 @@ import { CostChoice } from "@/lib/costChip";
 import { PROGRAMS, programOf, type ProgramId } from "@shared/loyalty";
 import { VisitReminder } from "@/lib/visits";
 import { useTrip, useCategories, useRentalCars } from "@/lib/experience";
+import { RampChecks, RampHotList } from "@/lib/rampChecks";
 import { TodayCard } from "./todayCard";
 import { AiAddedTag, fboRecTagFor, PickTag, AiPicksPanel, MoreAiPlaces, ProgramChip, useMyPrograms, useCachedAiPicks, AiCard } from "@/lib/aiPicks";
 import { getPosition, type NearAirport } from "@/lib/geo";
@@ -504,6 +505,7 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
 
       {mode === "choose" ? (
         <div className="space-y-5" data-testid="section-choose">
+          {cat === "fbo" && <RampHotList />}
           <SwitchRail hl={hl} limit={5} what={catWord} testId="rail-cat" />
           <BrowseButton onClick={() => set({ browse: true })} testId="button-browse-all" title={`Browse all ${catWord} picks`} sub="No route in mind? Scroll everything, with filters" />
           <AdBanner slot="footer" icaos={[]} />
@@ -520,6 +522,8 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
       ) : filtersEl}
 
       {s.view === "list" && <AdBanner slot="top" icaos={icaos} />}
+
+      {cat === "fbo" && s.view === "list" && icaos.length > 0 && <RampChecks icaos={icaos.filter((v, i, x) => x.indexOf(v) === i)} />}
 
       <div className="flex items-center justify-between pt-1">
         <p className="text-sm text-muted-foreground" data-testid="text-result-count">
