@@ -16,6 +16,7 @@ import { DM_RULES, type DmConversation, type DmDevice, type DmThread } from "@sh
 const PRIVATE_NOTE = "End-to-end encrypted. Only the people in this conversation can read it. Wheelsdown and its admins can't.";
 
 export function convTitle(c: DmConversation) {
+  if (c.kind === "trip" && c.trip) return `Trip crew · ${c.trip.title}`;
   if (c.kind === "crewup" && c.meetup) {
     const when = new Date(c.meetup.startsAt).toLocaleDateString("en-US", { month: "short", day: "numeric" });
     return `Crew Up at ${c.meetup.icao} · ${when}`;
@@ -48,7 +49,7 @@ function DeleteThread({ c, onDone, variant = "icon" }: { c: DmConversation; onDo
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const others = c.kind === "crewup" ? "Everyone else on the plan keeps their copy." : `${c.people[0]?.name || "The other person"} keeps their copy.`;
+  const others = c.kind !== "direct" ? "Everyone else on the plan keeps their copy." : `${c.people[0]?.name || "The other person"} keeps their copy.`;
   async function go() {
     setBusy(true);
     try {
@@ -109,12 +110,12 @@ function Inbox() {
           {list.map((c) => (
             <li key={c.id} className="flex items-center pr-2">
               <Link href={`/messages/${c.id}`} className="flex min-w-0 flex-1 items-center gap-3 p-3.5 hover-elevate" data-testid={`row-conv-${c.id}`}>
-                <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-full", c.kind === "crewup" ? "bg-primary/15 text-primary" : "bg-muted")}>
-                  {c.kind === "crewup" ? <Users className="h-5 w-5" /> : <span className="text-sm font-semibold">{(c.people[0]?.name || "?").slice(0, 1)}</span>}
+                <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-full", c.kind !== "direct" ? "bg-primary/15 text-primary" : "bg-muted")}>
+                  {c.kind !== "direct" ? <Users className="h-5 w-5" /> : <span className="text-sm font-semibold">{(c.people[0]?.name || "?").slice(0, 1)}</span>}
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className={cn("block truncate text-sm", c.unread ? "font-semibold" : "font-medium")}>{convTitle(c)}</span>
-                  <span className="block truncate text-xs text-muted-foreground">{c.kind === "crewup" ? c.people.map((p) => p.name).join(", ") || "Just you so far" : c.people[0]?.crewRole || ""}</span>
+                  <span className="block truncate text-xs text-muted-foreground">{c.kind !== "direct" ? c.people.map((p) => p.name).join(", ") || "Just you so far" : c.people[0]?.crewRole || ""}</span>
                 </span>
                 <span className="flex shrink-0 flex-col items-end gap-1">
                   <span className="text-[11px] text-muted-foreground">{ago(c.lastAt)}</span>
@@ -207,7 +208,7 @@ function Thread({ id }: { id: number }) {
           {c && <DeleteThread c={c} variant="text" onDone={() => navigate("/messages")} />}
         </div>
         <h1 className="text-lg font-semibold leading-tight" data-testid="text-thread-title">{c ? convTitle(c) : "…"}</h1>
-        {c?.kind === "crewup" && <p className="text-xs text-muted-foreground">{c.people.length ? `With ${c.people.map((p) => p.name).join(", ")}` : "Only you so far"}{c.meetup && <> · <Link href={`/meetup?icao=${c.meetup.icao}&plan=${c.meetup.id}`} className="text-primary underline">See the plan</Link></>}</p>}
+        {c && c.kind !== "direct" && <p className="text-xs text-muted-foreground">{c.people.length ? `With ${c.people.map((p) => p.name).join(", ")}` : "Only you so far"}{c.meetup && <> · <Link href={`/meetup?icao=${c.meetup.icao}&plan=${c.meetup.id}`} className="text-primary underline">See the plan</Link></>}</p>}
         <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground"><Lock className="mt-0.5 h-3 w-3 shrink-0" />{PRIVATE_NOTE}
           <button type="button" onClick={showCode} className="ml-1 shrink-0 font-semibold text-primary underline" data-testid="button-safety-code">Safety code</button></p>
         {code && <div className="rounded-xl border border-border bg-muted/50 p-3 text-xs" data-testid="text-safety-code">
@@ -221,13 +222,13 @@ function Thread({ id }: { id: number }) {
 
       <div className="flex-1 space-y-2" data-testid="list-messages">
         {isLoading && <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
-        {data && !data.messages.length && <p className="py-6 text-center text-sm text-muted-foreground"><MessageCircle className="mx-auto mb-1 h-6 w-6" />{c?.kind === "crewup" ? "Talk the plan over here. Everyone on the plan sees it." : "Say hello."}</p>}
+        {data && !data.messages.length && <p className="py-6 text-center text-sm text-muted-foreground"><MessageCircle className="mx-auto mb-1 h-6 w-6" />{c?.kind === "crewup" ? "Talk the plan over here. Everyone on the plan sees it." : c?.kind === "trip" ? "Talk the trip over here. Everyone on this trip crew sees it." : "Say hello."}</p>}
         {data?.messages.map((m) => {
           const mine = m.senderId === me?.id;
           const o = opened.get(m.id);
           return (
             <div key={m.id} className={cn("flex flex-col", mine ? "items-end" : "items-start")} data-testid={`msg-${m.id}`}>
-              {!mine && c?.kind === "crewup" && <span className="mb-0.5 px-1 text-[11px] font-semibold text-muted-foreground">{names.get(m.senderId) || "Crew"}</span>}
+              {!mine && c && c.kind !== "direct" && <span className="mb-0.5 px-1 text-[11px] font-semibold text-muted-foreground">{names.get(m.senderId) || "Crew"}</span>}
               <div className={cn("max-w-[80%] whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2 text-sm",
                 o?.state === "ok" ? (mine ? "taxi-sign" : "bg-muted") : "border border-dashed border-border italic text-muted-foreground")}>
                 {!o ? "…" : o.state === "ok" ? o.text : o.state === "no-key" ? "Sent before this device was set up, so it can't be read here." : "This message couldn't be checked, so it isn't shown."}
@@ -248,7 +249,7 @@ function Thread({ id }: { id: number }) {
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           </button>
         </form>
-      ) : <p className="rounded-xl bg-muted p-3 text-center text-xs text-muted-foreground" data-testid="text-dm-closed-thread">{c.kind === "direct" ? "You're no longer crew, so you can't send new messages here." : "This plan has ended, so the thread is closed."}</p>)}
+      ) : <p className="rounded-xl bg-muted p-3 text-center text-xs text-muted-foreground" data-testid="text-dm-closed-thread">{c.kind === "direct" ? "You're no longer crew, so you can't send new messages here." : c.kind === "trip" ? "This trip has ended, so the chat is closed." : "This plan has ended, so the thread is closed."}</p>)}
     </div>
   );
 }

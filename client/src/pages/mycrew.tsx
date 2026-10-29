@@ -8,6 +8,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { PreviewBadge, PreviewGate, errMsg, ago } from "@/lib/preview";
 import { ThreadButton } from "@/lib/dm";
+import { OverlapsCard, FamilyLinkCard } from "@/lib/crewNetwork";
 import { CrewButton, CrewRequestList, RemoveFromCrew, InviteCrewCard, PersonLine, useCrewAction, useMyCrew } from "@/lib/mycrew";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -57,7 +58,7 @@ function MyCrew() {
 
       {error ? <p className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">{errMsg(error)}</p>
         : isLoading || !data ? <div className="space-y-2"><Skeleton className="h-16 rounded-2xl" /><Skeleton className="h-16 rounded-2xl" /></div>
-        : tab === "crew" ? <CrewList crew={data.crew} onFind={() => { setTab("find"); window.scrollTo({ top: 0 }); }} />
+        : tab === "crew" ? <><OverlapsCard /><CrewList crew={data.crew} onFind={() => { setTab("find"); window.scrollTo({ top: 0 }); }} /><FamilyLinkCard /></>
         : tab === "requests" ? <Requests />
         : tab === "find" ? <Find />
         : <Privacy p={data.privacy} />}

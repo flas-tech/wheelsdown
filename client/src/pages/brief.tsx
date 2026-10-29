@@ -1,4 +1,5 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
+import { TripCrewChat } from "@/lib/crewNetwork";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useRoute } from "wouter";
 import {
@@ -395,6 +396,7 @@ export function BriefEditorPage() {
       })}
 
       {trip && <ExportBar brief={brief} preparedBy={me.displayName} />}
+      <TripCrewChat briefingId={Number(id)} />
       <FinalizeBar brief={brief} preparedBy={me.displayName} />
 
       <DeleteBriefing id={Number(id)} onDone={() => navigate("/brief")} />

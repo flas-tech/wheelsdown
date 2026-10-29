@@ -2,6 +2,13 @@
 export type Release = { date: string; sha?: string; title: string; notes: string[] };
 
 export const RELEASES: Release[] = [
+  { date: "2026-10-29", title: "Crew network: overlaps with My Crew, trip crew chat, family link (admins first)", notes: [
+    "Flight Crew View catch-up, batch 2. All behind app_settings crew_network_audience (default admins); Settings > Crew network switch.",
+    "Overlaps: opt-in card on My Crew. When you and someone in My Crew (both opted in) have the same airport on overlapping trip sheet dates, both see it and get one push (new notification setting Crew overlaps). Only airport and dates are shared. Tables crew_network_prefs, overlap_alerts_sent.",
+    "Trip crew chat: on a trip sheet, the owner starts one end-to-end encrypted group with people from My Crew (up to 12). Closes a day after the last stop, deleted 3 days after.",
+    "Family link: opt-in read-only page (#/f/<token>) with first name, tonight's city, local time, next stops and optionally the hotel. No login. Off or New link kills the old link.",
+    "Rollback: redeploy 5f656e3.",
+  ] },
   { date: "2026-10-29", title: "Layover tools: hotel sheet, shuttle call, 10-day forecast, abroad card, FAA delay alerts (admins first)", notes: [
     "Flight Crew View catch-up, batch 1. All behind app_settings layover_tools_audience (default admins); Settings > Layover tools switch.",
     "Crew hotel sheet on hotel pages: shuttle phone (one-tap Call the shuttle), van notes, 12 amenity chips crews mark yes/no, 'confirmed by N crews, last X ago' and a Still right button. Table hotel_facts (append-only; latest per crew wins).",

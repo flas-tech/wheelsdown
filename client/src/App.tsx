@@ -12,6 +12,7 @@ import StartPage from "@/pages/start";
 import LoungePage from "@/pages/lounge";
 import TodayPage from "@/pages/today";
 import RampMapPage from "@/pages/rampMap";
+import FamilyPage from "@/pages/family";
 import MeetupPage from "@/pages/meetup";
 import RatePage from "@/pages/rate";
 import MyCrewPage from "@/pages/mycrew";
@@ -147,6 +148,7 @@ function Shell() {
           <Route path="/lounge" component={LoungePage} />
           <Route path="/today" component={TodayPage} />
           <Route path="/ramp-checks" component={RampMapPage} />
+          <Route path="/f/:token" component={FamilyPage} />
           <Route path="/meetup" component={MeetupPage} />
           <Route path="/rate" component={RatePage} />
           <Route path="/mycrew" component={MyCrewPage} />

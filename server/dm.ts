@@ -18,6 +18,8 @@ import { storage } from "./storage";
 import { logChange } from "./ops";
 import { crewIds, areCrew } from "./mycrew";
 import { notify } from "./push";
+import { TRIP_CHAT, stopNights, addDays } from "@shared/crewNetwork";
+import { crewNetwork } from "./switches";
 import { DM_RULES, type DmAudience, type DmConversation, type DmDevice, type DmMessage, type DmPerson, type MyDmDevice } from "@shared/dm";
 import { meetupViewers, meetupVisibleTo, meetupStart } from "@shared/layover";
 import type { User } from "@shared/schema";
@@ -52,6 +54,11 @@ export async function ensureDmTables() {
   await db().execute(sql`CREATE INDEX IF NOT EXISTS dm_messages_conv_idx ON dm_messages (conv_id, id)`);
   await db().execute(sql`CREATE TABLE IF NOT EXISTS dm_keys (message_id integer NOT NULL, device_id integer NOT NULL, wrapped text NOT NULL, iv text NOT NULL, PRIMARY KEY (message_id, device_id))`);
   await db().execute(sql`ALTER TABLE dm_members ADD COLUMN IF NOT EXISTS cleared_at bigint NOT NULL DEFAULT 0`);
+  // trip crew chat (crew network, Oct 2026): a group from a trip sheet, closed and deleted a few days after the trip
+  await db().execute(sql`ALTER TABLE dm_conversations ADD COLUMN IF NOT EXISTS briefing_id integer`);
+  await db().execute(sql`ALTER TABLE dm_conversations ADD COLUMN IF NOT EXISTS title text`);
+  await db().execute(sql`ALTER TABLE dm_conversations ADD COLUMN IF NOT EXISTS expires_at bigint`);
+  await db().execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS dm_conv_briefing_idx ON dm_conversations (briefing_id)`);
   await db().execute(sql`INSERT INTO app_settings (key, value) VALUES ('dm_audience', 'admins') ON CONFLICT (key) DO NOTHING`);
 }
 
@@ -81,6 +88,8 @@ async function sweep() {
   const old = await rows(sql`SELECT c.id FROM dm_conversations c LEFT JOIN meetups m ON m.id = c.meetup_id
     WHERE c.kind = 'crewup' AND (m.id IS NULL OR m.expires_at < ${Date.now() - DM_RULES.crewUpKeepDays * DAY})`).catch(() => []);
   await dropConversations(old.map((r) => num(r.id)));
+  const trips = await rows(sql`SELECT id FROM dm_conversations WHERE kind = 'trip' AND expires_at < ${Date.now()}`).catch(() => []);
+  await dropConversations(trips.map((r) => num(r.id)));
 }
 
 /** A positive whole-number route id, or 0 (matches nothing) so bad ids are a 404, not a database error. */
@@ -117,6 +126,7 @@ export function registerDm(app: Express, o: { userOf: (req: Request) => Promise<
   }
   async function canSend(c: any, uid: number, others: number[]) {
     if (c.kind === "direct") return others.length === 1 && (await areCrew(uid, others[0]));
+    if (c.kind === "trip") return Date.now() < num(c.expires_at) - (TRIP_CHAT.keepDaysAfter - 1) * DAY; // open until a day after the trip
     const mt = (await rows(sql`SELECT expires_at FROM meetups WHERE id = ${num(c.meetup_id)}`))[0];
     return !!mt && num(mt.expires_at) > Date.now() - DM_RULES.crewUpKeepDays * DAY;
   }
@@ -135,7 +145,8 @@ export function registerDm(app: Express, o: { userOf: (req: Request) => Promise<
       const others = mem.filter((r) => num(r.conv_id) === num(c.id) && num(r.user_id) !== uid).map((r) => num(r.user_id));
       const mt = c.meetup_id != null ? mtBy.get(num(c.meetup_id)) : null;
       out.push({
-        id: num(c.id), kind: c.kind === "crewup" ? "crewup" : "direct",
+        id: num(c.id), kind: c.kind === "crewup" ? "crewup" : c.kind === "trip" ? "trip" : "direct",
+        trip: c.kind === "trip" ? { briefingId: num(c.briefing_id), title: String(c.title || "Trip"), endsAt: num(c.expires_at) - TRIP_CHAT.keepDaysAfter * DAY } : null,
         meetup: mt ? { id: num(mt.id), icao: String(mt.icao), hostId: num(mt.user_id), startsAt: meetupStart(mt), ended: num(mt.expires_at) < Date.now() } : null,
         people: others.map((id) => ppl.get(id)).filter(Boolean) as DmPerson[],
         lastAt: num(c.last_at), lastFrom: c.last_from == null ? null : num(c.last_from),
@@ -241,6 +252,37 @@ export function registerDm(app: Express, o: { userOf: (req: Request) => Promise<
     await db().execute(sql`UPDATE dm_members SET hidden = false WHERE conv_id = ${id} AND user_id = ${u.id}`);
     res.json({ id });
   });
+  /** Trip crew chat: the trip sheet's owner picks people from My Crew. One group per trip sheet; adding people later adds them. */
+  app.post("/api/dm/trip/:briefingId", gate, writeLimit, async (req, res) => {
+    const u = me(req), bid = pid(req, "briefingId"), now = Date.now();
+    if (!((await crewNetwork.audience()) === "members" || o.isSuperAdmin(u))) return res.status(404).json({ message: "Not found" });
+    const b = (await rows(sql`SELECT id, user_id, title, stops FROM briefings WHERE id = ${bid}`))[0];
+    const existing = (await rows(sql`SELECT id FROM dm_conversations WHERE briefing_id = ${bid}`))[0];
+    if (!b) return res.status(404).json({ message: "Trip sheet not found" });
+    const owner = num(b.user_id);
+    if (owner !== u.id) {
+      // anyone already in the group can open it; only the owner creates it or adds people
+      if (existing && (await myConv(num(existing.id), u.id))) return res.json({ id: num(existing.id) });
+      return res.status(403).json({ message: "Only the trip sheet's owner can start its crew chat." });
+    }
+    const crew = await crewIds(u.id);
+    const want: number[] = Array.from(new Set(((req.body?.userIds || []) as unknown[]).map(num))).filter((x) => x && x !== u.id);
+    if (want.some((x) => !crew.has(x))) return res.status(403).json({ message: "You can add people in your crew. Add them to My Crew first." });
+    let end = now + TRIP_CHAT.defaultDays * DAY;
+    try { const st = JSON.parse(b.stops) as any[]; const last = st.filter((s) => s.arriveDate).map((s) => addDays(s.arriveDate, stopNights(s.layover, s.nights))).sort().pop();
+      if (last) end = Math.max(now + DAY, Date.parse(last + "T23:59:00Z")); } catch { /* default */ }
+    const exp = end + TRIP_CHAT.keepDaysAfter * DAY;
+    let id = existing ? num(existing.id) : 0;
+    if (!id) id = num((await rows(sql`INSERT INTO dm_conversations (kind, briefing_id, title, expires_at, created_at, last_at) VALUES ('trip', ${bid}, ${String(b.title || "Trip").slice(0, 80)}, ${exp}, ${now}, 0)
+      ON CONFLICT (briefing_id) DO UPDATE SET briefing_id = EXCLUDED.briefing_id RETURNING id`))[0].id);
+    else await db().execute(sql`UPDATE dm_conversations SET expires_at = GREATEST(expires_at, ${exp}), title = ${String(b.title || "Trip").slice(0, 80)} WHERE id = ${id}`);
+    const have = await memberIds(id);
+    const all = Array.from(new Set([...have, u.id, ...want])).slice(0, TRIP_CHAT.maxPeople);
+    await db().execute(sql`INSERT INTO dm_members (conv_id, user_id, joined_at) SELECT ${id}, x, ${now} FROM unnest(${`{${all.join(",")}}`}::int[]) AS x ON CONFLICT DO NOTHING`);
+    await db().execute(sql`UPDATE dm_members SET hidden = false WHERE conv_id = ${id} AND user_id = ${u.id}`);
+    for (const x of all.filter((x) => !have.includes(x) && x !== u.id)) notify(x, "message", { title: `${u.displayName} added you to the crew chat for ${String(b.title || "a trip")}`, body: "Open Wheelsdown to see it.", link: `/messages/${id}`, tag: `dm-${id}` });
+    res.json({ id });
+  });
   /** Messages in a conversation, each with this device's copy of its key; plus every device to encrypt a reply for. */
   app.get("/api/dm/conversations/:id", gate, async (req, res) => {
     const u = me(req), id = pid(req), dev = num(req.query.device), before = num(req.query.before);
@@ -293,7 +335,7 @@ export function registerDm(app: Express, o: { userOf: (req: Request) => Promise<
     res.status(201).json({ id: mid, createdAt: now });
     // a heads-up with no message text (the server doesn't have it)
     const mt = c.kind === "crewup" ? (await rows(sql`SELECT icao FROM meetups WHERE id = ${num(c.meetup_id)}`))[0] : null;
-    const title = mt ? `${u.displayName} in Crew Up at ${mt.icao}` : `Message from ${u.displayName}`;
+    const title = mt ? `${u.displayName} in Crew Up at ${mt.icao}` : c.kind === "trip" ? `${u.displayName} in ${String(c.title || "trip")} crew chat` : `Message from ${u.displayName}`;
     for (const to of others) notify(to, "message", { title, body: "Open Wheelsdown to read it.", link: `/messages/${id}`, tag: `dm-${id}` });
   });
   app.post("/api/dm/conversations/:id/read", gate, async (req, res) => {

@@ -21,7 +21,9 @@ export type MyDmDevice = { id: number; label: string; createdAt: number; lastSee
 export type DmPerson = { id: number; name: string; crewRole: string };
 export type DmConversation = {
   id: number;
-  kind: "direct" | "crewup";
+  kind: "direct" | "crewup" | "trip";
+  /** Trip crew chat: the trip sheet it belongs to and when the trip ends (closes and is deleted 3 days later). */
+  trip?: { briefingId: number; title: string; endsAt: number } | null;
   /** Crew Up thread: the plan it belongs to. */
   meetup: { id: number; icao: string; hostId: number; startsAt: number; ended: boolean } | null;
   /** Everyone in it except you. */
