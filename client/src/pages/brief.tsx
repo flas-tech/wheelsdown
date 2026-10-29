@@ -1,5 +1,6 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { TripCrewChat } from "@/lib/crewNetwork";
+import { ImportTripCard, TripScheduleCard } from "@/lib/schedule";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useRoute } from "wouter";
 import {
@@ -156,6 +157,7 @@ export function BriefListPage() {
             <span className="flex items-center gap-3"><Plus className="h-5 w-5" /><span><span className="block text-sm font-semibold">New trip briefing</span><span className="block text-xs opacity-80">Routing, layovers, map, PDF</span></span></span>
             <ChevronRight className="h-5 w-5" />
           </Link>}
+          <ImportTripCard />
           <section className="space-y-2">
             <h2 className={trip ? "text-xs font-semibold uppercase tracking-wider text-muted-foreground" : "text-sm font-semibold"}>{trip ? "Your trip sheets" : "Saved"}</h2>
             {isLoading && <Skeleton className="h-16 rounded-2xl" />}
@@ -397,6 +399,7 @@ export function BriefEditorPage() {
 
       {trip && <ExportBar brief={brief} preparedBy={me.displayName} />}
       <TripCrewChat briefingId={Number(id)} />
+      <TripScheduleCard brief={brief} />
       <FinalizeBar brief={brief} preparedBy={me.displayName} />
 
       <DeleteBriefing id={Number(id)} onDone={() => navigate("/brief")} />

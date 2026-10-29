@@ -2,6 +2,14 @@
 export type Release = { date: string; sha?: string; title: string; notes: string[] };
 
 export const RELEASES: Release[] = [
+  { date: "2026-10-29", title: "Schedule tools: trip import, calendar alarms, offline trip sheets, duty and rest calculator (admins first)", notes: [
+    "Flight Crew View catch-up, batch 3. All behind app_settings schedule_tools_audience (default admins); Settings > Schedule tools switch.",
+    "Import a trip (Plan tab): paste schedule text or open a calendar file (.ics); codes are checked against the airport list, then you review stops, dates and layovers before the trip sheet is created.",
+    "Calendar and alarms (trip sheet): a day block per stop plus lobby/report times (local at that airport) with an alarm 15 min to 2 h before; one .ics link (valid 10 min) that iPhone Calendar opens directly.",
+    "Keep trip sheets on this device: opt-in offline copy in the service worker (cache wd-offline-v1). Dormant unless turned on; network first, saved copy only with no or very slow signal; removed on sign-out or if the switch is closed.",
+    "Duty and rest calculator (#/duty): advisory only. Part 117 Tables A/B, 10 h rest, 60 h/168 h and 100 h/672 h; Part 135.267 8/10 h in 24 h, 10 h rest, report + 14 h; Part 91 company limits. Runs on the device.",
+    "Rollback: redeploy 362c80e.",
+  ] },
   { date: "2026-10-29", title: "Crew network: overlaps with My Crew, trip crew chat, family link (admins first)", notes: [
     "Flight Crew View catch-up, batch 2. All behind app_settings crew_network_audience (default admins); Settings > Crew network switch.",
     "Overlaps: opt-in card on My Crew. When you and someone in My Crew (both opted in) have the same airport on overlapping trip sheet dates, both see it and get one push (new notification setting Crew overlaps). Only airport and dates are shared. Tables crew_network_prefs, overlap_alerts_sent.",

@@ -81,6 +81,8 @@ export const queryClient = new QueryClient({
       refetchOnWindowFocus: false,
       staleTime: Infinity,
       retry: false,
+      // With "Keep trip sheets on this device" on, still ask (the service worker answers from the saved copy) instead of pausing while offline.
+      networkMode: (() => { try { return localStorage.getItem("wd-offline") === "1" ? "offlineFirst" as const : "online" as const; } catch { return "online" as const; } })(),
     },
     mutations: {
       retry: false,

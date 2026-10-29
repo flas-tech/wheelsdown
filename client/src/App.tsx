@@ -13,6 +13,8 @@ import LoungePage from "@/pages/lounge";
 import TodayPage from "@/pages/today";
 import RampMapPage from "@/pages/rampMap";
 import FamilyPage from "@/pages/family";
+import DutyPage from "@/pages/duty";
+import { OfflineKeeper } from "@/lib/schedule";
 import MeetupPage from "@/pages/meetup";
 import RatePage from "@/pages/rate";
 import MyCrewPage from "@/pages/mycrew";
@@ -149,6 +151,7 @@ function Shell() {
           <Route path="/today" component={TodayPage} />
           <Route path="/ramp-checks" component={RampMapPage} />
           <Route path="/f/:token" component={FamilyPage} />
+          <Route path="/duty" component={DutyPage} />
           <Route path="/meetup" component={MeetupPage} />
           <Route path="/rate" component={RatePage} />
           <Route path="/mycrew" component={MyCrewPage} />
@@ -197,6 +200,7 @@ function App() {
             <AuthProvider>
               <Router hook={useHashPath}>
                 <Shell />
+                <OfflineKeeper />
               </Router>
             </AuthProvider>
           </SearchProvider>

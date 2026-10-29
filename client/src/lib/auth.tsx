@@ -55,6 +55,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = async () => {
     await apiRequest("POST", "/api/auth/logout").catch(() => {});
     setAuthToken("");
+    void import("@/lib/schedule").then((m) => m.clearOffline()).catch(() => {});
     queryClient.setQueryData(["/api/me"], null);
     queryClient.invalidateQueries();
   };

@@ -68,7 +68,7 @@ export function useRampChecks() { const { me } = useAuth(); const f = useFeature
 /** Flight Crew View catch-up batches, each admins first: layover tools, crew network, schedule tools. */
 export function useLayoverTools() { const { me } = useAuth(); const f = useFeatures(); return { on: !!me?.isAdmin || f.layoverTools === "members", adminOnly: !!me?.isAdmin && f.layoverTools !== "members" }; }
 export function useCrewNetwork() { const { me } = useAuth(); const f = useFeatures(); return { on: !!me && (!!me.isAdmin || f.crewNetwork === "members"), adminOnly: !!me?.isAdmin && f.crewNetwork !== "members" }; }
-export function useScheduleTools() { const { me } = useAuth(); const f = useFeatures(); return { on: !!me && (!!me.isAdmin || f.scheduleTools === "members"), adminOnly: !!me?.isAdmin && f.scheduleTools !== "members" }; }
+export function useScheduleTools() { const { me, loading } = useAuth(); const f = useFeatures(); return { on: !!me && (!!me.isAdmin || f.scheduleTools === "members"), adminOnly: !!me?.isAdmin && f.scheduleTools !== "members", ready: !loading && !!me && f.ready }; }
 /** The listing types this viewer can browse and add, in display order. */
 export function useCategories(): Category[] { const cars = useRentalCars().on; return (Object.keys(CAT_META) as Category[]).filter((c) => c !== "car" || cars); }
 export function useCrewsChoice() { const { me } = useAuth(); const f = useFeatures(); return { on: !!me && (!!me.isAdmin || f.crewsChoice === "members"), adminOnly: !!me?.isAdmin && f.crewsChoice !== "members" }; }
