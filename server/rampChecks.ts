@@ -107,6 +107,18 @@ export function registerRampChecks(app: Express, o: {
     if (!had) await db().execute(sql`INSERT INTO ramp_check_confirms (check_id, user_id, at) VALUES (${id}, ${u.id}, ${Date.now()}) ON CONFLICT DO NOTHING`);
     res.json({ confirmed: !had });
   });
+  /** The reporter adds details after a one-tap report: where on the field, what they asked for, or when. */
+  app.patch("/api/ramp-checks/:id", o.requireUser, async (req, res) => {
+    const u = (req as any).user as User;
+    const id = num(req.params.id);
+    const r = (await rows(sql`SELECT user_id, created_at FROM ramp_checks WHERE id = ${id} AND status = 'live'`))[0];
+    if (!r || num(r.user_id) !== u.id) return res.status(404).json({ message: "Not found" });
+    const when = RAMP_WHEN.find((w) => w.id === req.body?.when);
+    const agency = RAMP_AGENCIES.find((a) => a.id === req.body?.agency)?.id;
+    await db().execute(sql`UPDATE ramp_checks SET location = ${clean(req.body?.where, 80)}, note = ${clean(req.body?.note, 240)}
+      ${when ? sql`, seen_at = ${num(r.created_at) - when.hoursAgo * HOUR}` : sql``} ${agency ? sql`, agency = ${agency}` : sql``} WHERE id = ${id}`);
+    res.json({ ok: true });
+  });
   app.delete("/api/ramp-checks/:id", o.requireUser, async (req, res) => {
     const u = (req as any).user as User;
     const id = num(req.params.id);

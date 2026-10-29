@@ -8,6 +8,7 @@ import { ChevronRight, Loader2, PlaneLanding, Users } from "lucide-react";
 import type { Meetup, TodayResp } from "@shared/layover";
 import { apiRequest } from "@/lib/queryClient";
 import { getPosition, type NearAirport } from "@/lib/geo";
+import { RampHere } from "@/lib/rampChecks";
 import { cn } from "@/lib/utils";
 
 const LAST = "wd-today-last";
@@ -78,7 +79,8 @@ export function TodayCard() {
   const ap = data.airport, m = data.metar;
   const time = new Intl.DateTimeFormat("en-US", { timeZone: data.tz || undefined, hour: "numeric", minute: "2-digit" }).format(Date.now());
   return (
-    <Link href={`/today?icao=${ap.icao}`} className="block rounded-2xl bg-[#0b1220] p-4 text-white hover-elevate" data-testid="card-home-today">
+    <div className="overflow-hidden rounded-2xl bg-[#0b1220]">
+    <Link href={`/today?icao=${ap.icao}`} className="block p-4 text-white hover-elevate" data-testid="card-home-today">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/60">At the field now</p>
@@ -98,5 +100,7 @@ export function TodayCard() {
         <span className="flex shrink-0 items-center gap-1 text-sm font-semibold text-primary">Layover today<ChevronRight className="h-4 w-4" /></span>
       </div>
     </Link>
+    <RampHere icao={ap.icao} />
+    </div>
   );
 }
