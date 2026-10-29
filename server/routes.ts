@@ -34,6 +34,7 @@ import { registerDm, forgetDm } from "./dm";
 import { registerTrip, aiSpotsFor, aiSpotsForUser, promoteBriefAiPicks } from "./trip";
 import { registerCrewsChoice } from "./crewsChoice";
 import { registerRentalCars, carsFor } from "./rentalCars";
+import { registerCampaigns, campaignVisit, campaignSignup, campaignReport } from "./campaigns";
 import { dayKey } from "./metrics";
 import { SERVICES } from "@shared/services";
 import { track, visit, pageKey, outboundKey, report, untracked } from "./metrics";
@@ -179,11 +180,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (req.body?.fbo) await recordFboReferral(req.body.fbo, u.id); // signed up after scanning an FBO's QR code
       if (!isTestSignup(u.handle, u.email)) {
         track(req, "signup");
+        const src = await campaignSignup(req, u.id, req.body?.src);
         // one line per sign-up so a missing referral can be traced later
         const inv = (u as any).referredBy as number | null;
         logChange({ actor: `@${u.handle}`, actorId: u.id, kind: "system", action: "signup", entity: "user", entityId: u.id,
-          summary: `New member @${u.handle} signed up${inv ? ` with invite from member #${inv}` : p.data.ref ? ` (invite #${p.data.ref} not found)` : " (no invite link)"}`,
-          detail: { refSent: p.data.ref ?? null, referredBy: inv ?? null, ua: String(req.headers["user-agent"] || "").slice(0, 160) } });
+          summary: `New member @${u.handle} signed up${inv ? ` with invite from member #${inv}` : p.data.ref ? ` (invite #${p.data.ref} not found)` : " (no invite link)"}${src ? ` via ${src} link` : ""}`,
+          detail: { src: src || null, refSent: p.data.ref ?? null, referredBy: inv ?? null, ua: String(req.headers["user-agent"] || "").slice(0, 160) } });
       }
       res.status(201).json({ token: await storage.createSession(u.id), me: await storage.me(u) });
     } catch (e: any) { res.status(e.status || 500).json({ message: e.message }); }
@@ -738,6 +740,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (b.page) await track(req, "pageview", pageKey(String(b.page)));
     if (b.out) await track(req, "outbound", outboundKey(String(b.out)));
     if (b.share) await track(req, "share", b.share === "spot" ? "spot" : "site");
+    if (b.src) await campaignVisit(req, b.src); // arrived on a tracked share link (/go/<code>)
     res.json({ ok: true });
   });
 
@@ -754,6 +757,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   registerFboCards(app, { userOf, isSuperAdmin, requireAdmin }); // participating FBO cards on briefs and Crew Up (fbo_cards_audience: admins until opened)
   registerDm(app, { userOf, isSuperAdmin, requireAdmin }); // private messages, end-to-end encrypted (dm_audience: admins until opened)
   registerCrewsChoice(app, { userOf, isSuperAdmin, requireAdmin, requireUser }); // rank mascots + Crews' Choice voting (each admins-only until opened)
+  registerCampaigns(app); // tracked share links: /go/<code>
   registerRentalCars(app, { userOf, isSuperAdmin, requireAdmin }); // rental cars: a fifth listing type, admins-only until rental_cars_audience = members
   registerTrip(app, { userOf, isSuperAdmin, requireAdmin, requireUser }); // 4-tab nav, Home trip card, AI-added listings (trip_audience: admins until opened) // push notifications (push_audience: admins until opened)
   registerModFix(app, { requireAdmin, requireUser, ensureAirport: (c) => ensureAirport(c), byAdmin });
@@ -795,7 +799,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json({
       days, since: r.since,
       traffic: { visitors: r.uniq?.visitors || 0, crewActive: r.uniq?.crew || 0, visits: r.uniq?.visits || 0, pageviews: sum("pageview"), searches: sum("search"), spotViews: sum("spot_view"), outbound: sum("outbound"), shares: sum("share"), signups: sum("signup") },
-      series: r.series, pages: by("pageview"), outbound: by("outbound"), devices: by("device"),
+      series: r.series, pages: by("pageview"), outbound: by("outbound"), devices: by("device"), campaigns: await campaignReport(by),
       airports: r.airports.map((a: any) => ({ icao: a.icao, name: names.get(a.icao) || "", searches: a.searches || 0, views: a.views || 0 })),
       ads: ads.map((a) => ({ id: a.id, advertiser: a.advertiser, headline: a.headline, targetIcao: a.targetIcao || "", active: !!a.active, impressions: adImp[String(a.id)] || 0, clicks: adClk[String(a.id)] || 0, lifetimeImpressions: a.impressions, lifetimeClicks: a.clicks })),
       audience: {

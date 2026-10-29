@@ -49,3 +49,23 @@ export function fboArrival(): { slug: string; join: boolean } | null {
   try { const v = JSON.parse(localStorage.getItem(FBO_KEY) || "null"); return { slug: arrivedFrom, join: !!v?.join }; } catch { return { slug: arrivedFrom, join: false }; }
 }
 export function clearFboRef() { try { localStorage.removeItem(FBO_KEY); } catch { /* ignore */ } }
+
+// Tracked share links (getwheelsdown.com/go/<code>) arrive as ?src=<code>. Counted once on arrival, and remembered for
+// 30 days so a later sign-up is credited to that link. No personal data: just the link code.
+const SRC_KEY = "wheelsdown-src";
+export function captureSrc(): string | undefined {
+  try {
+    const url = new URL(window.location.href);
+    const raw = (url.searchParams.get("src") || "").toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 30);
+    if (!raw) return undefined;
+    localStorage.setItem(SRC_KEY, JSON.stringify({ src: raw, at: Date.now() }));
+    url.searchParams.delete("src");
+    window.history.replaceState(null, "", url.pathname + (url.searchParams.toString() ? `?${url.searchParams}` : "") + url.hash);
+    return raw;
+  } catch { return undefined; }
+}
+export function pendingSrc(): string | undefined {
+  try { const v = JSON.parse(localStorage.getItem(SRC_KEY) || "null"); if (v?.src && Date.now() - v.at < DAYS * 86400_000) return v.src; } catch { /* ignore */ }
+  return undefined;
+}
+export function clearSrc() { try { localStorage.removeItem(SRC_KEY); } catch { /* ignore */ } }

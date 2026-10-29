@@ -846,6 +846,7 @@ type AdvReport = {
   traffic: { visitors: number; crewActive: number; visits: number; pageviews: number; searches: number; spotViews: number; outbound: number; shares: number; signups: number };
   series: { day: string; visitors: number; crew: number; pageviews: number }[];
   pages: Record<string, number>; outbound: Record<string, number>; devices: Record<string, number>;
+  campaigns?: { code: string; label: string; link: string; clicks: number; visits: number; signups: number; signupsAllTime: number }[];
   airports: { icao: string; name: string; searches: number; views: number }[];
   ads: { id: number; advertiser: string; headline: string; targetIcao: string; active: boolean; impressions: number; clicks: number; lifetimeImpressions: number; lifetimeClicks: number }[];
   audience: { crew: number; newCrew: number; roles: [string, number][]; aircraft: [string, number][]; homeBases: [string, number][]; interests: [string, number][] };
@@ -962,6 +963,22 @@ function AdvertiserReport() {
           </div>
         )}
       </section>
+
+      {!!data.campaigns?.length && (
+        <section className="rounded-xl border border-card-border bg-card p-4 break-inside-avoid" data-testid="section-campaigns">
+          <h3 className="text-sm font-semibold">Tracked share links</h3>
+          <p className="text-xs text-muted-foreground">Opens counts link taps (bots filtered). Visits counts the app actually loading. Joined is sign-ups in this period, credited up to 30 days after the first visit; Total is all time.</p>
+          <table className="mt-3 w-full text-sm">
+            <thead><tr className="text-left text-xs text-muted-foreground"><th className="py-1">Link</th><th className="py-1 pl-2 text-right whitespace-nowrap">Opens</th><th className="py-1 pl-2 text-right whitespace-nowrap">Visits</th><th className="py-1 pl-2 text-right whitespace-nowrap">Joined</th><th className="py-1 pl-2 text-right whitespace-nowrap" title="Sign-ups all time">Total</th></tr></thead>
+            <tbody>{data.campaigns.map((c) => (
+              <tr key={c.code} className="border-t border-border" data-testid={`row-campaign-${c.code}`}>
+                <td className="py-1.5">{c.label}<span className="block break-all font-code text-[11px] text-muted-foreground">{c.link}</span></td>
+                <td className="py-1.5 text-right font-code tabular">{fmt(c.clicks)}</td><td className="py-1.5 text-right font-code tabular">{fmt(c.visits)}</td>
+                <td className="py-1.5 text-right font-code tabular">{fmt(c.signups)}</td><td className="py-1.5 text-right font-code tabular">{fmt(c.signupsAllTime)}</td>
+              </tr>))}</tbody>
+          </table>
+        </section>
+      )}
 
       <section className="rounded-xl border border-card-border bg-card p-4 break-inside-avoid">
         <h3 className="text-sm font-semibold">Top airports crews look at</h3>

@@ -31,3 +31,5 @@ export function trackPage(loc: string) {
 }
 export const trackOut = (kind: "website" | "map" | "phone" | "ad") => send({ out: kind });
 export const trackShare = (what: "site" | "spot") => send({ share: what });
+/** Opened the app from a tracked share link (/go/<code>). */
+export const trackArrival = (src: string) => send({ src });
