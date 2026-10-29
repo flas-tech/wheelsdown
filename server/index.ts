@@ -3,6 +3,7 @@ import express, { Response, NextFunction } from 'express';
 import type { Request } from 'express';
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
+import { isFboHost } from "./fbo";
 import { createServer } from "node:http";
 import helmet from "helmet";
 import { storage } from "./storage";
@@ -125,7 +126,14 @@ app.use((req, res, next) => {
     if (!process.env.ADS_TXT) return res.status(404).type("text/plain").send("");
     res.type("text/plain").send(process.env.ADS_TXT.replace(/\\n/g, "\n") + "\n");
   });
-  app.get("/robots.txt", (_req, res) => res.type("text/plain").send(`User-agent: *\nDisallow: /api/\nAllow: /\n`));
+  app.get("/robots.txt", (req, res) => res.type("text/plain").send(isFboHost(req)
+    ? `User-agent: *\nDisallow: /\n`
+    : `User-agent: *\nDisallow: /api/\nAllow: /\n\nSitemap: https://getwheelsdown.com/sitemap.xml\n`));
+  // The crew app routes after the "#", so the home page is its one indexable URL
+  app.get("/sitemap.xml", (req, res) => {
+    if (isFboHost(req)) return res.status(404).type("text/plain").send("Not found");
+    res.type("application/xml").send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url><loc>https://getwheelsdown.com/</loc><changefreq>daily</changefreq></url>\n</urlset>\n`);
+  });
   if (process.env.NODE_ENV === "production") {
     serveStatic(app);
   } else {
