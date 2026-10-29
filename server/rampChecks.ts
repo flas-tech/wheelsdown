@@ -9,6 +9,7 @@ import { db } from "./db";
 import { logChange } from "./ops";
 import type { User } from "@shared/schema";
 import { publicName } from "@shared/tiers";
+import { refAirport } from "./airportsData";
 import { RAMP_AGENCIES, RAMP_WHEN, RAMP_ACTIVE_HOURS, RAMP_SHOW_DAYS, RAMP_HOT_DAYS, RAMP_HOT_MIN, type RampAirport } from "@shared/rampChecks";
 
 type Audience = "admins" | "members";
@@ -77,6 +78,33 @@ export function registerRampChecks(app: Express, o: {
     const r = await rows(sql`SELECT r.icao, a.name, a.city, a.region, COUNT(*)::int AS n, MAX(r.seen_at) AS last FROM ramp_checks r LEFT JOIN airports a ON a.icao = r.icao
       WHERE r.status = 'live' AND r.seen_at >= ${since} GROUP BY r.icao, a.name, a.city, a.region ORDER BY MAX(r.seen_at) DESC LIMIT 8`);
     res.json({ on: true, fields: r.map((x) => ({ icao: x.icao, name: x.name || "", city: [x.city, x.region].filter(Boolean).join(", "), reports: num(x.n), last: num(x.last), active: Date.now() - num(x.last) < RAMP_ACTIVE_HOURS * HOUR })) });
+  });
+  /** Worldwide map: every field with a report in the window, with its position and an agency breakdown. */
+  app.get("/api/ramp-checks/map", async (req, res) => {
+    const u = await o.userOf(req);
+    if (!(await allowed(u))) return res.json({ on: false, fields: [] });
+    const days = [7, 30, 90, 365].includes(num(req.query.days)) ? num(req.query.days) : 90;
+    const since = Date.now() - days * DAY, hotSince = Date.now() - RAMP_HOT_DAYS * DAY;
+    const r = await rows(sql`SELECT r.icao, r.agency, COUNT(*)::int AS n, MAX(r.seen_at) AS last,
+        COUNT(*) FILTER (WHERE r.seen_at >= ${hotSince})::int AS hot_n, a.name, a.city, a.region, a.country, a.lat, a.lon
+      FROM ramp_checks r LEFT JOIN airports a ON a.icao = r.icao
+      WHERE r.status = 'live' AND r.seen_at >= ${since} GROUP BY r.icao, r.agency, a.name, a.city, a.region, a.country, a.lat, a.lon`);
+    const by = new Map<string, any>();
+    for (const x of r) {
+      let f = by.get(x.icao);
+      if (!f) {
+        const ref = x.lat == null || x.lon == null ? refAirport(x.icao) : undefined;
+        const lat = x.lat ?? ref?.lat, lon = x.lon ?? ref?.lon;
+        if (lat == null || lon == null) continue;
+        f = { icao: x.icao, name: x.name || ref?.name || "", city: [x.city || ref?.city, x.region || ref?.region].filter(Boolean).join(", "), country: x.country || ref?.country || "",
+          lat: Number(lat), lon: Number(lon), reports: 0, last: 0, hotN: 0, agencies: {} as Record<string, number> };
+        by.set(x.icao, f);
+      }
+      f.reports += num(x.n); f.hotN += num(x.hot_n); f.last = Math.max(f.last, num(x.last)); f.agencies[x.agency] = (f.agencies[x.agency] || 0) + num(x.n);
+    }
+    const fields = Array.from(by.values()).map(({ hotN, ...f }) => ({ ...f, active: Date.now() - f.last < RAMP_ACTIVE_HOURS * HOUR, hot: hotN >= RAMP_HOT_MIN }))
+      .sort((a, b) => b.last - a.last);
+    res.json({ on: true, days, fields });
   });
   app.post("/api/ramp-checks", o.requireUser, async (req, res) => {
     const u = (req as any).user as User;

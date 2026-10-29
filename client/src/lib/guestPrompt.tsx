@@ -1,7 +1,7 @@
 // Signed-out visitors who search get one friendly look at what a free account adds (feedback #55).
 // Shown a few seconds after their first results load, at most once every 3 days per device, never to members.
 import { useEffect, useState } from "react";
-import { CalendarDays, ClipboardList, Contact, Heart, MessagesSquare, Star } from "lucide-react";
+import { CalendarDays, ClipboardList, Contact, Heart, MessagesSquare, ShieldAlert, Star } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/lib/auth";
 
@@ -10,6 +10,7 @@ const EVERY_MS = 3 * 24 * 3600_000;
 const DELAY_MS = 3500;
 
 const PERKS = [
+  { icon: ShieldAlert, title: "Ramp check reports", body: "Report when and where ramp checks are happening, and see hot spots worldwide on a map before you land." },
   { icon: ClipboardList, title: "Trip briefings", body: "Plan every stop on a trip, then share it as a link or a PDF." },
   { icon: CalendarDays, title: "Layover today", body: "Your airport's picks in one place, with directions in Apple or Google Maps." },
   { icon: Contact, title: "My Crew and Crew Up", body: "Connect with people you fly with and make layover plans only they see." },

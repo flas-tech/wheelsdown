@@ -1,10 +1,11 @@
 /**
- * Ramp check reports on FBO intel: crews flag fields where FAA or other federal inspectors are doing ramp checks so
+ * Ramp check reports on FBO intel: crews flag fields where FAA, other federal or local (abroad) inspectors are doing ramp checks so
  * the next crew in has their paperwork ready. Admins first (useRampChecks / ramp_checks_audience, enforced server-side).
  */
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ShieldAlert, ClipboardCheck, Check, Trash2, ChevronDown } from "lucide-react";
+import { Link } from "wouter";
+import { ShieldAlert, ClipboardCheck, Check, Trash2, ChevronDown, Map as MapIcon } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
@@ -149,7 +150,7 @@ export function RampChecks({ icaos }: { icaos: string[] }) {
   if (!gate.on || !q.data?.on) return null;
   return (
     <section className="rounded-2xl border border-card-border bg-card p-4" data-testid="card-ramp-checks">
-      <div className="flex items-center gap-2"><ShieldAlert className="h-4 w-4 text-primary" /><h3 className="text-sm font-semibold">Ramp checks</h3>{gate.adminOnly && <AdminsOnly />}</div>
+      <div className="flex items-center gap-2"><ShieldAlert className="h-4 w-4 text-primary" /><h3 className="text-sm font-semibold">Ramp checks</h3>{gate.adminOnly && <AdminsOnly />}<Link href="/ramp-checks" className="ml-auto inline-flex items-center gap-1 text-xs font-semibold text-primary" data-testid="link-ramp-map"><MapIcon className="h-3.5 w-3.5" />World map</Link></div>
       <p className="mt-0.5 text-xs text-muted-foreground">Crew reports of FAA and federal ramp checks, last 30 days.</p>
       {q.data.airports.map((a) => (
         <div key={a.icao} className="mt-3" data-testid={`ramp-airport-${a.icao}`}>
@@ -179,7 +180,7 @@ export function RampHotList() {
   if (!gate.on || !q.data?.on) return null;
   return (
     <section className="rounded-2xl border border-card-border bg-card p-4" data-testid="card-ramp-hot">
-      <div className="flex items-center gap-2"><ShieldAlert className="h-4 w-4 text-primary" /><h3 className="text-sm font-semibold">Recent ramp checks</h3>{gate.adminOnly && <AdminsOnly />}</div>
+      <div className="flex items-center gap-2"><ShieldAlert className="h-4 w-4 text-primary" /><h3 className="text-sm font-semibold">Recent ramp checks</h3>{gate.adminOnly && <AdminsOnly />}<Link href="/ramp-checks" className="ml-auto inline-flex items-center gap-1 text-xs font-semibold text-primary" data-testid="link-ramp-map"><MapIcon className="h-3.5 w-3.5" />World map</Link></div>
       {q.data.fields.length ? (
         <ul className="mt-2">{q.data.fields.map((f) => (
           <li key={f.icao} className="flex items-center gap-2 border-t border-border py-1.5 text-sm first:border-t-0" data-testid={`row-ramp-hot-${f.icao}`}>

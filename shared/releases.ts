@@ -2,6 +2,12 @@
 export type Release = { date: string; sha?: string; title: string; notes: string[] };
 
 export const RELEASES: Release[] = [
+  { date: "2026-10-29", title: "Ramp check map (worldwide) and marketing copy", notes: [
+    "New Ramp check map (#/ramp-checks): every field with a crew ramp check report in the last 7, 30, 90 or 365 days, worldwide. Red = active in the last 48h, amber = hot spot (3+ in 90 days), grey = earlier. Filters for US / international and by agency; list under the map, tap a row to zoom to it.",
+    "Two new report types for abroad: Local aviation authority (SAFA, Transport Canada, AFAC and the like) and Local customs / police.",
+    "World map link on the Ramp checks card and the Recent ramp checks list. Follows ramp_checks_audience (members). Rollback: redeploy 4a84ec7.",
+    "Marketing: the guest signup prompt, site description, search snippet and FAQ now say crews can report when and where ramp checks are happening and see them on a map.",
+  ] },
   { date: "2026-10-25", title: "Admin preview: participating FBOs on trip sheets and Crew Up plans", notes: [
     "An FBO with a live Wheelsdown account (active, email confirmed) now shows as an FBO on Wheelsdown card on every trip sheet stop at its airport (in the app, the shared link and the PDF), on the New plan tab of Crew Up for that airport, and as a one-line link under each Crew Up plan there.",
     "The card uses only what the FBO entered in its portal: up to 4 desk/crew details (hours, crew car, fees, after-hours, lounge...), live crew deals with codes, a Call button and a link to its crew page with how many places it recommends. Visits from it count in the FBO's page views as brief, crewup or pdf.",
