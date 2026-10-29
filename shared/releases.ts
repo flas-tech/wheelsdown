@@ -6,6 +6,7 @@ export const RELEASES: Release[] = [
     "New Ramp check map (#/ramp-checks): every field with a crew ramp check report in the last 7, 30, 90 or 365 days, worldwide. Red = active in the last 48h, amber = hot spot (3+ in 90 days), grey = earlier. Filters for US / international and by agency; list under the map, tap a row to zoom to it.",
     "Two new report types for abroad: Local aviation authority (SAFA, Transport Canada, AFAC and the like) and Local customs / police.",
     "World map link on the Ramp checks card and the Recent ramp checks list. Follows ramp_checks_audience (members). Rollback: redeploy 4a84ec7.",
+    "What's new 19 (all members): asks crews to report ramp checks to help other pilots, plus the world map. Welcome tour for new members gets a Seeing a ramp check? Report it step (tour version not bumped, so current members get it via What's new instead of a repeat tour).",
     "Marketing: the guest signup prompt, site description, search snippet and FAQ now say crews can report when and where ramp checks are happening and see them on a map.",
   ] },
   { date: "2026-10-25", title: "Admin preview: participating FBOs on trip sheets and Crew Up plans", notes: [

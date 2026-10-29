@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { Settings, BadgeCheck, Contact, LayoutGrid, MessagesSquare, Trash2, Users, MapPinned, PanelBottom, ArrowUpDown, BellRing, CircleHelp, ClipboardCheck, Compass, Flame, ListPlus, RefreshCw, Sparkles, Star, Undo2, Navigation, Eye, PlusCircle, UserMinus, CalendarDays, PlaneLanding } from "lucide-react";
+import { Settings, BadgeCheck, Contact, LayoutGrid, MessagesSquare, Trash2, Users, MapPinned, PanelBottom, ArrowUpDown, BellRing, CircleHelp, ClipboardCheck, Compass, Flame, ListPlus, RefreshCw, Sparkles, Star, Undo2, Navigation, Eye, PlusCircle, UserMinus, CalendarDays, PlaneLanding, ShieldAlert, Map as MapIcon } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -23,6 +23,13 @@ type DevFeature = "lounge";
 const PUBLIC_FEATURES = new Set<DevFeature>([]);
 
 const ALL_RELEASES: Release[] = [
+  {
+    id: 19, date: "October 29, 2026",
+    items: [
+      { icon: ShieldAlert, title: "Seeing a ramp check? Report it", body: "Help other pilots. If FAA, CBP, TSA or local inspectors abroad are doing ramp checks, tap Report ramp check on the field card on Home or in FBO intel, then tap who's checking. It's one tap, and who reported stays private. The next crew in gets their paperwork ready.", to: "/" },
+      { icon: MapIcon, title: "Ramp check map, worldwide", body: "See where crews have reported ramp checks in the US and abroad: red is active in the last 48 hours, amber is a hot spot. Filter by agency and by the last 7, 30 or 90 days or the past year.", to: "/ramp-checks" },
+    ],
+  },
   {
     id: 18, date: "October 26, 2026", trip: true,
     items: [

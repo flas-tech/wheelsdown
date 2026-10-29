@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
-import { ArrowLeft, ArrowRight, Bell, Check, ClipboardList, Coffee, Heart, Hotel, List, Map as MapIcon, MapPin, MessageSquare, PlaneLanding, Search, Share2, Smartphone, Sparkles, Star, UserPlus, UserRound, Users, UtensilsCrossed, CalendarDays, Navigation, PlusCircle, MessagesSquare, ThumbsUp } from "lucide-react";
+import { ArrowLeft, ArrowRight, Bell, Check, ClipboardList, Coffee, Heart, Hotel, List, Map as MapIcon, MapPin, MessageSquare, PlaneLanding, Search, Share2, Smartphone, Sparkles, Star, UserPlus, UserRound, Users, UtensilsCrossed, ShieldAlert, CalendarDays, Navigation, PlusCircle, MessagesSquare, ThumbsUp } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { POINTS, TIERS } from "@shared/tiers";
 import { Insignia } from "@/lib/auth";
@@ -97,6 +97,16 @@ const STEPS: { key: string; title: string; body: string; art: React.ReactNode; e
       <div className="mt-1.5 flex items-center gap-1">{[1, 2, 3, 4, 5].map((i) => <Star key={i} className={cn("h-5 w-5", i <= 4 ? "fill-primary text-primary" : "text-white/25")} />)}<span className="ml-2 text-xs text-white/60">+{POINTS.review} pts</span></div>
       <div className="mt-2.5 flex flex-wrap gap-1.5"><span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-400/20 px-2.5 py-1 text-[11px] font-semibold text-emerald-300"><Sparkles className="h-3.5 w-3.5" />First to rate an AI pick +10</span>
         <span className="inline-flex items-center gap-1.5 rounded-full border border-orange-400/60 px-2.5 py-1 text-[11px] font-semibold text-orange-300"><GoAroundIcon className="h-3.5 w-3.5" />Go around</span></div>
+    </div>,
+  },
+  {
+    key: "ramp", title: "Seeing a ramp check? Report it",
+    body: "Help the next crew in. If FAA, CBP, TSA or local inspectors abroad are doing ramp checks, tap Report ramp check on the field card on Home or in FBO intel, then tap who's checking. It's one tap, and who reported stays private. The ramp check map shows hot spots worldwide.",
+    art: <div className="space-y-2">
+      <div className="flex items-center gap-2 rounded-xl bg-white/[0.06] px-3 py-2 ring-1 ring-white/10"><ShieldAlert className="h-4 w-4 text-red-300" /><span className="flex-1 text-xs"><span className="font-semibold text-red-300">FAA ramp checks</span> <span className="text-white/60">reported 20 min ago</span></span><span className="font-code text-xs font-bold text-primary">KTEB</span></div>
+      <div className="grid grid-cols-2 gap-1.5">{["FAA", "CBP / Customs", "TSA", "Local aviation authority"].map((t, k) => (
+        <span key={t} className={cn("rounded-lg px-2 py-1.5 text-center text-[11px] font-semibold", k === 0 ? "bg-primary text-[#0B1222]" : "bg-white/[0.06] ring-1 ring-white/10")}>{t}</span>))}</div>
+      <p className="text-center text-[10px] text-white/60">Tap who's checking. Posted as happening now.</p>
     </div>,
   },
   {
