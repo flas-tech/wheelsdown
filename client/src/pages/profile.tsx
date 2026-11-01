@@ -459,6 +459,7 @@ function TripCardAdmin({ adminOnly, admin }: { adminOnly: boolean; admin: boolea
       {admin && <><p className="mt-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Layover tools</p><SimpleAudienceSwitch api="/api/admin/layover-tools" testId="layover-tools" onText="On: members see the crew hotel sheet and shuttle call, 10-day forecast and TAF, abroad card, and FAA delay alerts." offText="Off: only admins see the hotel sheet, forecast, abroad card and delay alerts." confirmOn="Open layover tools to all members?" confirmOff="Hide layover tools from members? Hotel details are kept." extra={(d) => `${d.votes} hotel${d.votes === 1 ? "" : "s"} with crew details.`} /></>}
       {admin && <><p className="mt-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Crew network</p><SimpleAudienceSwitch api="/api/admin/crew-network" testId="crew-network" onText="On: members get overlap alerts with My Crew, trip crew chat and the family link." offText="Off: only admins see overlaps, trip crew chat and the family link. Family links of members stop working." confirmOn="Open crew network to all members?" confirmOff="Hide crew network from members? Members' family links stop working." extra={(d) => `${d.votes} member${d.votes === 1 ? "" : "s"} using overlaps or a family link.`} /></>}
       {admin && <><p className="mt-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Schedule tools</p><SimpleAudienceSwitch api="/api/admin/schedule-tools" testId="schedule-tools" onText="On: members can import trips (paste or calendar file), add trip sheets to their calendar with alarms, keep trip sheets offline, and use the duty and rest calculator." offText="Off: only admins see trip import, calendar alarms, offline trip sheets and the duty calculator." confirmOn="Open schedule tools to all members?" confirmOff="Hide schedule tools from members? Offline copies on their devices are removed next time they open the app." /></>}
+      {admin && <><p className="mt-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Guest limits</p><SimpleAudienceSwitch api="/api/admin/guest-limits" testId="guest-limits" label="Limit what guests see" onText="On: people without an account see listings, ratings and the first 2 crew notes per place. Crew tips, addresses, websites, the rest of the notes, ramp check details and crew profiles ask them to sign up." offText="Off: people without an account see everything members can read." confirmOn="Limit what people without an account can see?" confirmOff="Show guests everything again?" /></>}
       {admin && <><p className="mt-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Earlier switch: My Crew, Crew Up, Lounge</p><LaunchSwitch /></>}
     </section>
   );
@@ -487,14 +488,14 @@ function TripSwitch() {
 }
 
 /** Admins: a plain admins/members switch for a preview feature (rank mascots, Crews' Choice). Instant, no deploy. */
-function SimpleAudienceSwitch({ api, testId, onText, offText, confirmOn, confirmOff, extra }: { api: string; testId: string; onText: string; offText: string; confirmOn: string; confirmOff: string; extra?: (d: { votes: number; people: number }) => string }) {
+function SimpleAudienceSwitch({ api, testId, onText, offText, confirmOn, confirmOff, extra, label }: { api: string; testId: string; onText: string; offText: string; confirmOn: string; confirmOff: string; extra?: (d: { votes: number; people: number }) => string; label?: string }) {
   const { toast } = useToast();
   const q = useQuery<{ audience: "admins" | "members"; votes: number; people: number }>({ queryKey: [api], queryFn: async () => (await apiRequest("GET", api)).json(), retry: false });
   const m = useMutation({
     mutationFn: async (audience: "admins" | "members") => (await apiRequest("PUT", api, { audience })).json(),
     onSuccess: (r: { audience: string }) => {
       for (const k of [api, "/api/features"]) queryClient.invalidateQueries({ queryKey: [k] });
-      toast({ title: r.audience === "members" ? "Open to members" : "Back to admins only" });
+      toast({ title: label ? (r.audience === "members" ? "On" : "Off") : r.audience === "members" ? "Open to members" : "Back to admins only" });
     },
     onError: (e: Error) => toast({ title: "Couldn't change it", description: e.message, variant: "destructive" }),
   });
@@ -502,7 +503,7 @@ function SimpleAudienceSwitch({ api, testId, onText, offText, confirmOn, confirm
   const live = q.data.audience === "members";
   return (
     <div className="mt-1 flex items-start justify-between gap-3 pt-1" data-testid={`row-${testId}-switch`}>
-      <span><span className="block text-xs font-semibold">Open to members</span><span className="block text-[11px] text-muted-foreground">{live ? onText : offText}{extra ? ` ${extra(q.data)}` : ""}</span></span>
+      <span><span className="block text-xs font-semibold">{label || "Open to members"}</span><span className="block text-[11px] text-muted-foreground">{live ? onText : offText}{extra ? ` ${extra(q.data)}` : ""}</span></span>
       <Switch checked={live} disabled={m.isPending} onCheckedChange={(v) => { if (window.confirm(v ? confirmOn : confirmOff)) m.mutate(v ? "members" : "admins"); }} data-testid={`switch-${testId}`} aria-label={`Open ${testId} to members`} />
     </div>
   );

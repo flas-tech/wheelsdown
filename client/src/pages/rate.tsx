@@ -11,7 +11,7 @@ import { POINTS } from "@shared/tiers";
 import type { RateItem } from "@shared/layover";
 import type { SpotWithStats } from "@shared/schema";
 
-export default function RatePage() { return <PreviewGate><Rate /></PreviewGate>; }
+export default function RatePage() { return <PreviewGate pitch="rate"><Rate /></PreviewGate>; }
 
 const CAT_ICON: Record<string, typeof Utensils> = { eat: Utensils, do: Compass, stay: BedDouble, fbo: PlaneLanding, car: Car };
 const WHY_ICON = { checkin: PlaneLanding, visit: MapPin, briefing: Plane, favorite: Heart } as const;

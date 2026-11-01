@@ -1,3 +1,4 @@
+import { guestLimits } from "./guestLimits";
 import type { Express, Request, Response, NextFunction } from "express";
 import { rateLimit } from "express-rate-limit";
 import { sql } from "drizzle-orm";
@@ -89,6 +90,7 @@ export function registerCheckins(app: Express, opts: { requireUser: Mw; userOf: 
   });
   app.get("/api/crew/:id/map", async (req, res) => {
     const id = Number(req.params.id);
+    if (!(await opts.userOf(req)) && (await guestLimits.audience()) === "members") return res.json({ added: [], checkins: [] });
     const pub = (await storage.publicUsers()).find((u) => u.id === id);
     if (!pub || pub.anonymous) return res.json({ added: [], checkins: [] });
     res.json({ added: await addedDots(id), checkins: [] }); // check-ins stay private

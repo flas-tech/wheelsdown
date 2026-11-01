@@ -1,3 +1,4 @@
+import { GuestLock } from "@/lib/guest";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { CrewButton } from "@/lib/mycrew";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -29,7 +30,7 @@ export default function CrewProfilePage() {
   const [, params] = useRoute("/crew/:id");
   const { me, openAuth } = useAuth();
   const { toast } = useToast();
-  const { data, isLoading, isError } = useQuery<CrewProfile>({ queryKey: ["/api/crew", params?.id, me?.id ?? 0], queryFn: async () => (await apiRequest("GET", `/api/crew/${params?.id}`)).json() });
+  const { data, isLoading, isError, error } = useQuery<CrewProfile>({ retry: false, queryKey: ["/api/crew", params?.id, me?.id ?? 0], queryFn: async () => (await apiRequest("GET", `/api/crew/${params?.id}`)).json() });
   const follow = useMutation({
     mutationFn: async (on: boolean) => (await apiRequest(on ? "POST" : "DELETE", `/api/crew/${params?.id}/follow`)).json(),
     onSuccess: (r: { isFollowing: boolean; followers: number; following: number }) => {
@@ -40,6 +41,7 @@ export default function CrewProfilePage() {
   });
 
   if (isLoading) return <div className="space-y-4"><Skeleton className="h-48 rounded-3xl" /><Skeleton className="h-24 rounded-2xl" /></div>;
+  if (isError && !me && /guestLimited|Sign in to see crew profiles/.test(String(error))) return <div className="py-8"><GuestLock text="Crew profiles are for members. Sign up free to see this crew member's picks and notes." reason="Create a free account to see crew profiles." testId="guest-lock-profile" /></div>;
   if (isError || !data) return <p className="text-sm text-muted-foreground">This crew member isn't available. <Link href="/crew" className="text-primary underline">Back to the leaderboard</Link></p>;
   const { user: u, counts } = data;
   const isMe = me?.id === u.id;

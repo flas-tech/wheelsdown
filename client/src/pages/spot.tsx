@@ -1,3 +1,4 @@
+import { GuestLock } from "@/lib/guest";
 import { useEffect, useState } from "react";
 import { HotelSheetCard } from "@/lib/layoverTools";
 import { AiAddedTag, FboRecTag, PickTag } from "@/lib/aiPicks";
@@ -72,10 +73,14 @@ export default function SpotPage() {
   if (isLoading) return <div className="space-y-4"><Skeleton className="h-8 w-40" /><Skeleton className="h-40 rounded-2xl" /><Skeleton className="h-24 rounded-2xl" /></div>;
   if (isError || !data) return <p className="text-sm text-muted-foreground">This spot isn't available. <Link href="/" className="text-primary underline">Back to search</Link></p>;
 
-  const { spot, reviews: allReviews, mod, fbo: fboRecs = [] } = data;
+  const { spot, reviews: allReviews0, mod, fbo: fboRecs = [] } = data;
+  const allReviews = allReviews0.filter((r) => !(r as any).guestLocked); // guest limits: the rest are ratings only (they still count in the chart)
+  const lockedNotes = allReviews0.length - allReviews.length;
+  const lock = (spot as any).guestLocked as { tip: boolean; address: boolean; website: boolean } | undefined;
+  const lockedBits = lock ? [lock.tip && "the crew tip", lock.address && "the address", lock.website && "the website"].filter(Boolean) as string[] : [];
   const went = () => noteVisit({ id: spot.id, name: spot.name, icao: spot.icao });
   const myReview = me ? allReviews.find((r) => r.userId === me.id && r.status !== "rejected") : undefined; // one rating per member per place
-  const reviews = allReviews.filter((r) => r.status === "live"); // the author's own unpublished ratings are listed but don't count
+  const reviews = allReviews0.filter((r) => r.status === "live"); // the author's own unpublished ratings are listed but don't count
   const M = CAT_META[spot.category as Category];
   const tags = parseTags(spot.tags);
   const dist = Object.fromEntries([5, 4, 3, 2, 1, 0].map((n) => [n, reviews.filter((r) => r.rating === n).length]));
@@ -146,6 +151,7 @@ export default function SpotPage() {
             <a className="hover:text-foreground underline-offset-2 hover:underline" target="_blank" rel="noopener noreferrer" href={`https://maps.apple.com/?q=${encodeURIComponent(spot.name + " " + spot.address)}`} onClick={() => { trackOut("map"); went(); }} data-testid="link-map">{spot.address}</a></p>}
           {spot.lat != null && spot.lng != null && <p className="flex items-center gap-2"><MapIcon className="h-4 w-4" /><Link href={`/map?cat=${spot.category}&icao=${spot.icao}&spot=${spot.id}`} className="font-medium text-primary hover:underline" data-testid="link-see-on-map">See on the {spot.icao} map</Link></p>}
           {spot.website && <p className="flex items-center gap-2"><Globe className="h-4 w-4" /><a className="hover:text-foreground hover:underline" target="_blank" rel="noopener noreferrer" href={spot.website} onClick={() => { trackOut("website"); went(); }} data-testid="link-website">Website</a></p>}
+          {lockedBits.length > 0 && <GuestLock text={`Sign up to see ${lockedBits.length > 1 ? lockedBits.slice(0, -1).join(", ") + " and " + lockedBits[lockedBits.length - 1] : lockedBits[0]}.`} reason={`Create a free account to see crew tips, addresses and every crew note.`} testId="guest-lock-details" />}
           {spot.category === "do" && <p className="flex items-center gap-2"><Clock className="h-4 w-4" />Time estimate includes ~2 min/mile each way from the field</p>}
         </div>
         {tags.length > 0 && (
@@ -193,7 +199,7 @@ export default function SpotPage() {
             ))}
           </div>
         </div>
-        {allReviews.length === 0 && <p className="text-sm text-muted-foreground">No reviews yet. Be the first: rate it below.</p>}
+        {allReviews0.length === 0 && <p className="text-sm text-muted-foreground">No reviews yet. Be the first: rate it below.</p>}
         {[...allReviews].sort((a, b) => (b.up - b.down) - (a.up - a.down) || b.createdAt - a.createdAt).map((r) => (
           editing === r.id ? <ReviewForm key={r.id} spotId={spot.id} category={spot.category} edit={r} onDone={() => setEditing(null)} /> :
           <article key={r.id} className="rounded-2xl border border-card-border bg-card p-4" data-testid={`review-${r.id}`}>
@@ -218,6 +224,7 @@ export default function SpotPage() {
             </div>
           </article>
         ))}
+        {lockedNotes > 0 && <GuestLock text={`${lockedNotes} more crew ${lockedNotes === 1 ? "note" : "notes"} here. Sign up free to read ${lockedNotes === 1 ? "it" : "them all"}.`} reason="Create a free account to read every crew note." testId="guest-lock-notes" />}
       </section>
 
       <div id="rate" className="scroll-mt-24">{myReview

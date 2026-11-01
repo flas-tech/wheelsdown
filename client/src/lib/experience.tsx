@@ -27,15 +27,15 @@ const subscribe = (cb: () => void) => {
   return () => { window.removeEventListener(EVENT, cb); window.removeEventListener("storage", cb); };
 };
 
-export type Features = { experience: "admins" | "members"; trip: "admins" | "members"; rankArt: "admins" | "members"; crewsChoice: "admins" | "members"; rentalCars: "admins" | "members"; rampChecks: "admins" | "members"; layoverTools: "admins" | "members"; crewNetwork: "admins" | "members"; scheduleTools: "admins" | "members"; ready: boolean };
+export type Features = { experience: "admins" | "members"; trip: "admins" | "members"; rankArt: "admins" | "members"; crewsChoice: "admins" | "members"; rentalCars: "admins" | "members"; rampChecks: "admins" | "members"; layoverTools: "admins" | "members"; crewNetwork: "admins" | "members"; scheduleTools: "admins" | "members"; guestLimits: "admins" | "members"; ready: boolean };
 /** Which parts of the app are open to members. Fails closed: if it can't load, members keep the classic app. */
 export function useFeatures(): Features {
-  const { data, isFetched } = useQuery<{ experience: string; trip?: string; rankArt?: string; crewsChoice?: string; rentalCars?: string; rampChecks?: string; layoverTools?: string; crewNetwork?: string; scheduleTools?: string }>({
+  const { data, isFetched } = useQuery<{ experience: string; trip?: string; rankArt?: string; crewsChoice?: string; rentalCars?: string; rampChecks?: string; layoverTools?: string; crewNetwork?: string; scheduleTools?: string; guestLimits?: string }>({
     queryKey: ["/api/features"], enabled: !IS_STATIC, staleTime: 60_000, retry: 1,
     queryFn: async () => (await apiRequest("GET", "/api/features")).json(),
   });
   return { experience: data?.experience === "members" ? "members" : "admins", trip: data?.trip === "members" ? "members" : "admins",
-    rankArt: data?.rankArt === "members" ? "members" : "admins", crewsChoice: data?.crewsChoice === "members" ? "members" : "admins", rentalCars: data?.rentalCars === "members" ? "members" : "admins", rampChecks: data?.rampChecks === "members" ? "members" : "admins", layoverTools: data?.layoverTools === "members" ? "members" : "admins", crewNetwork: data?.crewNetwork === "members" ? "members" : "admins", scheduleTools: data?.scheduleTools === "members" ? "members" : "admins", ready: IS_STATIC || isFetched };
+    rankArt: data?.rankArt === "members" ? "members" : "admins", crewsChoice: data?.crewsChoice === "members" ? "members" : "admins", rentalCars: data?.rentalCars === "members" ? "members" : "admins", rampChecks: data?.rampChecks === "members" ? "members" : "admins", layoverTools: data?.layoverTools === "members" ? "members" : "admins", crewNetwork: data?.crewNetwork === "members" ? "members" : "admins", scheduleTools: data?.scheduleTools === "members" ? "members" : "admins", guestLimits: data?.guestLimits === "members" ? "members" : "admins", ready: IS_STATIC || isFetched };
 }
 /** The new landing page and everything on it: super-user accounts always; signed-in members once it's launched. */
 export function usePreview() { return usePreviewState().on; }
@@ -68,6 +68,8 @@ export function useRampChecks() { const { me } = useAuth(); const f = useFeature
 /** Flight Crew View catch-up batches, each admins first: layover tools, crew network, schedule tools. */
 export function useLayoverTools() { const { me } = useAuth(); const f = useFeatures(); return { on: !!me?.isAdmin || f.layoverTools === "members", adminOnly: !!me?.isAdmin && f.layoverTools !== "members" }; }
 export function useCrewNetwork() { const { me } = useAuth(); const f = useFeatures(); return { on: !!me && (!!me.isAdmin || f.crewNetwork === "members"), adminOnly: !!me?.isAdmin && f.crewNetwork !== "members" }; }
+/** Someone without an account, with guest limits on: they get a preview and a sign-up card for the rest. */
+export function useGuestLimited() { const { me, loading } = useAuth(); const f = useFeatures(); return !loading && !me && f.guestLimits === "members"; }
 export function useScheduleTools() { const { me, loading } = useAuth(); const f = useFeatures(); return { on: !!me && (!!me.isAdmin || f.scheduleTools === "members"), adminOnly: !!me?.isAdmin && f.scheduleTools !== "members", ready: !loading && !!me && f.ready }; }
 /** The listing types this viewer can browse and add, in display order. */
 export function useCategories(): Category[] { const cars = useRentalCars().on; return (Object.keys(CAT_META) as Category[]).filter((c) => c !== "car" || cars); }

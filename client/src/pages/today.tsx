@@ -47,7 +47,7 @@ function useClock() {
   useEffect(() => { const i = setInterval(() => t((n) => n + 1), 20_000); return () => clearInterval(i); }, []);
 }
 
-export default function TodayPage() { return <PreviewGate><Today /></PreviewGate>; }
+export default function TodayPage() { return <PreviewGate pitch="today"><Today /></PreviewGate>; }
 
 function Today() {
   useClock();

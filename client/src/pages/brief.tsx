@@ -1,3 +1,4 @@
+import { GuestLock } from "@/lib/guest";
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { TripCrewChat } from "@/lib/crewNetwork";
 import { ImportTripCard, TripScheduleCard } from "@/lib/schedule";
@@ -818,6 +819,7 @@ export function SharedBriefPage() {
   const [, params] = useRoute("/b/:token");
   const { data: brief, isLoading, isError, error } = useQuery<BriefFull>({ queryKey: ["/api/shared/briefings", params?.token], retry: false, refetchInterval: aiPolling });
   const trip = useTrip(); const w = sheetWords(trip);
+  const { me } = useAuth();
   groupPins(trip);
   if (isLoading) return <div className="space-y-4"><Skeleton className="h-8 w-40" /><Skeleton className="h-64 rounded-2xl" /></div>;
   if (isError || !brief) return <p className="text-sm text-muted-foreground">{errText(error) || "This briefing isn't available."} <Link href="/" className="text-primary underline">Go to Wheelsdown</Link></p>;
@@ -828,6 +830,7 @@ export function SharedBriefPage() {
         <h1 className="text-xl font-semibold leading-tight" data-testid="text-brief-title">{brief.title || w("Trip briefing")}</h1>
         <p className="font-code text-sm font-bold tracking-wide">{routeText(brief)}</p>
       </header>
+      {!me && <GuestLock text="Planning your own trip? Wheelsdown is free for crew: build trip sheets, save picks and read every crew note." reason="Create a free account to build your own trip sheets." testId="guest-lock-shared-brief" />}
       <ExportBar brief={brief} />
       <BriefOverview brief={brief} />
       {brief.stops.map((st, i) => {

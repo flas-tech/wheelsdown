@@ -21,7 +21,7 @@ import { MEETUP_PRIVACY, MEETUP_RULES, meetupNoteProblem, type Meetup, type Meet
 import type { SpotWithStats } from "@shared/schema";
 import { stopPins, type BriefFull } from "@/lib/briefPdf";
 
-export default function MeetupPage() { return <PreviewGate><MeetupBoard /></PreviewGate>; }
+export default function MeetupPage() { return <PreviewGate pitch="meetup"><MeetupBoard /></PreviewGate>; }
 
 const refresh = () => queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith("/api/preview/") });
 

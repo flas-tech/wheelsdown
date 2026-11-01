@@ -1,12 +1,17 @@
 // Shared bits for the landing-page features (Layover Today, Crew Up, Rate a spot, My Crew, Crew Lounge).
 import type { ReactNode } from "react";
-import { useAdminOnly, usePreviewState } from "@/lib/experience";
+import { useAdminOnly, usePreviewState, useFeatures } from "@/lib/experience";
+import { useAuth } from "@/lib/auth";
+import { GuestPitch, type PitchKey } from "@/lib/guest";
 import NotFound from "@/pages/not-found";
 
 /** Before launch, members get the same Not found page as an unknown address (the server answers 404 too). */
-export function PreviewGate({ children }: { children: ReactNode }) {
+export function PreviewGate({ children, pitch }: { children: ReactNode; pitch?: PitchKey }) {
   const { on, ready } = usePreviewState();
+  const { me } = useAuth(); const f = useFeatures();
   if (!ready) return null;
+  // no account, once the pages are open to members: say what it is and offer an account instead of Not found
+  if (!on && !me && pitch && f.ready && f.experience === "members") return <GuestPitch k={pitch} />;
   if (!on) return <NotFound />;
   return <>{children}</>;
 }

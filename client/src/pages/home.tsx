@@ -1,3 +1,4 @@
+import { GuestLock, countGuestSearch, guestSearches } from "@/lib/guest";
 import { createContext, lazy, Suspense, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { GuestJoinPrompt } from "@/lib/guestPrompt";
 import { useQuery } from "@tanstack/react-query";
@@ -59,7 +60,7 @@ export const useSearch = () => useContext(SearchCtx);
 
 const SpotsMap = lazy(() => import("@/lib/spotsMap"));
 
-type SearchResp = { legs: { code: string; airport: Airport | null }[]; spots: SpotWithStats[] };
+type SearchResp = { legs: { code: string; airport: Airport | null }[]; spots: SpotWithStats[]; guestLimited?: boolean };
 
 function useDebounced<T>(v: T, ms = 300) {
   const [d, setD] = useState(v);
@@ -230,6 +231,11 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
     queryFn: async () => (await apiRequest("GET", `/api/search?route=${encodeURIComponent(route)}`)).json(),
   });
 
+  // guest limits: count route searches this visit; after a few, the sign-up card asks a little louder
+  const guestLimited = !!data?.guestLimited;
+  const [guestN, setGuestN] = useState(() => guestSearches());
+  const resolved = guestLimited && !!data?.legs?.length && data.legs.every((l) => l.airport) ? data.legs.map((l) => l.airport!.icao).join(" ") : "";
+  useEffect(() => { if (resolved) setGuestN(countGuestSearch()); }, [resolved]);
   const showTime = cat === "do";
   const showPace = cat === "eat";
   const showCost = cat !== "fbo";
@@ -524,6 +530,10 @@ function Results({ routeRef }: { routeRef: React.RefObject<HTMLInputElement> }) 
       {s.view === "list" && <AdBanner slot="top" icaos={icaos} />}
 
       {cat === "fbo" && s.view === "list" && icaos.length > 0 && <RampChecks icaos={icaos.filter((v, i, x) => x.indexOf(v) === i)} />}
+
+      {guestLimited && route && filtered.length > 0 && <GuestLock testId="guest-lock-search"
+        text={guestN >= 3 ? `You've planned ${guestN} routes. Make it official: a free account saves trip sheets and opens every crew tip, address and note.` : "Preview: sign up free to see crew tips, addresses and every crew note, and to save trip sheets."}
+        reason="Create a free account to see crew tips, addresses and every crew note." className={guestN >= 3 ? "border-solid bg-primary/10" : undefined} />}
 
       <div className="flex items-center justify-between pt-1">
         <p className="text-sm text-muted-foreground" data-testid="text-result-count">

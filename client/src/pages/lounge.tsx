@@ -1,7 +1,8 @@
 // Crew Lounge: discussion board for crews. Admins only until the launch switch opens it (lounge_audience = members);
 // also shown as a tab in the admin console for super-user accounts.
-import { usePreviewState } from "@/lib/experience";
+import { usePreviewState, useFeatures } from "@/lib/experience";
 import NotFound from "@/pages/not-found";
+import { GuestPitch } from "@/lib/guest";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, EyeOff, Eye, Flag, Lock, LockOpen, MessageSquare, Pencil, Pin, PinOff, Plus, Search, ThumbsUp, Trash2, TriangleAlert, Loader2, Shield, CheckCircle2 } from "lucide-react";
@@ -362,7 +363,9 @@ function ReportsView({ onBack, onOpen }: { onBack: () => void; onOpen: (threadId
 /** /lounge: its own page for the Crew Lounge experience (admins only until the launch switch is on; the server 404s for everyone else). */
 export default function LoungePage() {
   const { on, ready } = usePreviewState();
+  const { me } = useAuth(); const f = useFeatures();
   if (!ready) return null;
+  if (!on && !me && f.ready && f.experience === "members") return <GuestPitch k="lounge" />;
   if (!on) return <NotFound />;
   return <LoungePanel />;
 }

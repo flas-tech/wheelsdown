@@ -38,6 +38,7 @@ import { registerRampChecks, rampChecksAudience } from "./rampChecks";
 import { registerLayoverTools } from "./layoverTools";
 import { registerCrewNetwork, forgetCrewNetwork } from "./crewNetwork";
 import { registerScheduleTools } from "./scheduleTools";
+import { guestLimits, limitGuest, guestSpot, guestReviews } from "./guestLimits";
 import { registerCampaigns, campaignVisit, campaignSignup, campaignReport } from "./campaigns";
 import { dayKey } from "./metrics";
 import { SERVICES } from "@shared/services";
@@ -296,14 +297,18 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const results = codes.length ? (icaos.length ? await storage.searchSpots(icaos, false, v, ai) : []) : await storage.searchSpots([], false, v, ai);
     if (codes.length) { track(req, "search"); for (const i of Array.from(new Set(icaos))) track(req, "search_airport", i); }
     const recs = await fboRecMap(results.map((s: any) => s.id)).catch(() => new Map());
-    res.json({ legs, spots: recs.size ? results.map((s: any) => (recs.has(s.id) ? { ...s, fboRecs: recs.get(s.id) } : s)) : results });
+    const out = recs.size ? results.map((s: any) => (recs.has(s.id) ? { ...s, fboRecs: recs.get(s.id) } : s)) : results;
+    const guest = !(await userOf(req)), limited = guest && (await limitGuest(null));
+    res.json({ legs, spots: guest ? out.map((s: any) => guestSpot(s, limited)) : out, ...(limited ? { guestLimited: true } : {}) });
   });
 
   app.get("/api/highlights", async (req, res) => {
     const cat = req.query.category ? String(req.query.category) : null;
     // "Most visited": crew ratings plus check-ins at each listing
     const visits = new Map<number, number>(((await storage.checkinCounts().catch(() => [])) as { spotId: number; n: number }[]).map((r) => [r.spotId, r.n]));
-    res.json(buildHighlights(await storage.searchSpots([], false, await voterOf(req)), { category: cat, visits }));
+    const guest = !(await userOf(req)), limited = guest && (await limitGuest(null));
+    const all = await storage.searchSpots([], false, await voterOf(req));
+    res.json(buildHighlights(guest ? all.map((s: any) => guestSpot(s, limited)) : all, { category: cat, visits }));
   });
 
   registerSimilar(app, { userOf, isSuperAdmin });
@@ -324,7 +329,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       mod = { status: s.status, state: raw?.modState || "", note: (raw?.modNote || "").replace(/^\[[a-z_]+\]\s*/, ""), pendingEdit: edit };
     }
     const base = APP_URL || `${req.protocol}://${req.get("host")}`;
-    res.json({ spot: s, reviews: await storage.listReviewsWithVotes(s.id, v), mod, fbo: await fboRecsForSpot(s.id, base) });
+    const reviews = await storage.listReviewsWithVotes(s.id, v);
+    if (!viewer) { // no account: trimmed, and with guest limits on, a preview (crew tip, address, website and most notes wait for sign-up)
+      const limited = await limitGuest(null);
+      return res.json({ spot: guestSpot(s as any, limited), reviews: guestReviews(reviews as any[], limited), mod: null, fbo: limited ? [] : await fboRecsForSpot(s.id, base), ...(limited ? { guestLimited: true } : {}) });
+    }
+    res.json({ spot: s, reviews, mod, fbo: await fboRecsForSpot(s.id, base) });
   });
   // "Welcome from <FBO>" prompt in the crew app after a QR scan (fbo=<slug> in the link)
   app.get("/api/fbo-public/:slug", async (req, res) => {
@@ -583,6 +593,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // ---------- crew profiles ----------
   app.get("/api/crew/:id", async (req, res) => {
     const viewer = await userOf(req);
+    if (await limitGuest(viewer)) return res.status(401).json({ message: "Sign in to see crew profiles.", guestLimited: true });
     const p = await storage.crewProfile(id(req), viewer?.id);
     if (p && !(await carsFor(viewer, isSuperAdmin))) { p.spots = p.spots.filter((x: any) => x.category !== "car"); const cars = await storage.carSpotIds(); p.reviews = p.reviews.filter((x: any) => !cars.has(x.spotId)); }
     p ? res.json(p) : res.status(404).json({ message: "Not found" });
@@ -766,6 +777,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   registerRampChecks(app, { userOf, isSuperAdmin, requireAdmin, requireUser, resolveCode: (c) => storage.resolveCode(c) as any }); // ramp check reports (FBO intel), admins first
   registerLayoverTools(app, { userOf, isSuperAdmin, requireAdmin, requireUser });
   registerCrewNetwork(app, { userOf, isSuperAdmin, requireAdmin, requireUser });
+  guestLimits.register(app, "/api/admin/guest-limits", requireAdmin); // off ("admins") until an admin turns it on in Settings
   registerScheduleTools(app, { isSuperAdmin, requireAdmin, requireUser }); // trip import, calendar file with alarms; duty calculator is client-side; // overlap alerts, family link; trip crew chat lives in dm.ts // hotel sheet, forecast, abroad card, NAS delay alerts; admins first
   registerRentalCars(app, { userOf, isSuperAdmin, requireAdmin }); // rental cars: a fifth listing type, admins-only until rental_cars_audience = members
   registerTrip(app, { userOf, isSuperAdmin, requireAdmin, requireUser }); // 4-tab nav, Home trip card, AI-added listings (trip_audience: admins until opened) // push notifications (push_audience: admins until opened)

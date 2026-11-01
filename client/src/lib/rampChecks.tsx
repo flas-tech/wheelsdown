@@ -128,6 +128,7 @@ function Report({ r }: { r: RampReport }) {
     <li className="border-t border-border py-2 first:border-t-0" data-testid={`row-ramp-${r.id}`}>
       <p className="text-sm"><span className="font-semibold">{agencyLabel(r.agency)}</span> · {ago(r.seenAt)}{r.where && <> · {r.where}</>}</p>
       {r.note && <p className="text-xs text-muted-foreground">{r.note}</p>}
+      {(r as any).guestLocked && <button type="button" onClick={() => requireAuth(undefined, "Create a free account to see where on the field and the crew's notes.")} className="text-xs font-semibold text-primary" data-testid={`button-ramp-guest-${r.id}`}>Sign up free to see where on the field and the crew's note</button>}
       <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
         {!r.mine && <button type="button" onClick={() => requireAuth(() => confirm.mutate(), "Sign in to confirm ramp check reports.")} className={cn("inline-flex items-center gap-1 font-semibold", r.confirmed ? "text-primary" : "hover:text-foreground")} data-testid={`button-ramp-confirm-${r.id}`}>
           {r.confirmed && <Check className="h-3 w-3" />}Seen it too{r.confirms > 0 && ` · ${r.confirms}`}</button>}

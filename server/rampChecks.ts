@@ -3,6 +3,7 @@
  * checks. Admins first behind app_settings ramp_checks_audience. Members see reports without the reporter's name;
  * admins see it for moderation and can remove any report. Notes must not identify people (stated on the form).
  */
+import { limitGuest } from "./guestLimits";
 import type { Express, Request, Response, NextFunction } from "express";
 import { sql } from "drizzle-orm";
 import { db } from "./db";
@@ -68,7 +69,10 @@ export function registerRampChecks(app: Express, o: {
     const u = await o.userOf(req);
     if (!(await allowed(u))) return res.json({ on: false, airports: [] });
     const icaos = String(req.query.icaos || "").toUpperCase().split(/[ ,]+/).filter((x) => ICAO.test(x)).slice(0, 12);
-    res.json({ on: true, airports: await summary(Array.from(new Set(icaos)), u) });
+    const airports = await summary(Array.from(new Set(icaos)), u);
+    if (await limitGuest(u)) // no account: who and when stay, where on the field and the crew note wait for sign-up
+      return res.json({ on: true, guestLimited: true, airports: airports.map((a: any) => ({ ...a, reports: a.reports.map((r: any) => ({ ...r, where: "", note: "", guestLocked: !!(r.where || r.note) })) })) });
+    res.json({ on: true, airports });
   });
   /** Fields with the most reports in the last 30 days, for the FBO intel start screen. */
   app.get("/api/ramp-checks/hot", async (req, res) => {

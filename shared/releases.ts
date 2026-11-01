@@ -2,6 +2,13 @@
 export type Release = { date: string; sha?: string; title: string; notes: string[] };
 
 export const RELEASES: Release[] = [
+  { date: "2026-11-01", title: "Guest limits: sign up to see crew tips, every crew note and crew profiles (switch, off at first)", notes: [
+    "From Patrick's guest-vs-member review (feedback #75). Behind app_settings guest_limits_audience: admins = off (as before), members = on; Settings > Guest limits.",
+    "On, people without an account still search routes and see listings, ratings, the map and the first 2 crew notes per place (most helpful first). Crew tips, addresses, websites, FBO picks on a listing, the other notes (ratings still count in the chart), ramp check location and notes, and crew profiles ask them to sign up. Enforced on the server.",
+    "Always: Layover Today, Crew Up, Rate a spot, My Crew and Crew Lounge show guests what the page is and a Create free account button instead of Not found; shared trip sheets get a sign-up line; guests no longer receive moderation fields (modState, placeRef) or anonymous authors' account ids.",
+    "With limits on, search results show a sign-up line that gets louder after 3 routes in a visit.",
+    "Rollback: turn the switch off, or redeploy 078e791.",
+  ] },
   { date: "2026-10-29", title: "Schedule tools: trip import, calendar alarms, offline trip sheets, duty and rest calculator (admins first)", notes: [
     "Flight Crew View catch-up, batch 3. All behind app_settings schedule_tools_audience (default admins); Settings > Schedule tools switch.",
     "Import a trip (Plan tab): paste schedule text or open a calendar file (.ics); codes are checked against the airport list, then you review stops, dates and layovers before the trip sheet is created.",

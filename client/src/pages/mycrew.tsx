@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 type Tab = "crew" | "requests" | "find" | "privacy";
 const TABS: [Tab, string][] = [["crew", "My Crew"], ["requests", "Requests"], ["find", "Find"], ["privacy", "Privacy"]];
 
-export default function MyCrewPage() { return <PreviewGate><MyCrew /></PreviewGate>; }
+export default function MyCrewPage() { return <PreviewGate pitch="mycrew"><MyCrew /></PreviewGate>; }
 
 function MyCrew() {
   const [loc] = useLocation();
