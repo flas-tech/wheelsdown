@@ -24,6 +24,7 @@ import { logChange } from "./ops";
 import { hashPassword, checkPassword as verifyPassword } from "./storage";
 import { refAirport, isCode } from "./airportsData";
 import { sendEmail } from "./email";
+import { feedbackSubmit, feedbackDevice } from "./feedback";
 import QRCode from "qrcode";
 import { registerFboSpots, recsOf, placeOut, publishHeldSpots, FBO_RECS_MIGRATION, type SpotHelpers } from "./fboSpots";
 import { untracked, dayKey } from "./metrics";
@@ -470,6 +471,18 @@ export function registerFbo(app: Express, deps: { requireAdmin: Mw; spots: SpotH
     const sent = await sendVerify(c.user.fboId, owner.email, owner.name, num(owner.id));
     res.json({ ok: !!sent, email: owner.email });
   });
+  // Feedback from the FBO portal: same private inbox as crew feedback (Admin > Feedback), tagged with the FBO and the sender's login email for a reply.
+  const fbLimit = rateLimit({ windowMs: 60 * 60_000, limit: 10, standardHeaders: "draft-8", legacyHeaders: false, message: { message: "That's a lot of feedback at once. Try again in a little while." } });
+  app.post("/api/fbo/feedback", requireFbo, fbLimit, async (req, res) => {
+    const p = feedbackSubmit.safeParse(req.body);
+    if (!p.success) return res.status(400).json({ message: p.error.issues[0]?.message || "Check the form and try again" });
+    if (p.data.website) return res.json({ ok: true });
+    const c = ctx(req), t = now();
+    await db().execute(sql`INSERT INTO feedback (user_id, fbo_id, kind, message, contact, page, device, status, admin_note, created_at, updated_at)
+      VALUES (NULL, ${c.user.fboId}, ${p.data.kind}, ${p.data.message}, ${String(c.user.email || "").slice(0, 120)}, ${("fbo-portal" + (p.data.page || "/")).slice(0, 200)}, ${feedbackDevice(String(req.headers["user-agent"] || ""))}, 'new', '', ${t}, ${t})`);
+    res.json({ ok: true });
+  });
+
   app.get("/api/fbo/me", requireFbo, async (req, res) => {
     const c = ctx(req);
     const serving = (await one(sql`SELECT value FROM app_settings WHERE key = 'fbo_ads_serving'`))?.value === "on";

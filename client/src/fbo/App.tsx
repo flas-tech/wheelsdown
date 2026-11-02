@@ -2,7 +2,8 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Router, Switch, Route, Link, useLocation, useRoute } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
-import { LogOut, UserCog, ExternalLink, ArrowLeft, ChevronRight, Printer, Menu, X } from "lucide-react";
+import { LogOut, UserCog, ExternalLink, ArrowLeft, ChevronRight, Printer, Menu, X, MessageSquarePlus } from "lucide-react";
+import { FboFeedbackDialog } from "./feedback";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -219,6 +220,7 @@ function Shell() {
   const { me, signOut } = useMe();
   const [loc] = useLocation();
   const [more, setMore] = useState(false);
+  const [fb, setFb] = useState(false);
   useEffect(() => setMore(false), [loc]);
   const active = (to: string) => (to === "/" ? loc === "/" : loc.startsWith(to));
   const item = navItemFor(loc);
@@ -254,7 +256,8 @@ function Shell() {
             </div>
           ))}
         </nav>
-        <a href={me.account.publicUrl} target="_blank" rel="noreferrer" className="mb-2 mt-2 flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-muted-foreground hover-elevate" data-testid="link-public-page"><ExternalLink className="h-4 w-4" />View crew page</a>
+        <a href={me.account.publicUrl} target="_blank" rel="noreferrer" className="mt-2 flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-muted-foreground hover-elevate" data-testid="link-public-page"><ExternalLink className="h-4 w-4" />View crew page</a>
+        <button type="button" onClick={() => setFb(true)} className="mb-2 flex items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-muted-foreground hover-elevate" data-testid="button-fbo-feedback"><MessageSquarePlus className="h-4 w-4" />Send feedback</button>
         <div className="flex items-center justify-between border-t border-sidebar-border pt-3">
           <Link href="/account" className={cn("min-w-0 rounded-lg px-2 py-1 hover-elevate", active("/account") && "bg-sidebar-accent")} data-testid="link-account">
             <p className="truncate text-sm font-medium">{me.user.name || me.user.email}</p>
@@ -321,6 +324,7 @@ function Shell() {
         </div>
       </nav>
 
+      <FboFeedbackDialog open={fb} onOpenChange={setFb} email={me.user.email} />
       {more && (
         <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="More">
           <button className="absolute inset-0 bg-black/40" aria-label="Close menu" onClick={() => setMore(false)} />
@@ -346,6 +350,7 @@ function Shell() {
             ))}
             <div className="overflow-hidden rounded-xl border border-card-border bg-card">
               <a href={me.account.publicUrl} target="_blank" rel="noreferrer" className="flex items-center gap-3 border-b border-border px-3 py-3 text-sm font-medium hover-elevate"><ExternalLink className="h-[18px] w-[18px] text-muted-foreground" />View crew page</a>
+              <button type="button" onClick={() => { setMore(false); setFb(true); }} className="flex w-full items-center gap-3 border-b border-border px-3 py-3 text-left text-sm font-medium hover-elevate" data-testid="more-feedback"><MessageSquarePlus className="h-[18px] w-[18px] text-muted-foreground" />Send feedback</button>
               <Link href="/account" className="flex items-center gap-3 border-b border-border px-3 py-3 text-sm font-medium hover-elevate" data-testid="more-account"><UserCog className="h-[18px] w-[18px] text-muted-foreground" />My login</Link>
               <button onClick={signOut} className="flex w-full items-center gap-3 px-3 py-3 text-left text-sm font-medium text-destructive hover-elevate" data-testid="more-signout"><LogOut className="h-[18px] w-[18px]" />Sign out</button>
             </div>

@@ -2,6 +2,10 @@
 export type Release = { date: string; sha?: string; title: string; notes: string[] };
 
 export const RELEASES: Release[] = [
+  { date: "2026-11-02", title: "FBO portal: Send feedback", notes: [
+    "Send feedback in the portal sidebar (desktop) and the More menu (phone). Messages go to Admin > Feedback, tagged 'FBO portal: <FBO> (ICAO)' with the sender's login email for a mailto reply. New feedback.fbo_id column (nullable).",
+    "Rollback: redeploy 88457ab (the extra column is harmless).",
+  ] },
   { date: "2026-11-01", title: "Guest limits: sign up to see crew tips, every crew note and crew profiles (switch, off at first)", notes: [
     "From Patrick's guest-vs-member review (feedback #75). Behind app_settings guest_limits_audience: admins = off (as before), members = on; Settings > Guest limits.",
     "On, people without an account still search routes and see listings, ratings, the map and the first 2 crew notes per place (most helpful first). Crew tips, addresses, websites, FBO picks on a listing, the other notes (ratings still count in the chart), ramp check location and notes, and crew profiles ask them to sign up. Enforced on the server.",

@@ -1227,9 +1227,9 @@ function FeedbackRow({ f, onStatus, onNote, onDelete }: { f: FeedbackItem; onSta
       </div>
       <p className="mt-2 whitespace-pre-line text-sm" data-testid={`text-feedback-${f.id}`}>{f.message}</p>
       <p className="mt-2 text-xs text-muted-foreground">
-        From {f.userId ? <a href={`#/crew/${f.userId}`} className="font-semibold text-foreground underline">{f.userName}{f.handle ? ` (@${f.handle})` : ""}</a> : <span className="font-semibold text-foreground">a guest</span>}
+        From {f.fboId ? <span className="font-semibold text-foreground" data-testid={`text-feedback-fbo-${f.id}`}>FBO portal: {f.fboName || `FBO #${f.fboId}`}{f.fboIcao ? ` (${f.fboIcao})` : ""}</span> : f.userId ? <a href={`#/crew/${f.userId}`} className="font-semibold text-foreground underline">{f.userName}{f.handle ? ` (@${f.handle})` : ""}</a> : <span className="font-semibold text-foreground">a guest</span>}
         {email ? <> · <a href={`mailto:${email}?subject=${encodeURIComponent("Your Wheelsdown feedback")}`} className="text-primary underline">{email}</a></> : f.contact ? ` · ${f.contact}` : ""}
-        {f.page && <> · on <a href={`#${f.page}`} className="underline">{f.page}</a></>}
+        {f.page && (f.fboId ? ` · on ${f.page}` : <> · on <a href={`#${f.page}`} className="underline">{f.page}</a></>)}
         {f.device && ` · ${f.device}`}
       </p>
       <div className="mt-3 flex flex-col gap-2 sm:flex-row">

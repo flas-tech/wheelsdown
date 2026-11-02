@@ -9,4 +9,5 @@ export const FEEDBACK_MAX = 2000;
 export type FeedbackItem = {
   id: number; kind: string; message: string; page: string; device: string; status: FeedbackStatus; adminNote: string; createdAt: number; updatedAt: number;
   userId: number | null; userName: string | null; handle: string | null; contact: string;
+  fboId?: number | null; fboName?: string | null; fboIcao?: string | null; // sent from the FBO portal
 };
