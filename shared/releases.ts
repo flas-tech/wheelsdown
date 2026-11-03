@@ -2,6 +2,12 @@
 export type Release = { date: string; sha?: string; title: string; notes: string[] };
 
 export const RELEASES: Release[] = [
+  { date: "2026-11-03", title: "New rank Captain Been There (4,500 points); top rank renamed Layover Legend", notes: [
+    "From Joe's feedback #76. Captain Been There sits between Chief Pilot (3,000) and the top rank (6,000): sunset badge, three gold stars, a grumpy know-it-all albatross captain mascot like the one in the Albatross Shorts.",
+    "Grand Pelican is now Layover Legend everywhere in the app (same pelican mascot and wings badge; id stays grand_pelican, so nothing in the data changes). The leaderboard's Pelican Perch is now the Legends' Perch.",
+    "Listing names are trimmed when saved (no more trailing spaces).",
+    "Rollback: redeploy f15e326.",
+  ] },
   { date: "2026-11-02", title: "FBO portal: Send feedback", notes: [
     "Send feedback in the portal sidebar (desktop) and the More menu (phone). Messages go to Admin > Feedback, tagged 'FBO portal: <FBO> (ICAO)' with the sender's login email for a mailto reply. New feedback.fbo_id column (nullable).",
     "Rollback: redeploy 88457ab (the extra column is harmless).",

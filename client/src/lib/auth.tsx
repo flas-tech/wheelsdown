@@ -79,7 +79,7 @@ export function tierById(id: TierId) {
   return TIERS.find((t) => t.id === (id === ("ancient_albatross" as string) ? "grand_pelican" : id)) || TIERS[0];
 }
 
-/** Epaulet-style insignia: stripes for Private → ATP (Restricted ATP has an outlined fourth stripe), a star for Check Airman, twin stars for Chief Pilot, wings for Grand Pelican. */
+/** Epaulet-style insignia: stripes for Private → ATP (Restricted ATP has an outlined fourth stripe), a star for Check Airman, twin stars for Chief Pilot, three stars for Captain Been There, wings for Layover Legend (id grand_pelican). */
 export function Insignia({ tierId, className }: { tierId: TierId; className?: string }) {
   const t = tierById(tierId);
   const bars = Array.from({ length: t.stripes });
@@ -93,6 +93,7 @@ export function Insignia({ tierId, className }: { tierId: TierId; className?: st
           : <rect key={i} x="5" y={4 + i * 4.2} width="30" height="2.6" rx="0.6" fill={t.color} />)}
       {tierId === "check_airman" && <path d="M33 3.2l.9 1.9 2 .3-1.5 1.4.4 2-1.8-1-1.8 1 .4-2-1.5-1.4 2-.3z" fill="#fff" />}
       {tierId === "chief_pilot" && <g fill="#F8D27A"><path d="M33 3.2l.9 1.9 2 .3-1.5 1.4.4 2-1.8-1-1.8 1 .4-2-1.5-1.4 2-.3z" /><path d="M27.6 3.2l.9 1.9 2 .3-1.5 1.4.4 2-1.8-1-1.8 1 .4-2-1.5-1.4 2-.3z" /></g>}
+      {tierId === "captain_been_there" && <g fill="#F8D27A"><path d="M33 3.2l.9 1.9 2 .3-1.5 1.4.4 2-1.8-1-1.8 1 .4-2-1.5-1.4 2-.3z" /><path d="M27.6 3.2l.9 1.9 2 .3-1.5 1.4.4 2-1.8-1-1.8 1 .4-2-1.5-1.4 2-.3z" /><path d="M22.2 3.2l.9 1.9 2 .3-1.5 1.4.4 2-1.8-1-1.8 1 .4-2-1.5-1.4 2-.3z" /></g>}
       {tierId === "grand_pelican" && (
         <g fill={t.color}>
           <path d="M20 9c-3-2.6-8.5-3.6-15-3 4 1.4 7 3.2 9.5 5.5L20 13l5.5-1.5C28 9.2 31 7.4 35 6c-6.5-.6-12 .4-15 3z" />
@@ -193,7 +194,7 @@ function AuthDialog({ open, onOpenChange, reason, onAuthed }: { open: boolean; o
           <DialogTitle>{mode === "signup" ? "Open your crew logbook" : mode === "login" ? "Welcome back" : "Reset your password"}</DialogTitle>
           <DialogDescription>
             {mode === "forgot" ? "Enter the email on your account and we'll send a reset link." :
-              <>{reason || "Sign in to add spots, rate and vote."} Every contribution earns points toward your next rating, from Student up to Grand Pelican.</>}
+              <>{reason || "Sign in to add spots, rate and vote."} Every contribution earns points toward your next rating, from Student up to Layover Legend.</>}
           </DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted p-1 text-sm font-medium">
@@ -237,7 +238,7 @@ function AuthDialog({ open, onOpenChange, reason, onAuthed }: { open: boolean; o
           </button>
           {IS_STATIC && (
             <p className="text-xs text-muted-foreground">
-              Demo: accounts live only in this browser. Try <span className="font-code">jramirez</span> / <span className="font-code">{SEED_PASSWORD}</span> to see an Grand Pelican.
+              Demo: accounts live only in this browser. Try <span className="font-code">jramirez</span> / <span className="font-code">{SEED_PASSWORD}</span> to see a Layover Legend.
             </p>
           )}
         </form>

@@ -1,7 +1,7 @@
 // Wheelsdown "Logbook" crew status — tiers modeled on the pilot certificate ladder.
 import { computeVet } from "./vetting";
 
-export type TierId = "student" | "private" | "instrument" | "commercial" | "restricted_atp" | "atp" | "check_airman" | "chief_pilot" | "grand_pelican";
+export type TierId = "student" | "private" | "instrument" | "commercial" | "restricted_atp" | "atp" | "check_airman" | "chief_pilot" | "captain_been_there" | "grand_pelican";
 
 export const TIERS: {
   id: TierId; name: string; min: number; stripes: number; color: string; tagline: string; perks: string[];
@@ -24,8 +24,10 @@ export const TIERS: {
     perks: ["Diamond badge", "Resolve \"Needs check\" flags in your region (planned)", "Annual Wheelsdown swag kit (planned)"] },
   { id: "chief_pilot", name: "Chief Pilot", min: 3000, stripes: 4, color: "#C4B5FD", tagline: "Runs the crew room and still knows the best breakfast", role: "Runs the crew room and sets the bar for every pick.",
     perks: ["Amethyst badge with twin stars", "Everything Check Airman gets", "Chief Pilot's pick of the month in the Lounge (planned)"] },
-  { id: "grand_pelican", name: "Grand Pelican", min: 6000, stripes: 4, color: "#F8D27A", tagline: "Big bill, bigger logbook: the most-trusted crew in the network", role: "The legend of the network: big bill, bigger logbook.",
-    perks: ["Obsidian & gold badge", "Name on the Pelican Perch", "Advisory seat on new features (planned)"] },
+  { id: "captain_been_there", name: "Captain Been There", min: 4500, stripes: 4, color: "#FDBA74", tagline: "Been there, done that, rated the breakfast", role: "Name a field and he's already been there, eaten there and left a note.",
+    perks: ["Sunset badge with three stars", "Everything Chief Pilot gets", "First crack at new features before they open (planned)"] },
+  { id: "grand_pelican", name: "Layover Legend", min: 6000, stripes: 4, color: "#F8D27A", tagline: "Big bill, bigger logbook: the most-trusted crew in the network", role: "The legend of the network: big bill, bigger logbook.",
+    perks: ["Obsidian & gold badge", "Name on the Legends' Perch", "Advisory seat on new features (planned)"] },
 ];
 
 export const POINTS = {

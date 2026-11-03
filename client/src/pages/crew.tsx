@@ -66,7 +66,7 @@ export default function CrewPage() {
 
       {pelicans.length > 0 && (
         <section className="rounded-2xl p-4 text-white" style={{ background: "linear-gradient(135deg,#0B0F1A,#1F2937 60%,#F8D27A44)" }} data-testid="section-pelican-perch">
-          <p className="font-code text-[10px] tracking-[0.25em] text-[#F8D27A]">THE PELICAN PERCH</p>
+          <p className="font-code text-[10px] tracking-[0.25em] text-[#F8D27A]">THE LEGENDS' PERCH</p>
           <div className="mt-2 flex flex-wrap gap-3">
             {pelicans.map((u) => (
               <Link key={u.id} href={`/crew/${u.id}`} className="flex items-center gap-2">
