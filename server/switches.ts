@@ -31,4 +31,5 @@ export function makeSwitch(key: string, label: string) {
 }
 export const layoverTools = makeSwitch("layover_tools_audience", "Layover tools (hotel sheet, forecast, abroad card, delay alerts)");
 export const crewNetwork = makeSwitch("crew_network_audience", "Crew network (overlap alerts, trip crew chat, family link)");
+export const rateOnAdd = makeSwitch("rate_on_add_audience", "Rate while adding (stars and comment on the Add a spot form)");
 export const scheduleTools = makeSwitch("schedule_tools_audience", "Schedule tools (calendar import, alarms, offline trips, duty calculator)");

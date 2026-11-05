@@ -8,10 +8,10 @@ import { TIME_BUCKETS, type Airport, type Category, type SpotWithStats, type Rev
 import { COST_LABELS, PACES, costOptions, costUnit, paceOf, togglePace, isPace, type PaceValue } from "@shared/cost";
 import { CostChoice } from "@/lib/costChip";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { CAT_META, Chip, GoAroundIcon } from "@/lib/ui";
+import { CAT_META, Chip, GoAroundIcon, Stars } from "@/lib/ui";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { useCategories } from "@/lib/experience";
+import { useCategories, useRateOnAdd } from "@/lib/experience";
 import { CAR_FEATURES } from "@shared/cars";
 import { useSearch } from "./home";
 import { useAuth } from "@/lib/auth";
@@ -65,6 +65,10 @@ export default function AddPage() {
   const [tags, setTags] = useState("");
   const [avoid, setAvoid] = useState(false); // new listings only: "Go around", crews should avoid this place
   const [why, setWhy] = useState("");
+  const rateOnAdd = useRateOnAdd(); // feedback #79: rate it on the same form (admins first)
+  const [stars, setStars] = useState(0); // 0 = not rated yet (optional)
+  const [note, setNote] = useState("");
+  const rating = !editId && !avoid && rateOnAdd.on && stars > 0 ? stars : 0;
   const [place, setPlace] = useState<PlaceHit | null>(null); // chosen autofill result
   const [geo, setGeo] = useState<{ state: "idle" | "busy" | "miss"; for: string }>({ state: "idle", for: "" });
   const [here, setHere] = useState<LatLng | null>(null);
@@ -246,15 +250,16 @@ export default function AddPage() {
           lat: place?.lat ?? null, lng: place?.lng ?? null, placeRef: place?.ref && !place.ref.startsWith("field:") ? place.ref : null,
           crewTip, address, website, tags,
           ...(!editId && avoid ? { goAround: { comment: why.trim() } } : {}),
+          ...(rating ? { myRating: { rating, comment: note.trim() } } : {}),
         })
       ).json(),
     onSuccess: (spot: { id: number; status: string }) => {
       if (aiPickId) clearVisit(-aiPickId);
-      for (const k of ["/api/search", "/api/airports", "/api/me", "/api/crew", "/api/highlights", "/api/spots", "/api/me/favorites", "/api/briefings"]) queryClient.invalidateQueries({ queryKey: [k] });
+      for (const k of ["/api/search", "/api/airports", "/api/me", "/api/crew", "/api/highlights", "/api/spots", "/api/me/favorites", "/api/briefings", "/api/leaderboard"]) queryClient.invalidateQueries({ queryKey: [k] });
       const checking = (spot as any).modState === "checking";
       if (editId) { toast({ title: checking ? "Edit saved" : "Listing updated", description: checking ? "It goes live after a quick automatic check." : undefined }); navigate(`/spot/${spot.id}`); return; }
-      if (checking) { toast({ title: avoid ? "Go-around saved" : "Spot saved", description: "A quick automatic check runs before crews can see it, usually under a minute." }); navigate(`/spot/${spot.id}`); return; }
-      toast({ title: spot.status === "pending" ? "Submitted for review" : avoid ? "Go-around posted. Thanks for the warning." : "Spot added — thanks for helping the next crew" });
+      if (checking) { toast({ title: avoid ? "Go-around saved" : rating ? "Spot and rating saved" : "Spot saved", description: "A quick automatic check runs before crews can see it, usually under a minute." }); navigate(`/spot/${spot.id}`); return; }
+      toast({ title: spot.status === "pending" ? "Submitted for review" : avoid ? "Go-around posted. Thanks for the warning." : rating ? "Spot and rating added — thanks for helping the next crew" : "Spot added — thanks for helping the next crew" });
       navigate(spot.status === "pending" ? "/" : `/spot/${spot.id}`);
     },
     onError: (e: Error) => toast({ title: editId ? "Couldn't save changes" : "Couldn't add spot", description: errText(e), variant: "destructive" }),
@@ -288,7 +293,7 @@ export default function AddPage() {
         )}
         {!editId && aiPickId && (
           <p className="mt-2 rounded-xl bg-emerald-500/10 px-3 py-2 text-xs text-emerald-800 dark:text-emerald-300" data-testid="text-add-first-rate">
-            This was an AI pick. {fromAi ? "We filled in what AI found, so check it, fix anything that's off and add your crew tip. " : ""}Add it, then rate it: the first crew member to rate it earns a +10 point bonus.
+            This was an AI pick. {fromAi ? "We filled in what AI found, so check it, fix anything that's off and add your crew tip. " : ""}{rateOnAdd.on ? "Rate it below as you add it" : "Add it, then rate it"}: the first crew member to rate it earns a +10 point bonus.
           </p>
         )}
       </header>
@@ -423,6 +428,23 @@ export default function AddPage() {
                 placeholder="Why should crews go around? (required) Service, safety, hygiene, closed early, not crew-friendly…"
                 className="w-full rounded-xl border border-input bg-background p-3 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
               <p className="text-[11px] text-muted-foreground">Posted as your Go around rating (0 stars) on this listing. It keeps the place out of suggested trip briefings when most crews agree. Stick to what happened; no names of staff.</p>
+            </div>
+          )}
+          {!avoid && rateOnAdd.on && (
+            <div className="mt-3 space-y-2 border-t border-border/60 pt-3" data-testid="panel-add-rating">
+              <p className="flex flex-wrap items-center gap-x-1.5 text-sm font-semibold">Your rating <span className="font-normal text-muted-foreground">optional</span>{rateOnAdd.adminOnly && <span className="whitespace-nowrap rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-primary" data-testid="badge-rate-on-add-admin">Admins only</span>}</p>
+              <div className="flex items-center gap-3">
+                <Stars value={stars} size={30} onChange={(n) => setStars(stars === n ? 0 : n)} />
+                <p className="min-w-0 text-xs text-muted-foreground" data-testid="text-add-rating-label">{stars ? ["", "Skip it", "Meh", "Decent", "Good", "Great"][stars] : `Been there? Tap a star · +${POINTS.review} pts`}</p>
+              </div>
+              {stars > 0 && (
+                <>
+                  <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={1500} data-testid="input-add-rating-comment"
+                    placeholder="Add a comment (optional): wait times, crew discounts, anything the next crew should know"
+                    className="w-full rounded-xl border border-input bg-background p-3 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+                  <p className="text-[11px] text-muted-foreground">Posted as your rating on this listing, with the price you picked above. +{POINTS.reviewDetail} more pts for a comment of 40+ characters. Tap the same star again to clear it.</p>
+                </>
+              )}
             </div>
           )}
         </section>

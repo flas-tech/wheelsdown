@@ -39,6 +39,7 @@ import { registerLayoverTools } from "./layoverTools";
 import { registerCrewNetwork, forgetCrewNetwork } from "./crewNetwork";
 import { registerScheduleTools } from "./scheduleTools";
 import { guestLimits, limitGuest, guestSpot, guestReviews } from "./guestLimits";
+import { rateOnAdd } from "./switches";
 import { registerCampaigns, campaignVisit, campaignSignup, campaignReport } from "./campaigns";
 import { dayKey } from "./metrics";
 import { SERVICES } from "@shared/services";
@@ -361,12 +362,21 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     website: z.union([z.literal(""), z.string().url("Website should start with https://")]).optional(),
     // new listings only: the poster says crews should avoid it, saved as their own "Go around" (0-star) rating
     goAround: z.object({ comment: z.string().trim().min(10, "Tell crews why to go around (a sentence is enough)").max(1000) }).optional(),
+    // new listings only (Jeff's feedback #79): the poster's own 1-5 star rating, posted with the listing (rate_on_add_audience)
+    myRating: z.object({ rating: z.coerce.number().int().min(1, "Pick 1 to 5 stars").max(5), comment: z.string().trim().max(1500).optional() }).optional(),
   });
   /** The poster's own "Go around" on a listing they just added. Goes through the same checks as any rating. */
   async function addGoAround(spotId: number, user: User, comment: string, checking: boolean) {
     const r = await storage.createReview({ spotId, rating: 0, comment, costLevel: null, author: publicName(user), crewRole: user.crewRole, userId: user.id } as any);
     if (checking) await storage.setReviewMod(r.id, { status: "pending", modState: "checking" });
   }
+  /** The poster's own star rating on a listing they just added; their listing price counts as their price vote. Same checks as any rating. */
+  async function addOwnRating(spot: { id: number; category: string; costLevel: number | null }, user: User, mine: { rating: number; comment?: string }, checking: boolean) {
+    const costLevel = spot.costLevel != null && costOptions(spot.category as any).includes(spot.costLevel) ? spot.costLevel : null;
+    const r = await storage.createReview({ spotId: spot.id, rating: mine.rating, comment: mine.comment || "", costLevel, author: publicName(user), crewRole: user.crewRole, userId: user.id } as any);
+    if (checking) await storage.setReviewMod(r.id, { status: "pending", modState: "checking" });
+  }
+  const canRateOnAdd = async (u: User) => isSuperAdmin(u) || (await rateOnAdd.audience()) === "members";
   /** Category rules shared by new listings and edits. Returns an error message, or null. */
   function applyCategoryRules(rest: { category: string; costLevel?: number | null; pace?: string | null; minutesNeeded?: number }) {
     if (rest.category === "fbo") rest.costLevel = 0;
@@ -401,7 +411,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const user = (req as any).user as User;
     const p = submitSchema.safeParse(req.body);
     if (!p.success) return res.status(400).json({ message: msg(p.error) });
-    const { airportCity, tags, goAround, ...rest } = p.data;
+    const { airportCity, tags, goAround, myRating: askedRating, ...rest } = p.data;
+    const myRating = !goAround && askedRating && (await canRateOnAdd(user)) ? askedRating : undefined;
     const code = rest.icao.toUpperCase();
     if (!(await storage.resolveCode(code)) && !refAirport(code) && !airportCity) return res.status(400).json({ message: `We don't know ${code} yet — add the city so we can create it.` });
     if (rest.category === "car" && !(await carsFor(user, isSuperAdmin))) return res.status(403).json({ message: "Rental cars aren't open yet" });
@@ -419,12 +430,14 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       await storage.setSpotMod(spot.id, { modState: "checking", modNote: "" });
       await claimAiPick(spot, Number(req.body?.aiPickId) || null);
       if (goAround) await addGoAround(spot.id, user, goAround.comment, true);
+      if (myRating) await addOwnRating(spot, user, myRating, true);
       kickModerator();
       return res.status(201).json({ ...spot, modState: "checking" });
     }
     const spot = await storage.createSpot({ ...rest, icao, tags: tagJson(tags), submittedBy: publicName(user), userId: user.id, status: MODERATE && !trusted ? "pending" : "live" });
     await claimAiPick(spot, Number(req.body?.aiPickId) || null);
     if (goAround) await addGoAround(spot.id, user, goAround.comment, false);
+    if (myRating) await addOwnRating(spot, user, myRating, false);
     void checkFirstRate(spot.id);
     res.status(201).json(spot);
   });
@@ -777,7 +790,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   registerRampChecks(app, { userOf, isSuperAdmin, requireAdmin, requireUser, resolveCode: (c) => storage.resolveCode(c) as any }); // ramp check reports (FBO intel), admins first
   registerLayoverTools(app, { userOf, isSuperAdmin, requireAdmin, requireUser });
   registerCrewNetwork(app, { userOf, isSuperAdmin, requireAdmin, requireUser });
-  guestLimits.register(app, "/api/admin/guest-limits", requireAdmin); // off ("admins") until an admin turns it on in Settings
+  guestLimits.register(app, "/api/admin/guest-limits", requireAdmin);
+  rateOnAdd.register(app, "/api/admin/rate-on-add", requireAdmin); // admins first (feedback #79) // off ("admins") until an admin turns it on in Settings
   registerScheduleTools(app, { isSuperAdmin, requireAdmin, requireUser }); // trip import, calendar file with alarms; duty calculator is client-side; // overlap alerts, family link; trip crew chat lives in dm.ts // hotel sheet, forecast, abroad card, NAS delay alerts; admins first
   registerRentalCars(app, { userOf, isSuperAdmin, requireAdmin }); // rental cars: a fifth listing type, admins-only until rental_cars_audience = members
   registerTrip(app, { userOf, isSuperAdmin, requireAdmin, requireUser }); // 4-tab nav, Home trip card, AI-added listings (trip_audience: admins until opened) // push notifications (push_audience: admins until opened)

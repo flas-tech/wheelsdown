@@ -2,6 +2,11 @@
 export type Release = { date: string; sha?: string; title: string; notes: string[] };
 
 export const RELEASES: Release[] = [
+  { date: "2026-11-04", title: "Rate a spot while you add it (admins first)", notes: [
+    "From Jeff's feedback #79. Add a spot now has an optional star rating and comment under Worth a stop; it posts as your rating on the new listing (same automatic check, points and one-rating-per-place rule), using the price you picked as your price vote.",
+    "Behind app_settings rate_on_add_audience (default admins); Settings > Rate while adding opens it to members. Go around works as before.",
+    "Rollback: turn the switch off, or redeploy b4cd63b.",
+  ] },
   { date: "2026-11-03", title: "New rank Captain Been There (4,500 points); top rank renamed Layover Legend", notes: [
     "From Joe's feedback #76. Captain Been There sits between Chief Pilot (3,000) and the top rank (6,000): sunset badge, three gold stars, a grumpy know-it-all albatross captain mascot like the one in the Albatross Shorts.",
     "Grand Pelican is now Layover Legend everywhere in the app (same pelican mascot and wings badge; id stays grand_pelican, so nothing in the data changes). The leaderboard's Pelican Perch is now the Legends' Perch.",
