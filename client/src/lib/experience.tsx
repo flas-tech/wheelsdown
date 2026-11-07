@@ -55,7 +55,8 @@ export function useAdminOnly() { const { me } = useAuth(); return useFeatures().
 export function useTripState() {
   const { me, loading } = useAuth();
   const f = useFeatures();
-  return { on: !!me && (!!me.isAdmin || f.trip === "members"), ready: !loading && (!me || !!me.isAdmin || f.ready), adminOnly: !!me?.isAdmin && f.trip !== "members" };
+  // guests get the same layout once it's open to members (they used to fall back to the old six-item nav)
+  return { on: me ? (!!me.isAdmin || f.trip === "members") : !loading && f.trip === "members", ready: !loading && (!!me?.isAdmin || f.ready), adminOnly: !!me?.isAdmin && f.trip !== "members" };
 }
 export function useTrip() { return useTripState().on; }
 

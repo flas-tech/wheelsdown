@@ -1,3 +1,4 @@
+import { useAuth } from "@/lib/auth";
 // Home (trip preview): the Spots search opens first, and this card at the top shows the field you're at:
 // nearest airport by location (asks if the phone hasn't decided; never when it's been denied), else the last
 // airport you picked. Tapping it opens Layover today on that airport.
@@ -44,12 +45,13 @@ export function TodayCard() {
     try { localStorage.setItem(LAST, c); } catch { /* private mode */ }
     setTyping(false); setCode(c);
   };
+  const { me } = useAuth(); // guests: the card opens the Layover Today sign-up pitch, so don't ask the server
   const { data, isError } = useQuery<TodayResp>({
-    queryKey: ["/api/preview/today", code || ""], enabled: code !== null, staleTime: 60_000, retry: false,
+    queryKey: ["/api/preview/today", code || ""], enabled: code !== null && !!me, staleTime: 60_000, retry: false,
     queryFn: async () => (await apiRequest("GET", `/api/preview/today${code ? `?icao=${encodeURIComponent(code)}` : ""}`)).json(),
   });
   const icao = data?.airport?.icao || "";
-  const { data: plans } = useQuery<{ byIcao: Record<string, Meetup[]> }>({ queryKey: [`/api/preview/crewup-at?icaos=${icao}`], enabled: !!icao, staleTime: 30_000, retry: false });
+  const { data: plans } = useQuery<{ byIcao: Record<string, Meetup[]> }>({ queryKey: [`/api/preview/crewup-at?icaos=${icao}`], enabled: !!icao && !!me, staleTime: 30_000, retry: false });
   const nPlans = plans?.byIcao[icao]?.length || 0;
 
   // No location (or it's slow): type the field instead of waiting on the spinner

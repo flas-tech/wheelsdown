@@ -43,6 +43,7 @@ function When({ m }: { m: Meetup }) {
 }
 
 function MeetupBoard() {
+  const { me } = useAuth();
   const [code, setCode] = useState<string>(() => new URLSearchParams(window.location.hash.split("?")[1] || window.location.search.slice(1)).get("icao")?.toUpperCase() || "");
   const [typed, setTyped] = useState("");
   // from a briefing stop ("Crew Up here"): its date, time and how long the layover is
@@ -52,7 +53,7 @@ function MeetupBoard() {
     if (["date", "time", "hours"].some((k) => u.searchParams.has(k))) { for (const k of ["date", "time", "hours"]) u.searchParams.delete(k); history.replaceState(history.state, "", u.toString()); }
   }, []);
   const trip = useTrip();
-  const { data: trips } = useQuery<TripResp>({ queryKey: ["/api/preview/trip"], enabled: trip, staleTime: 60_000, retry: false });
+  const { data: trips } = useQuery<TripResp>({ queryKey: ["/api/preview/trip"], enabled: trip && !!me, staleTime: 60_000, retry: false });
   const fromBriefs = (trips?.coming || []).slice(0, 6);
   const pickStop = (s: TripStop) => { const u = new URL(`http://x${crewUpHref(s)}`); setPre({ date: u.searchParams.get("date"), time: u.searchParams.get("time"), hours: Number(u.searchParams.get("hours")) || null }); setCode(s.icao); setMore(true); };
   const { data, isLoading, error } = useQuery<MeetupResp>({
@@ -68,7 +69,7 @@ function MeetupBoard() {
   const qs = new URLSearchParams(window.location.hash.split("?")[1] || window.location.search.slice(1));
   const planId = Number(qs.get("plan")) || null;
   const [tab, setTab] = useState<"new" | "plans">(planId || qs.get("tab") === "plans" ? "plans" : "new");
-  const { data: all } = useQuery<{ plans: Meetup[] }>({ queryKey: ["/api/preview/crewup-all"], enabled: trip, staleTime: 20_000, refetchInterval: 60_000, retry: false });
+  const { data: all } = useQuery<{ plans: Meetup[] }>({ queryKey: ["/api/preview/crewup-all"], enabled: trip && !!me, staleTime: 20_000, refetchInterval: 60_000, retry: false });
   const plans = all?.plans || [];
   // red dot while anything is planned: every plan listed is live until it ends (its date and time plus how long it runs)
   const dot = plans.some((m) => m.expiresAt > Date.now());
@@ -207,7 +208,7 @@ function Compose({ d, pre, onPosted }: { d: MeetupResp; pre?: { date: string | n
   const [spotId, setSpotId] = useState<number | null>(null);
   const [place, setPlace] = useState(""); // typed place, when it isn't a listing
   // places already on your trip sheets at this airport go first in the list (hotels aren't meeting places)
-  const { data: sheets } = useQuery<{ id: number; stops: { icao: string }[] }[]>({ queryKey: ["/api/briefings"], enabled: trip, staleTime: 60_000 });
+  const { data: sheets } = useQuery<{ id: number; stops: { icao: string }[] }[]>({ queryKey: ["/api/briefings"], enabled: trip && !!me, staleTime: 60_000 });
   const sheetIds = (sheets || []).filter((b) => b.stops.some((x) => x.icao === icao)).map((b) => b.id).slice(0, 6);
   const full = useQueries({ queries: sheetIds.map((bid) => ({ queryKey: ["/api/briefings", String(bid)], staleTime: 60_000 })) }).map((q) => q.data as BriefFull | undefined);
   const onSheet: SpotWithStats[] = [];

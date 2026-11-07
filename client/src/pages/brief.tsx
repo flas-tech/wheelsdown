@@ -291,7 +291,7 @@ export function BriefEditorPage() {
   const { data: brief, isLoading } = useQuery<BriefFull>({ queryKey: ["/api/briefings", String(id)], enabled: !!me && !!id, refetchInterval: aiPolling });
   // four-tab preview: Crew Up plans at each stop (yours, and ones crew picked you for) show on the trip sheet
   const icaos = brief ? Array.from(new Set(brief.stops.map((x) => x.icao))).join(",") : "";
-  const { data: crewAt } = useQuery<{ byIcao: Record<string, Meetup[]> }>({ queryKey: [`/api/preview/crewup-at?icaos=${icaos}`], enabled: trip && !!icaos, staleTime: 30_000, retry: false });
+  const { data: crewAt } = useQuery<{ byIcao: Record<string, Meetup[]> }>({ queryKey: [`/api/preview/crewup-at?icaos=${icaos}`], enabled: trip && !!me && !!icaos, staleTime: 30_000, retry: false });
 
   const save = useMutation({
     mutationFn: async (p: { title: string; stops: StopInput[]; suggest?: boolean; avoid?: Record<number, number[]> }) => {

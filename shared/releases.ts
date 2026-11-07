@@ -2,6 +2,11 @@
 export type Release = { date: string; sha?: string; title: string; notes: string[] };
 
 export const RELEASES: Release[] = [
+  { date: "2026-11-07", title: "Signed out visitors get the Home / Plan / Crew layout", notes: [
+    "People who aren't signed in were still shown the old six-item layout (Search, Add spot, Favorites, Brief, Crew, Logbook). They now get the same three tabs as members whenever the layout is open to members (trip_audience). Member-only parts still show a sign-in pitch.",
+    "Trip and Crew Up lookups are skipped for guests (no failed background calls).",
+    "Rollback: redeploy 067183a.",
+  ] },
   { date: "2026-11-04", title: "Rate a spot while you add it (admins first)", notes: [
     "From Jeff's feedback #79. Add a spot now has an optional star rating and comment under Worth a stop; it posts as your rating on the new listing (same automatic check, points and one-rating-per-place rule), using the price you picked as your price vote.",
     "Behind app_settings rate_on_add_audience (default admins); Settings > Rate while adding opens it to members. Go around works as before.",

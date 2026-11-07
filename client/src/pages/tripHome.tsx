@@ -1,3 +1,4 @@
+import { useAuth } from "@/lib/auth";
 // Four-tab layout: "Plan your layover" and "Trip briefings" were the same thing, so they are one page now,
 // Trip sheets (/brief). This file holds its top half (new trip sheet, Coming up, a trip to rate) and the
 // Crew Up plan list that also shows on each trip sheet stop. /plan just forwards to /brief.
@@ -49,8 +50,8 @@ export function CrewPlanRows({ plans, onDate, testId }: { plans: Meetup[]; onDat
 
 /** Top of Trip sheets: new trip sheet and a trip to rate. Your trip sheets follow, then Crew plans. */
 export function TripSheetTop() {
-  const { on, adminOnly } = useTripState();
-  const { data } = useQuery<TripResp>({ queryKey: ["/api/preview/trip"], enabled: on, staleTime: 30_000, retry: false });
+  const { on, adminOnly } = useTripState(); const { me } = useAuth();
+  const { data } = useQuery<TripResp>({ queryKey: ["/api/preview/trip"], enabled: on && !!me, staleTime: 30_000, retry: false });
   if (!on) return null;
   return (
     <div className="space-y-5" data-testid="page-plan">
@@ -75,8 +76,8 @@ export function TripSheetTop() {
 
 /** Under your trip sheets: Crew Up plans you can see (yours and the ones crew picked you for). */
 export function CrewPlansSection() {
-  const { on } = useTripState();
-  const { data: cp } = useQuery<{ plans: Meetup[] }>({ queryKey: ["/api/preview/crewup-all"], enabled: on, staleTime: 30_000, retry: false });
+  const { on } = useTripState(); const { me } = useAuth();
+  const { data: cp } = useQuery<{ plans: Meetup[] }>({ queryKey: ["/api/preview/crewup-all"], enabled: on && !!me, staleTime: 30_000, retry: false });
   if (!on || !cp?.plans.length) return null;
   return (
     <section className="space-y-2" data-testid="section-plan-crewplans">
@@ -89,8 +90,8 @@ export function CrewPlansSection() {
 
 /** Bottom of Home: each trip sheet still ahead, with all its cities. Tapping one opens the trip sheet. */
 export function ComingUpTrips() {
-  const { on } = useTripState();
-  const { data } = useQuery<TripResp>({ queryKey: ["/api/preview/trip"], enabled: on, staleTime: 30_000, retry: false });
+  const { on } = useTripState(); const { me } = useAuth();
+  const { data } = useQuery<TripResp>({ queryKey: ["/api/preview/trip"], enabled: on && !!me, staleTime: 30_000, retry: false });
   if (!on || !data?.coming.length) return null;
   const sheets: { id: number; title: string; stops: TripResp["coming"] }[] = [];
   for (const s of data.coming) {
