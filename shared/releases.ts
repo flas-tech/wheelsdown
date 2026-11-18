@@ -7,6 +7,7 @@ export const RELEASES: Release[] = [
     "Stored as a check-in with checkins.verified = false (new column, default true for all existing rows; logged_at records when it was logged). Private, no points, at most 10 a day, and a second visit within 20 hours of another at the same listing is treated as the same one. A real check-in later that day upgrades the logged visit to verified.",
     "Only verified check-ins count in Most visited, Crew Up (field you're at, who's here, check-in required), Layover today's field, the family link and check-ins shared with My Crew. Rate a spot still lists past visits ('You logged a visit'). The member's check-in list and map label them Logged later (light teal).",
     "The failed check-in panel and the past-visit confirmation both show a Rate this spot button. The demo build follows the same rules. What's new 20.",
+    "Rate a spot now also lists live AI-suggested listings you checked in at, logged, planned or saved (they were left out before; #80's spot is one).",
     "Rollback: redeploy c00c6bc (the extra columns are harmless).",
   ] },
   { date: "2026-11-07", title: "Signed out visitors get the Home / Plan / Crew layout", notes: [

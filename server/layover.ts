@@ -174,7 +174,7 @@ async function rateQueue(uid: number, visits: { id: number; at: number }[] = [])
     if (!out.has(num(f.spot_id))) out.set(num(f.spot_id), { id: num(f.spot_id), reason: "favorite", detail: "In your favorites", at: num(f.at) });
   const ids = Array.from(out.keys()).filter((id) => !rated.has(id));
   if (!ids.length) return [];
-  const spots = (await storage.searchSpots([], false, "")).filter((s) => ids.includes(s.id) && s.status === "live" && s.userId !== uid);
+  const spots = (await storage.searchSpots([], false, "", { ai: true })).filter((s) => ids.includes(s.id) && s.status === "live" && s.userId !== uid); // live AI-suggested listings ask for ratings too
   const order = { checkin: 0, visit: 1, briefing: 2, favorite: 3 } as const;
   return spots.map((s) => ({ ...out.get(s.id)!, name: s.name, icao: s.icao, category: s.category, avgRating: s.avgRating ?? null, reviewCount: s.reviewCount }))
     .sort((a, b) => order[a.reason] - order[b.reason] || b.at - a.at).slice(0, 60);
