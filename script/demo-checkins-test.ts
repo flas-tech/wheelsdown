@@ -1,0 +1,26 @@
+// Demo build (mockApi) past-visit rules, same as the server. Usage: npx tsx script/demo-checkins-test.ts
+const store: Record<string, string> = {};
+(globalThis as any).localStorage = { getItem: (k: string) => store[k] ?? null, setItem: (k: string, v: string) => { store[k] = String(v); }, removeItem: (k: string) => { delete store[k]; } };
+(globalThis as any).window = globalThis;
+const { mockFetch } = await import("../client/src/lib/mockApi");
+const call = async (m: string, u: string, b?: any, h: any = {}) => { const r = await mockFetch(m, u, b, h); return { s: r.status, j: await r.json().catch(() => null) }; };
+const su = await call("POST", "/api/auth/signup", { handle: "mocky", password: "smoke-pass-123", displayName: "Mock", crewRole: "Pilot", acceptTerms: true });
+const T = { authorization: `Bearer ${su.j?.token}` };
+let pass = 0, fail = 0; const ck = (n: string, c: boolean, x?: any) => { c ? pass++ : fail++; console.log(c ? "PASS" : "FAIL", n, c ? "" : JSON.stringify(x)); };
+ck("signup", !!su.j?.token, su);
+let r = await call("POST", "/api/checkins", { spotId: 1, lat: 40.7, lng: -74, accuracy: 20 }, T); ck("too far", r.s === 400, r);
+r = await call("POST", "/api/checkins/past", { spotId: 1, daysAgo: 8 }, T); ck("max 7", r.s === 400, r);
+r = await call("POST", "/api/checkins/past", { spotId: 1, daysAgo: 2 }); ck("needs sign-in", r.s === 401, r);
+r = await call("POST", "/api/checkins/past", { spotId: 1, daysAgo: 2 }, T); ck("logged", r.s === 200 && r.j.verified === false && !r.j.already, r);
+r = await call("POST", "/api/checkins/past", { spotId: 1, daysAgo: 2 }, T); ck("dup", r.j?.already === true, r);
+r = await call("POST", "/api/checkins/past", { spotId: 1, daysAgo: 0 }, T); ck("today", r.j?.already === false, r);
+r = await call("GET", "/api/me/checkins", undefined, T); ck("list verified:false", r.j.some((c: any) => c.verified === false), r);
+r = await call("GET", "/api/me/map", undefined, T); ck("map later", r.j.checkins.some((c: any) => c.later), r);
+const sp = (await call("GET", "/api/spots/1")).j.spot; 
+r = await call("POST", "/api/checkins", { spotId: 1, lat: sp.lat ?? 25.7932, lng: sp.lng ?? -80.2906, accuracy: 20 }, T); ck("onsite upgrade", r.j?.already === false, r);
+r = await call("GET", "/api/me/checkins", undefined, T); ck("2 rows", r.j.length === 2, r.j);
+r = await call("GET", "/api/me/map", undefined, T); ck("map not later", !r.j.checkins.some((c: any) => c.later), r);
+for (let i = 2; i <= 7; i++) await call("POST", "/api/checkins/past", { spotId: i + 1, daysAgo: i }, T);
+for (let i = 0; i < 4; i++) r = await call("POST", "/api/checkins/past", { spotId: 20 + i, daysAgo: 3 }, T);
+ck("per-day cap", r.s === 429, r);
+console.log(`Result: ${pass} passed, ${fail} failed`);

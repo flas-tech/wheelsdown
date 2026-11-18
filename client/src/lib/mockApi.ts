@@ -8,7 +8,7 @@ import { computePoints, recentActivity, publicName, tierFor, SEED_USERS, SEED_PA
 import { CREW_ROLES } from "@shared/schema";
 import { SERVICES } from "@shared/services";
 import type { FeedbackItem } from "@shared/feedback";
-import { CHECKIN_RULES, type MapDot } from "@shared/checkins";
+import { CHECKIN_RULES, PAST_VISIT_RULES, pastVisitAt, type MapDot } from "@shared/checkins";
 import { achievementProgress, type AchStats } from "@shared/achievements";
 import { validAircraftList } from "@shared/aircraft";
 import { BIO_MAX, INTERESTS, MAX_INTERESTS } from "@shared/interests";
@@ -24,7 +24,7 @@ const STORE_KEY = "wheelsdown-demo-v4";
 
 type DemoUser = { referredBy?: number | null; id: number; handle: string; displayName: string; crewRole: string; homeBase: string; anonymous: boolean; email?: string; aircraft?: string; bio?: string; interests?: string[]; wrightNo?: number | null; pw: string; bonusPoints: number; createdAt: number };
 type DemoBriefing = { id: number; userId: number; title: string; stops: BriefingStop[]; shareToken: string; createdAt: number; updatedAt: number };
-type DB = { airports: Airport[]; spots: Spot[]; reviews: Review[]; ads: Ad[]; votes: Vote[]; users: DemoUser[]; sessions: Record<string, number>; briefings?: DemoBriefing[]; favorites?: { userId: number; spotId: number; at: number }[]; follows?: { a: number; b: number; at: number }[]; wrightTaken?: number; feedback?: FeedbackItem[]; checkins?: { id: number; userId: number; spotId: number | null; icao: string; lat: number; lng: number; createdAt: number }[];
+type DB = { airports: Airport[]; spots: Spot[]; reviews: Review[]; ads: Ad[]; votes: Vote[]; users: DemoUser[]; sessions: Record<string, number>; briefings?: DemoBriefing[]; favorites?: { userId: number; spotId: number; at: number }[]; follows?: { a: number; b: number; at: number }[]; wrightTaken?: number; feedback?: FeedbackItem[]; checkins?: { id: number; userId: number; spotId: number | null; icao: string; lat: number; lng: number; createdAt: number; verified?: boolean; loggedAt?: number }[];
   seq: { spot: number; review: number; ad: number; vote: number; user: number } };
 // Demo only: not a secure hash. The server build uses scrypt.
 const demoHash = (pw: string) => { let h = 5381; for (let i = 0; i < pw.length; i++) h = ((h << 5) + h + pw.charCodeAt(i)) | 0; return "demo:" + (h >>> 0).toString(36); };
@@ -590,20 +590,38 @@ function route(method: string, path: string, query: URLSearchParams, body: any, 
     if (!t) throw new HttpError(400, "Nothing to check in at");
     const d = milesBetween(here, { lat: t.lat, lon: t.lng });
     if (d > t.r) throw new HttpError(400, `You're about ${d < 10 ? d.toFixed(1) : Math.round(d)} miles from ${t.name}. Check in when you're there.`);
-    const prior = cks().find((c) => c.userId === u.id && c.spotId === t!.spotId && c.icao === t!.icao && c.createdAt > Date.now() - 20 * 3600_000);
-    if (prior) return { ok: true, id: prior.id, already: true, createdAt: prior.createdAt };
+    const recent = cks().filter((c) => c.userId === u.id && c.spotId === t!.spotId && c.icao === t!.icao && c.createdAt > Date.now() - 20 * 3600_000);
+    const prior = recent.find((c) => c.verified !== false) || recent[recent.length - 1];
+    if (prior && prior.verified !== false) return { ok: true, id: prior.id, already: true, createdAt: prior.createdAt };
+    if (prior) { prior.verified = true; prior.createdAt = Date.now(); return { ok: true, id: prior.id, already: false, createdAt: prior.createdAt }; } // upgrade a visit logged earlier today
     const row = { id: (cks().reduce((m, c) => Math.max(m, c.id), 0)) + 1, userId: u.id, spotId: t.spotId, icao: t.icao, lat: t.lat, lng: t.lng, createdAt: Date.now() };
     cks().push(row); return { ok: true, id: row.id, already: false, createdAt: row.createdAt };
   }
+  if (method === "POST" && path === "/api/checkins/past") { // same rules as server/checkins.ts
+    const u = needUser(); const b = body || {};
+    const daysAgo = Number(b.daysAgo);
+    if (!Number.isInteger(daysAgo) || daysAgo < 0 || daysAgo > PAST_VISIT_RULES.maxDaysBack) throw new HttpError(400, `Pick a day in the last ${PAST_VISIT_RULES.maxDaysBack} days`);
+    const s = db.spots.find((x) => x.id === Number(b.spotId) && x.status === "live"); if (!s) throw new HttpError(404, "Not found");
+    const now = Date.now(), at = pastVisitAt(daysAgo, now), win = PAST_VISIT_RULES.dupWindowHours * 3600_000;
+    const dup = cks().find((c) => c.userId === u.id && c.spotId === s.id && Math.abs(c.createdAt - at) < win);
+    if (dup) return { ok: true, id: dup.id, already: true, createdAt: dup.createdAt, verified: dup.verified !== false };
+    if (cks().filter((c) => c.userId === u.id && c.verified === false && (c.loggedAt || 0) > now - 86_400_000).length >= PAST_VISIT_RULES.perDay)
+      throw new HttpError(429, `You can log up to ${PAST_VISIT_RULES.perDay} past visits a day. Try again tomorrow.`);
+    const ap = resolve(s.icao);
+    const row = { id: (cks().reduce((m, c) => Math.max(m, c.id), 0)) + 1, userId: u.id, spotId: s.id, icao: s.icao, lat: (s.lat ?? ap?.lat) as number, lng: (s.lng ?? ap?.lon) as number, createdAt: at, verified: false, loggedAt: now };
+    cks().push(row); return { ok: true, id: row.id, already: false, createdAt: at, verified: false };
+  }
   if (method === "GET" && path === "/api/me/checkins") {
     const u = needUser();
-    return cks().filter((c) => c.userId === u.id).sort((a, b) => b.createdAt - a.createdAt).map((c) => { const s = db.spots.find((x) => x.id === c.spotId); return { ...c, spotName: s?.name ?? null, category: s?.category ?? null }; });
+    return cks().filter((c) => c.userId === u.id).sort((a, b) => b.createdAt - a.createdAt).map((c) => { const s = db.spots.find((x) => x.id === c.spotId); return { ...c, verified: c.verified !== false, spotName: s?.name ?? null, category: s?.category ?? null }; });
   }
   if (method === "DELETE" && (m = path.match(/^\/api\/checkins\/(\d+)$/))) { const u = needUser(); db.checkins = cks().filter((c) => !(c.id === Number(m![1]) && c.userId === u.id)); return { ok: true }; }
   if (method === "GET" && path === "/api/me/map") {
     const u = needUser(); const seen = new Set<string>();
-    const checkins: MapDot[] = cks().filter((c) => c.userId === u.id).sort((a, b) => b.createdAt - a.createdAt).filter((c) => { const k = `${c.spotId}|${c.icao}`; return !seen.has(k) && !!seen.add(k); })
-      .map((c) => { const s = db.spots.find((x) => x.id === c.spotId); return { kind: c.spotId ? "checkin" as const : "airport" as const, spotId: c.spotId, name: s?.name || c.icao, icao: c.icao, category: s?.category ?? null, lat: c.lat, lng: c.lng }; });
+    const mine = cks().filter((c) => c.userId === u.id && c.lat != null);
+    const checkins: MapDot[] = [...mine].sort((a, b) => b.createdAt - a.createdAt).filter((c) => { const k = `${c.spotId}|${c.icao}`; return !seen.has(k) && !!seen.add(k); })
+      .map((c) => { const s = db.spots.find((x) => x.id === c.spotId); const later = !mine.some((o) => o.spotId === c.spotId && o.icao === c.icao && o.verified !== false);
+        return { kind: c.spotId ? "checkin" as const : "airport" as const, spotId: c.spotId, name: s?.name || c.icao, icao: c.icao, category: s?.category ?? null, lat: c.lat, lng: c.lng, ...(later ? { later: true } : {}) }; });
     return { added: addedDots(u.id), checkins };
   }
   if (method === "GET" && (m = path.match(/^\/api\/crew\/(\d+)\/map$/))) { const du = db.users.find((x) => x.id === Number(m![1])); return { added: du && !du.anonymous ? addedDots(du.id) : [], checkins: [] }; }

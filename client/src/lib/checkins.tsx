@@ -1,7 +1,7 @@
 import { noteVisit } from "@/lib/visits";
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { MapPinCheck, Loader2, Trash2, PlaneLanding } from "lucide-react";
+import { MapPinCheck, Loader2, Trash2, PlaneLanding, History, Star, X } from "lucide-react";
 import { Link } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -9,9 +9,9 @@ import { useToast } from "@/hooks/use-toast";
 import { getPositionFix } from "@/lib/geo";
 import { drawStaticMap, type MapPin } from "@/lib/staticMap";
 import { cn } from "@/lib/utils";
-import type { CheckIn, MapDot } from "@shared/checkins";
+import { PAST_VISIT_RULES, pastVisitLabel, type CheckIn, type MapDot } from "@shared/checkins";
 
-export const DOT = { added: "#E8A317", checkin: "#0E9F8E", airport: "#0B1222" } as const;
+export const DOT = { added: "#E8A317", checkin: "#0E9F8E", airport: "#0B1222", later: "#8FD9CF" } as const;
 const errText = (e: unknown) => String((e as Error)?.message || e).replace(/^\d+:\s*/, "").replace(/^\{"message":"(.*?)".*$/, "$1");
 const day = (t: number) => new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric", year: new Date(t).getFullYear() === new Date().getFullYear() ? undefined : "numeric" });
 
@@ -26,25 +26,82 @@ async function checkIn(target: { spotId?: number; icao?: string }) {
   return (await apiRequest("POST", "/api/checkins", { ...target, lat: fix.lat, lng: fix.lng, accuracy: Math.round(fix.accuracy) })).json() as Promise<{ already: boolean; createdAt: number }>;
 }
 
-/** "I've been here" on a listing, verified with the phone's location. */
+const jumpToRate = () => document.getElementById("rate")?.scrollIntoView({ behavior: "smooth", block: "center" }); // the rating form on the listing page
+function RateThisSpot({ testId }: { testId: string }) {
+  return (
+    <button type="button" onClick={jumpToRate} data-testid={testId}
+      className="inline-flex h-9 items-center gap-1.5 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground hover-elevate">
+      <Star className="h-4 w-4" /> Rate this spot
+    </button>
+  );
+}
+
+/** "I've been here" on a listing, verified with the phone's location. If it can't verify (you've left, or no location), you can log a past visit instead. */
 export function CheckInButton({ spotId, name }: { spotId: number; name: string }) {
   const { me, openAuth } = useAuth();
   const { toast } = useToast();
   const { data } = useMyCheckins();
   const mine = (data || []).filter((c) => c.spotId === spotId);
+  const [failed, setFailed] = useState<string>("");
+  const [daysAgo, setDaysAgo] = useState(0);
+  const [logged, setLogged] = useState<{ at: number; already: boolean; verified: boolean } | null>(null);
   const m = useMutation({
     mutationFn: () => checkIn({ spotId }),
-    onSuccess: (r) => { refresh(); noteVisit({ id: spotId, name, icao: "" }); toast({ title: r.already ? "Already checked in today" : `Checked in at ${name}` }); },
-    onError: (e) => toast({ title: "Couldn't check in", description: errText(e), variant: "destructive" }),
+    onSuccess: (r) => { refresh(); setFailed(""); setLogged(null); noteVisit({ id: spotId, name, icao: "" }); toast({ title: r.already ? "Already checked in today" : `Checked in at ${name}` }); },
+    onError: (e) => { setLogged(null); setFailed(errText(e)); },
   });
+  const past = useMutation({
+    mutationFn: async () => (await apiRequest("POST", "/api/checkins/past", { spotId, daysAgo })).json() as Promise<{ already: boolean; createdAt: number; verified: boolean }>,
+    onSuccess: (r) => { refresh(); setFailed(""); setLogged({ at: r.createdAt, already: r.already, verified: r.verified }); },
+    onError: (e) => toast({ title: "Couldn't log the visit", description: errText(e), variant: "destructive" }),
+  });
+  const last = mine[0];
   return (
-    <div className="flex flex-wrap items-center gap-2" data-testid="checkin-spot">
-      <button type="button" onClick={() => (me ? m.mutate() : openAuth())} disabled={m.isPending} data-testid="button-checkin"
-        className="inline-flex h-9 items-center gap-1.5 rounded-full border border-[#0E9F8E]/50 px-3.5 text-sm font-semibold text-[#0B7A6E] hover-elevate disabled:opacity-60 dark:text-[#5FD4C6]">
-        {m.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <MapPinCheck className="h-4 w-4" />}
-        {m.isPending ? "Checking your location…" : "I'm here · check in"}
-      </button>
-      {mine.length > 0 && <span className="text-xs text-muted-foreground" data-testid="text-checkin-last">You checked in {mine.length > 1 ? `${mine.length} times, last ` : ""}{day(mine[0].createdAt)}</span>}
+    <div className="space-y-2" data-testid="checkin-spot">
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" onClick={() => (me ? m.mutate() : openAuth())} disabled={m.isPending} data-testid="button-checkin"
+          className="inline-flex h-9 items-center gap-1.5 rounded-full border border-[#0E9F8E]/50 px-3.5 text-sm font-semibold text-[#0B7A6E] hover-elevate disabled:opacity-60 dark:text-[#5FD4C6]">
+          {m.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <MapPinCheck className="h-4 w-4" />}
+          {m.isPending ? "Checking your location…" : "I'm here · check in"}
+        </button>
+        {last && !failed && !logged && <span className="text-xs text-muted-foreground" data-testid="text-checkin-last">
+          {last.verified === false ? "You logged a visit" : "You checked in"} {mine.length > 1 ? `${mine.length} times, last ` : ""}{day(last.createdAt)}</span>}
+      </div>
+      {failed && (
+        <div className="rounded-2xl border border-border bg-card p-3" data-testid="panel-checkin-failed">
+          <div className="flex items-start gap-2">
+            <p className="flex-1 text-sm" data-testid="text-checkin-failed"><span className="font-semibold">Couldn't check in.</span> <span className="text-muted-foreground">{failed}</span></p>
+            <button type="button" onClick={() => setFailed("")} aria-label="Close" className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-muted-foreground hover-elevate" data-testid="button-checkin-failed-close"><X className="h-4 w-4" /></button>
+          </div>
+          <p className="mt-2 text-sm font-semibold">Already been? Log a past visit</p>
+          <p className="text-xs text-muted-foreground">Shows in your check-ins as Logged later. Only you see it, and it isn't counted as a verified visit.</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <label className="sr-only" htmlFor={`past-day-${spotId}`}>When were you there?</label>
+            <select id={`past-day-${spotId}`} value={daysAgo} onChange={(e) => setDaysAgo(Number(e.target.value))} data-testid="select-past-visit-day"
+              className="h-9 rounded-full border border-input bg-background px-3 text-sm">
+              {Array.from({ length: PAST_VISIT_RULES.maxDaysBack + 1 }, (_, i) => <option key={i} value={i}>{pastVisitLabel(i)}</option>)}
+            </select>
+            <button type="button" onClick={() => past.mutate()} disabled={past.isPending} data-testid="button-log-past-visit"
+              className="inline-flex h-9 items-center gap-1.5 rounded-full border border-[#0E9F8E]/50 px-3.5 text-sm font-semibold text-[#0B7A6E] hover-elevate disabled:opacity-60 dark:text-[#5FD4C6]">
+              {past.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <History className="h-4 w-4" />} Log a past visit
+            </button>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border/60 pt-3">
+            <RateThisSpot testId="button-rate-after-failed" />
+            <span className="text-xs text-muted-foreground">Rating doesn't need your location.</span>
+          </div>
+        </div>
+      )}
+      {logged && (
+        <div className="rounded-2xl border border-[#0E9F8E]/40 bg-[#0E9F8E]/5 p-3" data-testid="panel-past-visit-logged">
+          <p className="text-sm" data-testid="text-past-visit-logged"><span className="font-semibold">{logged.already ? (logged.verified ? `You already checked in at ${name} around then.` : `You already logged a visit around then.`) : `Visit logged for ${day(logged.at)}.`}</span>{" "}
+            {!logged.verified && <span className="text-muted-foreground">It's in your check-ins as Logged later, only for you.</span>}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <RateThisSpot testId="button-rate-after-past" />
+            <span className="text-xs text-muted-foreground">How was it? Help the next crew.</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -80,7 +137,7 @@ export function AirportCheckInCard() {
 
 function DotMap({ dots, height = 240 }: { dots: MapDot[]; height?: number }) {
   const ref = useRef<HTMLCanvasElement>(null), wrap = useRef<HTMLDivElement>(null);
-  const pins: MapPin[] = dots.map((d) => ({ lat: d.lat, lng: d.lng, label: "", kind: d.kind === "airport" ? "fbo" : "eat", dot: DOT[d.kind] }));
+  const pins: MapPin[] = dots.map((d) => ({ lat: d.lat, lng: d.lng, label: "", kind: d.kind === "airport" ? "fbo" : "eat", dot: d.later ? DOT.later : DOT[d.kind] }));
   const sig = JSON.stringify(pins);
   useEffect(() => {
     const c = ref.current, w = wrap.current;
@@ -107,6 +164,7 @@ export function ProfileMap({ userId, own }: { userId?: number; own?: boolean }) 
   const { data } = useQuery<{ added: MapDot[]; checkins: MapDot[] }>({ queryKey: [url], staleTime: 60_000 });
   const added = data?.added || [], ck = data?.checkins || [];
   const ckSpots = ck.filter((c) => c.kind === "checkin"), ckAps = ck.filter((c) => c.kind === "airport");
+  const nLater = ckSpots.filter((c) => c.later).length;
   if (!data || (!added.length && !ck.length)) return own ? (
     <section className="rounded-2xl border border-dashed border-border p-4 text-sm text-muted-foreground" data-testid="section-profile-map-empty">Your map fills in as you add places and check in.</section>
   ) : null;
@@ -117,7 +175,8 @@ export function ProfileMap({ userId, own }: { userId?: number; own?: boolean }) 
       <DotMap dots={[...ckAps, ...added, ...ckSpots]} />
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
         <Legend color={DOT.added} label="Added" n={added.length} />
-        {own && <Legend color={DOT.checkin} label="Checked in" n={ckSpots.length} />}
+        {own && <Legend color={DOT.checkin} label="Checked in" n={ckSpots.length - nLater} />}
+        {own && nLater > 0 && <Legend color={DOT.later} label="Logged later" n={nLater} />}
         {own && <Legend color={DOT.airport} label="Airports" n={ckAps.length} />}
       </div>
     </section>
@@ -138,10 +197,10 @@ export function CheckInList() {
       <ul className="mt-2 divide-y divide-border">
         {list.map((c) => (
           <li key={c.id} className="flex items-center gap-3 py-2" data-testid={`row-checkin-${c.id}`}>
-            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: c.spotId ? DOT.checkin : DOT.airport }} />
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: c.verified === false ? DOT.later : c.spotId ? DOT.checkin : DOT.airport }} />
             <div className="min-w-0 flex-1">
               {c.spotId ? <Link href={`/spot/${c.spotId}`} className="block truncate text-sm font-medium hover:underline">{c.spotName || "Listing"}</Link> : <p className="text-sm font-medium">At the airport</p>}
-              <p className="text-[11px] text-muted-foreground"><span className="font-code">{c.icao}</span> · {day(c.createdAt)}</p>
+              <p className="text-[11px] text-muted-foreground"><span className="font-code">{c.icao}</span> · {day(c.createdAt)}{c.verified === false && <> · <span className="font-medium text-foreground/70" data-testid={`text-logged-later-${c.id}`}>Logged later</span></>}</p>
             </div>
             <button type="button" onClick={() => del.mutate(c.id)} aria-label="Delete check-in" className={cn("grid h-8 w-8 place-items-center rounded-full text-muted-foreground hover-elevate")} data-testid={`button-delete-checkin-${c.id}`}><Trash2 className="h-4 w-4" /></button>
           </li>

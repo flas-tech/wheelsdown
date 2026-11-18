@@ -257,7 +257,7 @@ export function registerMyCrew(app: Express, o: { userOf: (req: Request) => Prom
     if (!p) return res.status(404).json({ message: "Not found" });
     const pv = await privacyOf(other);
     const checkins = pv.shareCheckins ? (await rows(sql`SELECT c.spot_id, c.icao, c.created_at::float8 AS at, s.name, s.category FROM checkins c LEFT JOIN spots s ON s.id = c.spot_id
-        WHERE c.user_id = ${other} AND c.created_at > ${Date.now() - 60 * DAY} ORDER BY c.created_at DESC LIMIT 40`)).map((r) => ({ spotId: r.spot_id == null ? null : num(r.spot_id), name: String(r.name || r.icao), icao: String(r.icao), category: r.category || null, at: num(r.at) })) : null;
+        WHERE c.user_id = ${other} AND c.verified AND c.created_at > ${Date.now() - 60 * DAY} ORDER BY c.created_at DESC LIMIT 40`)).map((r) => ({ spotId: r.spot_id == null ? null : num(r.spot_id), name: String(r.name || r.icao), icao: String(r.icao), category: r.category || null, at: num(r.at) })) : null;
     const favorites = pv.shareFavorites ? (await storage.favoriteSpots(other)).filter((s: any) => s.status === "live").slice(0, 60).map((s: any) => ({ id: s.id, name: s.name, icao: s.icao, category: s.category })) : null;
     const out: CrewShared = { person: strip(p), checkins, favorites };
     res.json(out);

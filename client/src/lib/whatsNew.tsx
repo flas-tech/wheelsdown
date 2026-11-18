@@ -24,6 +24,13 @@ const PUBLIC_FEATURES = new Set<DevFeature>([]);
 
 const ALL_RELEASES: Release[] = [
   {
+    id: 20, date: "November 18, 2026",
+    items: [
+      { icon: MapPinned, title: "Already left? Log a past visit", body: "If a check-in can't verify because you've already left (or your location is off), tap Log a past visit and pick today, yesterday or up to 7 days back. It shows in your check-ins and on your map as Logged later. Only you see it, and only verified check-ins count as visits." },
+      { icon: Star, title: "Rate it from anywhere", body: "Rating a spot never needs your location. Rate this spot is right there when a check-in doesn't work and after you log a past visit.", to: "/rate" },
+    ],
+  },
+  {
     id: 19, date: "October 29, 2026",
     items: [
       { icon: ShieldAlert, title: "Seeing a ramp check? Report it", body: "Help other pilots. If FAA, CBP, TSA or local inspectors abroad are doing ramp checks, tap Report ramp check on the field card on Home or in FBO intel, then tap who's checking. It's one tap, and who reported stays private. The next crew in gets their paperwork ready.", to: "/" },

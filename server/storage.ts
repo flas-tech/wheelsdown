@@ -390,9 +390,9 @@ export class DatabaseStorage {
     await db().update(ads).set({ [kind]: sql`${ads[kind]} + 1` }).where(eq(ads.id, id));
   }
 
-  /** Check-ins per listing, for "Most visited". */
+  /** Verified check-ins per listing, for "Most visited". Past visits logged later don't count. */
   async checkinCounts(): Promise<{ spotId: number; n: number }[]> {
-    return (await db().execute(sql`SELECT spot_id AS "spotId", count(*)::int AS n FROM checkins WHERE spot_id IS NOT NULL GROUP BY spot_id`)).rows as any;
+    return (await db().execute(sql`SELECT spot_id AS "spotId", count(*)::int AS n FROM checkins WHERE spot_id IS NOT NULL AND verified GROUP BY spot_id`)).rows as any;
   }
 
   // ---- accounts ----

@@ -158,7 +158,7 @@ const myReviewed = async (uid: number) => new Set((await rows(sql`SELECT spot_id
 const pick = (s: SpotWithStats, rated: Set<number>): TodayPick => ({ id: s.id, name: s.name, category: s.category, milesFromField: s.milesFromField ?? 0, avgRating: s.avgRating ?? null, reviewCount: s.reviewCount, rated: rated.has(s.id), icao: s.icao, address: s.address || null, lat: s.lat ?? null, lng: s.lng ?? null });
 const stopsOf = (raw: string): BriefingStop[] => { try { const v = JSON.parse(raw || "[]"); return Array.isArray(v) ? v : []; } catch { return []; } };
 const hasCheckin = async (uid: number, icao: string) =>
-  !!(await rows(sql`SELECT 1 FROM checkins WHERE user_id = ${uid} AND icao = ${icao} AND created_at > ${Date.now() - MEETUP_RULES.checkinWindowHours * HOUR} LIMIT 1`))[0];
+  !!(await rows(sql`SELECT 1 FROM checkins WHERE user_id = ${uid} AND icao = ${icao} AND verified AND created_at > ${Date.now() - MEETUP_RULES.checkinWindowHours * HOUR} LIMIT 1`))[0];
 
 /** Spots the member has been to (check-ins), planned (briefings) or saved (favorites) and hasn't rated yet. */
 async function rateQueue(uid: number, visits: { id: number; at: number }[] = []): Promise<RateItem[]> {
@@ -166,8 +166,8 @@ async function rateQueue(uid: number, visits: { id: number; at: number }[] = [])
   const out = new Map<number, Omit<RateItem, "name" | "icao" | "category" | "avgRating" | "reviewCount">>();
   // "Did you go?" reminders kept on the phone (directions, website or phone opened); sent along by the Rate tab
   for (const v of visits) if (v.id > 0) out.set(v.id, { id: v.id, reason: "visit", detail: "You looked up directions or the website", at: v.at });
-  for (const c of await rows(sql`SELECT spot_id, MAX(created_at)::float8 AS at FROM checkins WHERE user_id = ${uid} AND spot_id IS NOT NULL AND created_at > ${Date.now() - 60 * DAY} GROUP BY spot_id`))
-    out.set(num(c.spot_id), { id: num(c.spot_id), reason: "checkin", detail: "You checked in", at: num(c.at) }); // a check-in outranks a reminder
+  for (const c of await rows(sql`SELECT spot_id, MAX(created_at)::float8 AS at, bool_or(verified) AS v FROM checkins WHERE user_id = ${uid} AND spot_id IS NOT NULL AND created_at > ${Date.now() - 60 * DAY} GROUP BY spot_id`))
+    out.set(num(c.spot_id), { id: num(c.spot_id), reason: "checkin", detail: c.v === false ? "You logged a visit" : "You checked in", at: num(c.at) }); // a check-in outranks a reminder
   for (const b of await rows(sql`SELECT title, stops, updated_at::float8 AS at FROM briefings WHERE user_id = ${uid} ORDER BY updated_at DESC LIMIT 30`))
     for (const st of stopsOf(b.stops)) for (const id of st.picks || []) if (id > 0 && !out.has(id)) out.set(id, { id, reason: "briefing", detail: b.title ? `In your briefing ${b.title}` : `In your briefing for ${st.icao}`, at: num(b.at) });
   for (const f of await rows(sql`SELECT spot_id, created_at::float8 AS at FROM favorites WHERE user_id = ${uid}`))
@@ -194,7 +194,7 @@ export function registerLayover(app: Express, o: { userOf: (req: Request) => Pro
   // ---- Layover Today
   app.get("/api/preview/today", gate, async (req, res) => {
     const u = me(req);
-    const recentCk = await rows(sql`SELECT icao, MAX(created_at)::float8 AS at FROM checkins WHERE user_id = ${u.id} GROUP BY icao ORDER BY MAX(created_at) DESC LIMIT 6`);
+    const recentCk = await rows(sql`SELECT icao, MAX(created_at)::float8 AS at FROM checkins WHERE user_id = ${u.id} AND verified GROUP BY icao ORDER BY MAX(created_at) DESC LIMIT 6`);
     const briefs = await rows(sql`SELECT id, title, stops, updated_at::float8 AS at FROM briefings WHERE user_id = ${u.id} ORDER BY updated_at DESC LIMIT 10`);
     const recent = Array.from(new Set([...recentCk.map((r) => String(r.icao)), ...briefs.flatMap((b) => stopsOf(b.stops).map((s) => s.icao))])).slice(0, 8);
 
@@ -281,7 +281,7 @@ export function registerLayover(app: Express, o: { userOf: (req: Request) => Pro
   async function people(ids: number[], icao: string): Promise<Map<number, MeetupPerson>> {
     const pub = await storage.publicUsers(true);
     const want = new Set(ids);
-    const ck = ids.length ? await rows(sql`SELECT DISTINCT user_id FROM checkins WHERE icao = ${icao} AND created_at > ${Date.now() - MEETUP_RULES.checkinWindowHours * HOUR}`) : [];
+    const ck = ids.length ? await rows(sql`SELECT DISTINCT user_id FROM checkins WHERE icao = ${icao} AND verified AND created_at > ${Date.now() - MEETUP_RULES.checkinWindowHours * HOUR}`) : [];
     const verified = new Set(ck.map((r) => num(r.user_id)));
     const m = new Map<number, MeetupPerson>();
     // meetups are opt-in, so they show the member's display name even when they post anonymously elsewhere
@@ -350,7 +350,7 @@ export function registerLayover(app: Express, o: { userOf: (req: Request) => Pro
     const mineAll = (await rows(sql`SELECT * FROM meetups WHERE user_id = ${u.id} AND status = 'live' AND expires_at > ${now}`)).sort((a, z) => meetupStart(a) - meetupStart(z));
     const myAirports = Array.from(new Set(mineAll.map((r) => String(r.icao))));
     const q = String(req.query.icao || "").trim().toUpperCase();
-    const lastCk = !q && !myAirports[0] ? (await rows(sql`SELECT icao FROM checkins WHERE user_id = ${u.id} AND created_at > ${now - MEETUP_RULES.checkinWindowHours * HOUR} ORDER BY created_at DESC LIMIT 1`))[0] : null;
+    const lastCk = !q && !myAirports[0] ? (await rows(sql`SELECT icao FROM checkins WHERE user_id = ${u.id} AND verified AND created_at > ${now - MEETUP_RULES.checkinWindowHours * HOUR} ORDER BY created_at DESC LIMIT 1`))[0] : null;
     const start = q || myAirports[0] || (lastCk ? String(lastCk.icao) : "");
     const ap = start ? await airportOf(start) : null;
     if (q && !ap) return res.status(404).json({ message: `We don't know the airport ${q}. Check the code.` });

@@ -123,6 +123,8 @@ CREATE TABLE IF NOT EXISTS notices (id serial PRIMARY KEY, user_id integer NOT N
 CREATE INDEX IF NOT EXISTS notices_user_idx ON notices (user_id, status);
 CREATE TABLE IF NOT EXISTS checkins (id serial PRIMARY KEY, user_id integer NOT NULL, spot_id integer, icao text NOT NULL, lat double precision, lng double precision, created_at bigint NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS checkins_user_idx ON checkins (user_id, created_at);
+ALTER TABLE checkins ADD COLUMN IF NOT EXISTS verified boolean NOT NULL DEFAULT true;
+ALTER TABLE checkins ADD COLUMN IF NOT EXISTS logged_at bigint;
 CREATE TABLE IF NOT EXISTS feedback (id serial PRIMARY KEY, user_id integer, kind text NOT NULL DEFAULT 'other', message text NOT NULL, contact text NOT NULL DEFAULT '', page text NOT NULL DEFAULT '', device text NOT NULL DEFAULT '', status text NOT NULL DEFAULT 'new', admin_note text NOT NULL DEFAULT '', created_at bigint NOT NULL DEFAULT 0, updated_at bigint NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS feedback_status_idx ON feedback (status, created_at);
 ALTER TABLE feedback ADD COLUMN IF NOT EXISTS fbo_id integer;

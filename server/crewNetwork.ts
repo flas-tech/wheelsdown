@@ -138,7 +138,7 @@ export function registerCrewNetwork(app: Express, o: {
       return { icao: s.icao, name: c.name, city: c.city, country: c.country, tz, from: s.from, to: s.to, hotel: await hotelName(s) }; };
     const t = today();
     const cur = stops.filter((s) => s.from <= t && s.to >= t).pop() || null;
-    const ci = (await rows(sql`SELECT icao, created_at FROM checkins WHERE user_id = ${uid} AND created_at > ${Date.now() - 18 * 3600_000} ORDER BY created_at DESC LIMIT 1`))[0];
+    const ci = (await rows(sql`SELECT icao, created_at FROM checkins WHERE user_id = ${uid} AND verified AND created_at > ${Date.now() - 18 * 3600_000} ORDER BY created_at DESC LIMIT 1`))[0];
     let now: FamilyStop | null = cur ? await shape(cur) : null;
     if (ci && (!now || now.icao !== String(ci.icao))) now = await shape({ userId: uid, briefingId: 0, title: "", icao: String(ci.icao), from: t, to: t, picks: cur && cur.icao === String(ci.icao) ? cur.picks : [] });
     const next: FamilyStop[] = [];
